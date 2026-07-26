@@ -1,0 +1,15 @@
+{
+  "name": "hearth-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Hearth desktop app — one-click node + wallet + miner (Tauri)",
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "icons": "tauri icon ../web/assets/logo.svg"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "hearth-proto",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Hearth economics simulator and Homefire proof-of-work demo",
+  "type": "commonjs",
+  "scripts": {
+    "emission": "node emission.js",
+    "mine": "node mine.js 16"
+  },
+  "license": "MIT"
+}

@@ -1,0 +1,13 @@
+{
+  "name": "Hearth",
+  "short_name": "Hearth",
+  "description": "Money mined at home. Made to spend. A people-mined, ASIC-resistant proof-of-work currency.",
+  "start_url": "/index.html",
+  "display": "standalone",
+  "background_color": "#120d0a",
+  "theme_color": "#ff4d00",
+  "icons": [
+    { "src": "assets/favicon.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "assets/logo.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

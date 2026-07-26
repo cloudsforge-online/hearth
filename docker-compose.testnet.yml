@@ -1,0 +1,65 @@
+# Hearth — an isolated 3-node EMBER testnet on your machine.
+#
+#   docker compose -f docker-compose.testnet.yml up --build
+#
+# Brings up an isolated 3-node EMBER testnet: a non-mining seed plus two miners,
+# all joined on the dedicated `hearth-testnet` network (HEARTH_NETWORK) so they
+# can never gossip with, or replay txs against, the default `hearth` network.
+#
+# Host RPC ports:
+#   :8645  — seed
+#   :8647  — miner1
+#   :8649  — miner2
+#
+# Try:  curl -s localhost:8645/info
+
+services:
+  hearth-testnet-seed:
+    build: ./node
+    container_name: hearth-testnet-seed
+    environment:
+      HEARTH_NETWORK: "hearth-testnet"
+      HEARTH_RPC: "8645"
+      HEARTH_P2P: "8646"
+    ports:
+      - "8645:8645"   # RPC/HTTP exposed to the host
+      - "8646:8646"   # P2P
+    volumes:
+      - testnet-seed-data:/data
+
+  hearth-testnet-miner1:
+    build: ./node
+    container_name: hearth-testnet-miner1
+    environment:
+      HEARTH_NETWORK: "hearth-testnet"
+      HEARTH_PEERS: "hearth-testnet-seed:8646"
+      HEARTH_MINE: "1"
+      HEARTH_THROTTLE: "0.6"
+      HEARTH_RPC: "8645"
+      HEARTH_P2P: "8646"
+    ports:
+      - "8647:8645"   # miner1 RPC on host :8647
+    depends_on: [hearth-testnet-seed]
+    volumes:
+      - testnet-miner1-data:/data
+
+  hearth-testnet-miner2:
+    build: ./node
+    container_name: hearth-testnet-miner2
+    environment:
+      HEARTH_NETWORK: "hearth-testnet"
+      HEARTH_PEERS: "hearth-testnet-seed:8646"
+      HEARTH_MINE: "1"
+      HEARTH_THROTTLE: "0.6"
+      HEARTH_RPC: "8645"
+      HEARTH_P2P: "8646"
+    ports:
+      - "8649:8645"   # miner2 RPC on host :8649
+    depends_on: [hearth-testnet-seed]
+    volumes:
+      - testnet-miner2-data:/data
+
+volumes:
+  testnet-seed-data:
+  testnet-miner1-data:
+  testnet-miner2-data:

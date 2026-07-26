@@ -1,0 +1,16 @@
+[package]
+name = "hearth-desktop"
+version = "0.1.0"
+edition = "2021"
+description = "Hearth desktop app — one-click node + wallet + miner"
+license = "MIT"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+
+[[bin]]
+name = "hearth-desktop"
+path = "src/main.rs"

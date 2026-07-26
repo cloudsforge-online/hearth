@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  node:
+    name: Node reference client (tests)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: node
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Unit tests
+        run: node test/unit.js
+      - name: End-to-end test
+        run: node test/e2e.js
+      - name: Coinnomics model sanity
+        run: node ../proto/emission.js > /dev/null
+
+  rust:
+    name: Rust production core (build + test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rust/hearthd
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - name: Format check
+        run: cargo fmt --check
+      - name: Clippy
+        run: cargo clippy -- -D warnings
+      - name: Build (release)
+        run: cargo build --release
+      - name: Test
+        run: cargo test
+
+  web:
+    name: Web assets (lint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Syntax-check front-end JS
+        run: |
+          for f in web/assets/*.js; do node --check "$f"; done

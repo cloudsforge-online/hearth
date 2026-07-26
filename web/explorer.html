@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hearth Block Explorer — Live EMBER Blocks, Supply &amp; Hashrate</title>
+<meta name="description" content="Live block explorer for the Hearth network: watch EMBER blocks, home-mined by thousands of addresses, with circulating supply, Commons treasury and network hashrate in real time.">
+<meta name="robots" content="index, follow">
+<meta name="theme-color" content="#ff4d00">
+<link rel="canonical" href="https://savvaniss.github.io/hearth/explorer.html">
+<meta property="og:title" content="Hearth Block Explorer">
+<meta property="og:description" content="Watch the Hearth network live — home-mined EMBER blocks, supply, and hashrate.">
+<meta property="og:image" content="https://savvaniss.github.io/hearth/assets/og-image.svg">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="manifest" href="site.webmanifest">
+<meta name="hearth-rpc" content="http://localhost:8645">
+<link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+<nav class="nav">
+  <div class="wrap">
+    <a class="brand" href="index.html"><img src="assets/logo.svg" alt=""> Hearth</a>
+    <div class="spacer"></div>
+    <a class="link" href="index.html">Home</a>
+    <a class="link" href="wallet.html">Wallet</a>
+    <a class="link" href="pay-demo.html">Accept EMBER</a>
+  </div>
+</nav>
+
+<section>
+  <div class="wrap">
+    <span class="pill" id="mode">● connecting…</span>
+    <h2>Block explorer</h2>
+    <p>Every block, every payment, in the open. Point it at any running
+      <span class="mono">hearthd</span> node (default <span class="mono">:8645</span>,
+      override with <span class="mono">?rpc=</span>). If none is reachable it streams
+      a simulated chain so the page still works offline.</p>
+
+    <div class="grid g4" style="margin:24px 0">
+      <div class="card stat"><div class="n" id="s-height">—</div><div class="l">block height</div></div>
+      <div class="card stat"><div class="n" id="s-hr">—</div><div class="l">network hashrate</div></div>
+      <div class="card stat"><div class="n" id="s-supply">—</div><div class="l">circulating EMBER</div></div>
+      <div class="card stat"><div class="n" id="s-commons">—</div><div class="l">Commons treasury</div></div>
+    </div>
+
+    <div class="card" style="padding:8px 8px 0">
+      <table class="blocks">
+        <thead>
+          <tr><th>Height</th><th>Age</th><th>Miner</th><th>Txs</th><th>Reward</th><th>Hash</th></tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+    <p class="muted" style="margin-top:14px">New blocks arrive every ~15s and flash gold. Home-mined blocks come from thousands of distinct addresses — that's decentralization you can watch.</p>
+  </div>
+</section>
+
+<footer><div class="wrap"><span class="muted">Hearth Explorer · demo data</span></div></footer>
+
+<script src="assets/app.js"></script>
+<script src="assets/api.js"></script>
+<script>
+  const tbody = document.getElementById('rows');
+  const mode = document.getElementById('mode');
+  const EMBER = 1e8;
+  // Build rows with textContent (never innerHTML) so node-supplied strings —
+  // e.g. a miner's coinbase address — can't inject markup (XSS-safe).
+  function addRow(r, flash) {
+    const tr = document.createElement('tr');
+    if (flash) tr.className = 'tag-new';
+    const cells = [
+      { text: '#' + (+r.height).toLocaleString(), style: 'font-weight:700' },
+      { text: r.age, cls: 'muted' },
+      { text: r.miner + '…' },
+      { text: String(r.txs) },
+      { text: r.reward + ' EMBER', style: 'color:var(--gold-200)' },
+      { text: r.hash.slice(0, 16) + '…', cls: 'muted' },
+    ];
+    for (const c of cells) {
+      const td = document.createElement('td');
+      if (c.cls) td.className = c.cls;
+      if (c.style) td.style.cssText = c.style;
+      td.textContent = c.text;
+      tr.appendChild(td);
+    }
+    tbody.appendChild(tr);
+  }
+
+  function setStats({height, hashrate, supply, commons}) {
+    if (height != null) document.getElementById('s-height').textContent = '#' + (+height).toLocaleString();
+    if (hashrate != null) document.getElementById('s-hr').textContent = hashrate;
+    if (supply != null) document.getElementById('s-supply').textContent = supply;
+    if (commons != null) document.getElementById('s-commons').textContent = commons;
+  }
+
+  async function runLive() {
+    mode.textContent = '● LIVE — hearthd';
+    mode.style.color = 'var(--ok)';
+    async function refresh() {
+      const [{blocks}, info, sup] = await Promise.all([
+        HearthAPI.get('/blocks?limit=12'), HearthAPI.get('/info'), HearthAPI.get('/supply'),
+      ]);
+      tbody.innerHTML = '';
+      blocks.forEach((b, i) => addRow({
+        height: b.height, age: 'blk #' + b.height, miner: b.miner.slice(0, 16),
+        txs: b.txCount, reward: (b.reward / EMBER).toFixed(4), hash: b.id,
+      }, i === 0));
+      setStats({ height: info.height, hashrate: (info.hashrate||0).toLocaleString() + ' H/s',
+        supply: (sup.circulatingEmber).toFixed(2), commons: (sup.commonsEmber).toFixed(2) });
+    }
+    await refresh();
+    HearthAPI.onBlock(() => refresh());
+    setInterval(refresh, 5000);
+  }
+
+  function runDemo() {
+    mode.textContent = '● DEMO — no node reachable';
+    mode.style.color = 'var(--gold-300)';
+    let height = 1284301, supply = 21430000, commons = 2143000;
+    const paint = (initial) => {
+      const chain = Hearth.makeChain(height, 12);
+      tbody.innerHTML = '';
+      chain.forEach((b, i) => addRow({
+        height: b.height, age: Hearth.timeAgo(b.agoSec), miner: b.miner,
+        txs: b.txs, reward: b.reward, hash: b.hash,
+      }, i === 0 && !initial));
+      setStats({ height, hashrate: (18 + Math.random()*1.4).toFixed(1) + ' MH/s',
+        supply: (supply/1e6).toFixed(2) + 'M', commons: (commons/1e6).toFixed(2) + 'M' });
+    };
+    paint(true);
+    setInterval(() => { height++; supply += 5.4; commons += 0.6; paint(false); }, 4000);
+  }
+
+  HearthAPI.online().then(ok => ok ? runLive().catch(runDemo) : runDemo());
+</script>
+</body>
+</html>

@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hearth Wallet — Non-Custodial EMBER Wallet &amp; In-Browser Mining</title>
+<meta name="description" content="The Hearth web wallet: hold, send and receive EMBER with keys that never leave your device, and mine right in your browser. Fast, near-zero fees, non-custodial.">
+<meta name="robots" content="index, follow">
+<meta name="theme-color" content="#ff4d00">
+<link rel="canonical" href="https://savvaniss.github.io/hearth/wallet.html">
+<meta property="og:title" content="Hearth Wallet">
+<meta property="og:description" content="Non-custodial EMBER wallet with in-browser mining. Your keys, your money.">
+<meta property="og:image" content="https://savvaniss.github.io/hearth/assets/og-image.svg">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="manifest" href="site.webmanifest">
+<link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+<nav class="nav">
+  <div class="wrap">
+    <a class="brand" href="index.html"><img src="assets/logo.svg" alt=""> Hearth</a>
+    <div class="spacer"></div>
+    <a class="link" href="index.html">Home</a>
+    <a class="link" href="explorer.html">Explorer</a>
+    <a class="link" href="pay-demo.html">Accept EMBER</a>
+  </div>
+</nav>
+
+<section>
+  <div class="wrap grid g2" style="gap:32px; align-items:start">
+    <!-- balance + mining -->
+    <div class="card">
+      <span class="pill">Web wallet</span>
+      <div style="display:flex; align-items:center; gap:16px; margin:16px 0">
+        <div class="hearth" style="width:120px;height:120px;border-radius:16px">
+          <div class="embers"></div><div class="flame" style="width:64px;height:82px;bottom:24px"></div>
+        </div>
+        <div>
+          <div class="stat"><div class="l">balance</div><div class="n" id="bal">128.90</div></div>
+          <div class="muted mono" id="addr">ember1q7f… copy</div>
+        </div>
+      </div>
+      <div class="grid g2">
+        <button class="btn btn-primary" id="mineBtn">🔥 Start mining</button>
+        <a class="btn btn-ghost" href="#send">Send EMBER</a>
+      </div>
+      <div class="muted mono" id="mineStat" style="margin-top:14px">idle · press start to tend the fire</div>
+    </div>
+
+    <!-- send -->
+    <div class="card" id="send">
+      <h3>Send</h3>
+      <label class="muted mono" style="display:block;margin:6px 0">to address</label>
+      <input id="to" value="ember1qmerchant7a3f…" style="width:100%;padding:12px;border-radius:10px;border:1px solid var(--line);background:var(--ink-900);color:var(--cream);font-family:var(--mono)">
+      <label class="muted mono" style="display:block;margin:12px 0 6px">amount (EMBER)</label>
+      <input id="amt" value="12.50" style="width:100%;padding:12px;border-radius:10px;border:1px solid var(--line);background:var(--ink-900);color:var(--cream);font-family:var(--mono)">
+      <div class="muted mono" style="margin:12px 0">fee ≈ 0.0004 EMBER · confirms in ~15s (instant over Tab)</div>
+      <button class="btn btn-primary" id="sendBtn">Send payment</button>
+      <div id="sendMsg" class="mono" style="margin-top:12px"></div>
+    </div>
+  </div>
+
+  <div class="wrap card" style="margin-top:24px">
+    <h3>Recent activity</h3>
+    <table class="blocks"><tbody id="activity">
+      <tr><td>received</td><td style="color:var(--ok)">+0.42 EMBER</td><td class="muted">mining reward</td><td class="muted">2m ago</td></tr>
+      <tr><td>sent</td><td style="color:var(--ember-400)">−4.00 EMBER</td><td class="muted">Corner Bakery</td><td class="muted">1h ago</td></tr>
+      <tr><td>received</td><td style="color:var(--ok)">+50.00 EMBER</td><td class="muted">from ember1qz…</td><td class="muted">yesterday</td></tr>
+    </tbody></table>
+  </div>
+</section>
+
+<footer><div class="wrap"><span class="muted">Hearth Wallet · non-custodial demo · keys never leave your device</span></div></footer>
+
+<script src="assets/app.js"></script>
+<script>
+  document.querySelectorAll('.hearth').forEach(h => Hearth.igniteHearth(h, 1));
+  let bal = 128.90, mining = false, mineTimer;
+  const balEl = document.getElementById('bal');
+
+  document.getElementById('mineBtn').addEventListener('click', (e) => {
+    mining = !mining;
+    e.target.innerHTML = mining ? '⏸ Pause mining' : '🔥 Start mining';
+    document.getElementById('mineStat').textContent = mining
+      ? 'tending the fire · polite mode 35% CPU · solo'
+      : 'idle · press start to tend the fire';
+    clearInterval(mineTimer);
+    if (mining) mineTimer = setInterval(() => {
+      const r = 0.01 + Math.random()*0.03;
+      bal += r; balEl.textContent = bal.toFixed(2);
+      document.getElementById('activity').insertAdjacentHTML('afterbegin',
+        `<tr class="tag-new"><td>received</td><td style="color:var(--ok)">+${r.toFixed(3)} EMBER</td><td class="muted">mining reward</td><td class="muted">now</td></tr>`);
+    }, 3000);
+  });
+
+  document.getElementById('sendBtn').addEventListener('click', () => {
+    const amt = parseFloat(document.getElementById('amt').value || '0');
+    if (!(amt > 0) || amt > bal) { document.getElementById('sendMsg').textContent = '✗ invalid amount'; return; }
+    bal -= amt + 0.0004; balEl.textContent = bal.toFixed(2);
+    const txid = (Math.random().toString(16)+'0000').slice(2,14);
+    document.getElementById('sendMsg').innerHTML = `<span style="color:var(--ok)">✓ sent — tx ${txid}… confirmed over Tab in 380ms</span>`;
+  });
+</script>
+</body>
+</html>

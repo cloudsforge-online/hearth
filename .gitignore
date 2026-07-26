@@ -1,0 +1,29 @@
+# chain / wallet data
+data/
+**/data/
+*.ndjson
+
+# node
+node_modules/
+npm-debug.log*
+
+# rust
+**/target/
+**/*.rs.bk
+
+# tauri desktop app
+app-desktop/src-tauri/gen/
+app-desktop/src-tauri/icons/*.png
+app-desktop/src-tauri/icons/*.ico
+app-desktop/src-tauri/icons/*.icns
+
+# os / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# logs / tmp
+*.log
+tmp/

@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Accept EMBER — Hearth Pay | Crypto Payments in Two Lines of HTML</title>
+<meta name="description" content="Hearth Pay lets any website accept EMBER cryptocurrency in two lines of HTML. No custodian, no chargebacks, no card fees — instant settlement over Tab payment channels.">
+<meta name="robots" content="index, follow">
+<meta name="theme-color" content="#ff4d00">
+<link rel="canonical" href="https://savvaniss.github.io/hearth/pay-demo.html">
+<meta property="og:title" content="Accept EMBER — Hearth Pay">
+<meta property="og:description" content="Accept EMBER on any site in two lines of HTML. No custodian, no chargebacks, no card fees.">
+<meta property="og:image" content="https://savvaniss.github.io/hearth/assets/og-image.svg">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="manifest" href="site.webmanifest">
+<link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+<nav class="nav">
+  <div class="wrap">
+    <a class="brand" href="index.html"><img src="assets/logo.svg" alt=""> Hearth</a>
+    <div class="spacer"></div>
+    <a class="link" href="index.html">Home</a>
+    <a class="link" href="explorer.html">Explorer</a>
+    <a class="link" href="wallet.html">Wallet</a>
+  </div>
+</nav>
+
+<section>
+  <div class="wrap grid g2" style="gap:40px; align-items:start">
+    <div>
+      <span class="pill">Web integration · Hearth Pay</span>
+      <h2>Accept EMBER on any site in two lines.</h2>
+      <p>No merchant account, no custodian, no chargebacks, no 3% card fee. The
+        customer's wallet settles instantly over a Tab channel and your page gets
+        a callback. Here's the entire integration:</p>
+      <div class="card mono" style="font-size:.86rem; white-space:pre; overflow:auto">&lt;script src="hearth-pay.js"&gt;&lt;/script&gt;
+
+&lt;div data-hearth-pay
+     data-to="ember1qmerchant7a3f…"
+     data-amount="12.50"
+     data-label="Corner Bakery"&gt;&lt;/div&gt;
+
+&lt;script&gt;
+  window.addEventListener('hearth:paid', e =&gt; {
+    console.log('settled', e.detail.txid, e.detail.confirmMs + 'ms');
+    // fulfil the order
+  });
+&lt;/script&gt;</div>
+      <p class="muted">The SDK builds a <span class="mono">hearth:</span> payment URI, opens the shopper's wallet, and watches your node for settlement.</p>
+    </div>
+
+    <!-- live checkout demo -->
+    <div class="card">
+      <h3>🧺 Corner Bakery — checkout</h3>
+      <table class="blocks"><tbody>
+        <tr><td>Sourdough loaf</td><td style="text-align:right">8.50</td></tr>
+        <tr><td>Oat flat white</td><td style="text-align:right">4.00</td></tr>
+        <tr><td><b>Total</b></td><td style="text-align:right"><b>12.50 EMBER</b></td></tr>
+      </tbody></table>
+      <div style="margin-top:18px"
+           data-hearth-pay
+           data-to="ember1qmerchant7a3f9c2d"
+           data-amount="12.50"
+           data-label="Corner Bakery"></div>
+      <div id="receipt" class="card" style="display:none; margin-top:18px; border-color:var(--ok)">
+        <b style="color:var(--ok)">✓ Payment received</b>
+        <div class="mono muted" id="receiptDetail" style="margin-top:8px"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer><div class="wrap"><span class="muted">Hearth Pay · demo settles locally; production settles on-chain / over Tab</span></div></footer>
+
+<script src="assets/hearth-pay.js"></script>
+<script>
+  window.addEventListener('hearth:paid', (e) => {
+    const r = document.getElementById('receipt');
+    r.style.display = 'block';
+    document.getElementById('receiptDetail').textContent =
+      `tx ${e.detail.txid} · ${e.detail.amount} EMBER · settled in ${e.detail.confirmMs}ms`;
+  });
+</script>
+</body>
+</html>

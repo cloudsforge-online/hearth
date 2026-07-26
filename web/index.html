@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hearth — Money Mined at Home | People-Powered Proof-of-Work Currency</title>
+<meta name="description" content="Hearth is a people-mined, ASIC-resistant proof-of-work cryptocurrency built to spend, not hoard. Mine EMBER on the laptop you already own — no farms, no pools. Fast, near-zero fees, fair launch.">
+<meta name="keywords" content="Hearth, EMBER, cryptocurrency, proof of work, CPU mining, ASIC resistant, RandomX, non-outsourceable, decentralized money, mine at home, no premine, fair launch, digital cash, crypto wallet, block explorer">
+<meta name="author" content="Hearth">
+<meta name="robots" content="index, follow">
+<meta name="theme-color" content="#ff4d00">
+<link rel="canonical" href="https://savvaniss.github.io/hearth/">
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Hearth">
+<meta property="og:title" content="Hearth — Money Mined at Home">
+<meta property="og:description" content="A people-mined, ASIC-resistant proof-of-work currency built to spend, not hoard. Mine EMBER on the computer you already own.">
+<meta property="og:url" content="https://savvaniss.github.io/hearth/">
+<meta property="og:image" content="https://savvaniss.github.io/hearth/assets/og-image.svg">
+<!-- Twitter -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Hearth — Money Mined at Home">
+<meta name="twitter:description" content="People-mined, ASIC-resistant proof-of-work money built to spend, not hoard.">
+<meta name="twitter:image" content="https://savvaniss.github.io/hearth/assets/og-image.svg">
+<!-- Icons / PWA -->
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="assets/logo.svg">
+<link rel="manifest" href="site.webmanifest">
+<link rel="stylesheet" href="assets/styles.css">
+<!-- point the live-status widget at a node; override with ?rpc= -->
+<meta name="hearth-rpc" content="http://localhost:8645">
+<!-- Structured data for rich search results -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Hearth",
+  "applicationCategory": "FinanceApplication",
+  "operatingSystem": "Windows, macOS, Linux, Web",
+  "description": "A people-mined, ASIC-resistant proof-of-work cryptocurrency built to spend, not hoard. Mine EMBER on the computer you already own.",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+  "author": { "@type": "Organization", "name": "Hearth" }
+}
+</script>
+</head>
+<body>
+<nav class="nav">
+  <div class="wrap">
+    <a class="brand" href="index.html"><img src="assets/logo.svg" alt=""> Hearth</a>
+    <div class="spacer"></div>
+    <a class="link" href="#why">Why</a>
+    <a class="link" href="#mine">Mine</a>
+    <a class="link" href="explorer.html">Explorer</a>
+    <a class="link" href="wallet.html">Wallet</a>
+    <a class="link" href="pay-demo.html">Accept EMBER</a>
+    <a class="btn btn-ghost" href="https://github.com/savvaniss/hearth/blob/main/WHITEPAPER.md">Whitepaper</a>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="wrap grid g2" style="align-items:center; gap:40px">
+    <div>
+      <span class="pill">Fair launch · no premine · no ICO</span>
+      <h1 style="margin-top:16px">Money mined <span class="gradient-text">at home.</span><br>Made to spend.</h1>
+      <p class="lead">Hearth is a proof-of-work currency you mine on the computer you
+        already own — no farms, no ASICs, no pools. It's fast, nearly free to send,
+        and designed to circulate like cash, not sit in a vault like gold.</p>
+      <div class="cta">
+        <a class="btn btn-primary" href="#mine">🔥 Start your hearth</a>
+        <a class="btn btn-ghost" href="explorer.html">Open the explorer</a>
+      </div>
+      <div class="grid g4" style="margin-top:36px">
+        <div class="stat"><div class="n">15s</div><div class="l">block time</div></div>
+        <div class="stat"><div class="n">~0.37%</div><div class="l">net inflation*</div></div>
+        <div class="stat"><div class="n">CPU</div><div class="l">only, by design</div></div>
+        <div class="stat"><div class="n">&lt;¢1</div><div class="l">typical fee</div></div>
+      </div>
+    </div>
+    <div class="hearth-stage">
+      <div class="hearth" id="hearth">
+        <div class="embers"></div>
+        <div class="flame"></div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<section id="why">
+  <div class="wrap">
+    <div class="section-head">
+      <span class="pill">The problem</span>
+      <h2>Crypto broke the promise. Hearth keeps it.</h2>
+      <p>Bitcoin became a farm. Everything else became a casino. Hearth fixes the
+        specific things that pushed ordinary people out of their own money.</p>
+    </div>
+    <div class="grid g3">
+      <div class="card"><h3>🏭 → 🏠 No farms</h3><p>A RandomX-class, memory-hard puzzle plus a <b>non-outsourceable</b> signature means a warehouse of ASICs earns no more per dollar than your laptop — and pools can't form.</p></div>
+      <div class="card"><h3>🪙 Spends like cash</h3><p>Disinflationary emission into a perpetual tail, offset by a fee burn. Net inflation trends toward zero, so EMBER is stable money — not a hoarded collectible.</p></div>
+      <div class="card"><h3>⚡ Fast &amp; cheap</h3><p>15-second blocks, tiny predictable fees, and instant retail payments over <b>Tab</b> channels. Buy a coffee without waiting or overpaying.</p></div>
+      <div class="card"><h3>🔒 Cash-like privacy</h3><p>Stealth addresses by default. Your balance is yours; your rent isn't the cashier's business.</p></div>
+      <div class="card"><h3>🛡️ Never a fee cliff</h3><p>The tail emission funds security forever, so Hearth doesn't inherit Bitcoin's "what happens when rewards end?" problem.</p></div>
+      <div class="card"><h3>🌱 Funded by the Commons</h3><p>10% of every block funds an on-chain treasury governed by the community. Development without VCs owning your money.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="mine">
+  <div class="wrap grid g2" style="align-items:center; gap:40px">
+    <div>
+      <span class="pill">Anyone can do it</span>
+      <h2>Mining is one click.</h2>
+      <p>Install the Hearth app and press <b>Start your hearth</b>. It quietly uses
+        spare CPU cycles — <i>polite mining</i> that respects your battery, heat,
+        and whatever else you're doing. The longer your fire burns, the more EMBER
+        lands in your wallet.</p>
+      <ul class="muted" style="line-height:1.9">
+        <li>✔ Runs on any laptop or desktop — no hardware to buy</li>
+        <li>✔ Mine right in your browser with the WASM light-miner</li>
+        <li>✔ Solo by default; optional trustless co-op for steadier rewards</li>
+      </ul>
+      <div class="cta">
+        <a class="btn btn-primary" href="wallet.html">Open web wallet</a>
+        <a class="btn btn-ghost" href="https://github.com/savvaniss/hearth/tree/main/proto">See the reference miner</a>
+      </div>
+    </div>
+    <div class="card">
+      <div class="kv" style="line-height:2">
+        <div>$ <b>hearth start</b></div>
+        <div class="muted">🔥 tending the fire (polite mode, 35% CPU)</div>
+        <div class="muted">block <b id="mh">#1,284,301</b> · network <b id="hr">18.4 MH/s</b></div>
+        <div class="muted">you found <b style="color:var(--gold-200)">0.42 EMBER</b> this hour</div>
+        <div style="margin-top:10px">wallet balance <b>128.90 EMBER</b> ≈ merchants near you: <b>2,140</b></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <a class="brand" href="index.html"><img src="assets/logo.svg" style="width:24px" alt=""> Hearth</a>
+    <span class="muted">Money mined at home, made to spend.</span>
+    <div class="spacer" style="flex:1"></div>
+    <a href="explorer.html">Explorer</a>
+    <a href="wallet.html">Wallet</a>
+    <a href="pay-demo.html">Accept EMBER</a>
+    <a href="https://github.com/savvaniss/hearth/blob/main/WHITEPAPER.md">Whitepaper</a>
+    <span class="muted">*30-yr modeled net inflation — see docs/coinnomics.md</span>
+  </div>
+</footer>
+
+<script src="assets/app.js"></script>
+<script>
+  Hearth.igniteHearth(document.getElementById('hearth'), 1.5);
+  // tick the demo counters
+  let h = 1284301;
+  setInterval(() => {
+    h++;
+    document.getElementById('mh').textContent = '#' + h.toLocaleString();
+    document.getElementById('hr').textContent = (18 + Math.random()*1.2).toFixed(1) + ' MH/s';
+  }, 15000);
+</script>
+</body>
+</html>

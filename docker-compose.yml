@@ -1,0 +1,61 @@
+# Hearth — a real local network on your Mac.
+#
+#   docker compose up --build
+#
+# Brings up:
+#   seed     — non-mining bootstrap node (RPC on host :8645)
+#   miner1   — mining node, peers to seed
+#   miner2   — mining node, peers to seed
+#   web      — website + wallet + explorer + merchant demo (host :8080)
+#
+# Open http://localhost:8080 (site) and the explorer will read the live chain
+# from the seed node's RPC at http://localhost:8645.
+
+services:
+  seed:
+    build: ./node
+    container_name: hearth-seed
+    environment:
+      HEARTH_P2P: "8646"
+      HEARTH_RPC: "8645"
+    ports:
+      - "8645:8645"   # RPC/HTTP exposed to the host (browser talks to this)
+      - "8646:8646"
+    volumes:
+      - seed-data:/data
+
+  miner1:
+    build: ./node
+    container_name: hearth-miner1
+    environment:
+      HEARTH_PEERS: "seed:8646"
+      HEARTH_MINE: "1"
+      HEARTH_THROTTLE: "0.6"
+    depends_on: [seed]
+    volumes:
+      - miner1-data:/data
+
+  miner2:
+    build: ./node
+    container_name: hearth-miner2
+    environment:
+      HEARTH_PEERS: "seed:8646"
+      HEARTH_MINE: "1"
+      HEARTH_THROTTLE: "0.6"
+    depends_on: [seed]
+    volumes:
+      - miner2-data:/data
+
+  web:
+    image: nginx:alpine
+    container_name: hearth-web
+    ports:
+      - "8080:80"
+    volumes:
+      - ./web:/usr/share/nginx/html:ro
+    depends_on: [seed]
+
+volumes:
+  seed-data:
+  miner1-data:
+  miner2-data:
