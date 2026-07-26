@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # Multi-stage build. Context = repo root (so @cloudsforge/shared is available).
 #   docker build -f apps/hearth-site/Dockerfile .
 # VITE_ vars are baked in at build time (Vite inlines import.meta.env.*).
@@ -12,7 +13,7 @@ ARG VITE_KEYVAULT_URL
 ARG VITE_PLAY_URL
 ARG VITE_STUDIO_URL
 ENV VITE_NIMBUS_URL=$VITE_NIMBUS_URL VITE_API_URL=$VITE_API_URL VITE_PAY_URL=$VITE_PAY_URL VITE_KEYVAULT_URL=$VITE_KEYVAULT_URL VITE_PLAY_URL=$VITE_PLAY_URL VITE_STUDIO_URL=$VITE_STUDIO_URL
-RUN pnpm install --frozen-lockfile --filter @cloudsforge/hearth-site...
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm-store,sharing=locked pnpm install --frozen-lockfile --config.store-dir=/pnpm-store --filter @cloudsforge/hearth-site...
 WORKDIR /repo/apps/hearth-site
 RUN pnpm build
 
