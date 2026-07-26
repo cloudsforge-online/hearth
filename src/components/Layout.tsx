@@ -1,9 +1,8 @@
 import { useEffect } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
-import { CloudsForgeBar } from '@cloudsforge/ui'
+import { CloudsForgeBar, accountUrl } from '@cloudsforge/ui'
 import Nav from './Nav'
 import Footer from './Footer'
-import { STUDIO_URL, PLAY_URL } from '../lib/hearth'
 
 /** Resets scroll on navigation so deep pages start at the top. */
 function ScrollToTop() {
@@ -25,9 +24,9 @@ export default function Layout() {
         current="crypto"
         account={{ signedIn: false }}
         onSignIn={() => {
-          window.location.href = PLAY_URL
+          // Company-wide login lives at the Nimbus Account portal, not the game.
+          window.location.assign(`${accountUrl()}/account`)
         }}
-        productUrls={{ site: STUDIO_URL, play: PLAY_URL }}
       />
       <Nav />
       <main id="main" className="flex-1">
