@@ -3,10 +3,7 @@ import { Outlet, useLocation } from 'react-router-dom'
 import { CloudsForgeBar } from '@cloudsforge/ui'
 import Nav from './Nav'
 import Footer from './Footer'
-import { STUDIO_URL } from '../lib/hearth'
-
-/** Where the shared bar's "Sign in" sends people — the Play/login surface. */
-const PLAY_URL = import.meta.env.VITE_PLAY_URL ?? 'http://localhost:3001'
+import { STUDIO_URL, PLAY_URL } from '../lib/hearth'
 
 /** Resets scroll on navigation so deep pages start at the top. */
 function ScrollToTop() {

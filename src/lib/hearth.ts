@@ -2,7 +2,13 @@
 // Pure marketing data — no backend calls. Every figure is sourced from the
 // Hearth whitepaper, README and docs/coinnomics.md — nothing invented.
 
-export const STUDIO_URL = import.meta.env.VITE_STUDIO_URL ?? 'http://localhost:3000'
+import { cloudsforgeHosts } from '@cloudsforge/ui'
+
+// Resolve CloudsForge URLs from the current hostname at runtime (localhost in
+// dev, *.cloudsforge.online in prod) so one build works everywhere.
+const HOSTS = cloudsforgeHosts()
+export const STUDIO_URL = HOSTS.site
+export const PLAY_URL = HOSTS.play
 
 export const HEARTH = {
   network: 'Hearth',
