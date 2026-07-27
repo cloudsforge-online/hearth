@@ -84,9 +84,10 @@ confirming they share an isolated chain distinct from the default `hearth`
 network. Because the miners peer to the seed, all three converge on one chain;
 the seed's height climbs even though it does not mine.
 
-## Also part of the unified compose
+## Running alongside the rest of CloudsForge
 
-This testnet is **also included in the repo-root unified `docker-compose.yml`**;
-that orchestrator wires the testnet into the wider CloudsForge monorepo
-separately. This file (`docker-compose.testnet.yml`) is the standalone,
-self-contained way to run just the EMBER testnet.
+`docker-compose.testnet.yml` is self-contained and needs nothing outside this
+repository. The CloudsForge platform's own orchestrator
+([cloudsforge-online/cloudsforge](https://github.com/cloudsforge-online/cloudsforge))
+wires an equivalent testnet into the full stack separately; use that one if you
+need EMBER running next to Forge Pay and the rest.

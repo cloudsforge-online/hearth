@@ -6,14 +6,15 @@
   <i>Mine EMBER on the computer you already own — no farms, no pools, no premine.</i>
   <br/><br/>
 
-  <img alt="tests" src="https://img.shields.io/badge/node-50%2F50%20checks-brightgreen">
+  <a href="https://github.com/cloudsforge-online/hearth/actions/workflows/ci.yml"><img alt="ci" src="https://github.com/cloudsforge-online/hearth/actions/workflows/ci.yml/badge.svg"></a>
+  <img alt="tests" src="https://img.shields.io/badge/node-77%2F77%20checks-brightgreen">
   <img alt="rust" src="https://img.shields.io/badge/rust%20core-29%20tests%20%C2%B7%20clippy%20clean-orange">
   <img alt="deps" src="https://img.shields.io/badge/rust%20deps-2%20(ed25519%2C%20getrandom)-blue">
   <img alt="license" src="https://img.shields.io/badge/license-MIT-lightgrey">
   <img alt="pow" src="https://img.shields.io/badge/PoW-Homefire%20(CPU%2C%20non--outsourceable)-ff4d00">
 
   <br/><br/>
-  🌐 <b>Website &amp; live explorer: <a href="https://savvaniss.github.io/hearth/">savvaniss.github.io/hearth</a></b>
+  🌐 <b>Website &amp; live explorer: <a href="https://cloudsforge-online.github.io/hearth/">cloudsforge-online.github.io/hearth</a></b>
   <br/><br/>
   <code>proof of work · CPU mining · ASIC-resistant · fair launch · digital cash</code>
 </div>
@@ -141,7 +142,7 @@ hearth/
 ├── proto/                             coinnomics simulator + standalone PoW demo
 ├── scripts/run-local-network.sh       local network without Docker
 ├── docker-compose.yml                 seed + 2 miners + web
-└── .github/workflows/ci.yml           CI: node tests + rust build + web lint
+└── .github/workflows/ci.yml           CI: node tests (unit + e2e + p2p) + rust build + web lint + secret hygiene
 ```
 
 ## Status

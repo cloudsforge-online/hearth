@@ -17,11 +17,16 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
       - name: Unit tests
         run: node test/unit.js
       - name: End-to-end test
         run: node test/e2e.js
+      # Two real nodes on real sockets: partition, mine competing branches,
+      # reconnect, require a reorg. The in-process e2e test never starts p2p,
+      # which is how "fork sync is impossible over the network" shipped.
+      - name: P2P fork-sync test
+        run: node test/p2p-fork.js
       - name: Coinnomics model sanity
         run: node ../proto/emission.js > /dev/null
 
@@ -52,7 +57,42 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
       - name: Syntax-check front-end JS
         run: |
           for f in web/assets/*.js; do node --check "$f"; done
+
+  secret-hygiene:
+    name: Secret hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: .env must never be tracked by git
+        run: |
+          if git ls-files --error-unmatch .env 2>/dev/null; then
+            echo "::error::.env is tracked by git"
+            exit 1
+          fi
+          echo "ok: .env is not tracked"
+      - name: No API tokens committed
+        run: |
+          if git grep -nIE 'sk-proj-[A-Za-z0-9_-]{20,}' -- . ':!*.example' ':!.github/workflows/*'; then
+            echo "::error::possible committed API token"
+            exit 1
+          fi
+          echo "ok: no committed API tokens found"
+      # Matches a PEM header followed by real base64 body, not the header alone.
+      # web/ builds and accepts PEM for wallet key export/import, so the bare
+      # header appears in source as a string literal and an input placeholder —
+      # a check that flags those gets muted, which is how a real key eventually
+      # slips through.
+      - name: No private keys committed
+        run: |
+          hits=$(git ls-files -z | xargs -0 grep -lPz --binary-files=without-match \
+            'BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----\s*\r?\n[A-Za-z0-9+/=]{40,}' || true)
+          if [ -n "$hits" ]; then
+            echo "$hits"
+            echo "::error::possible committed private key"
+            exit 1
+          fi
+          echo "ok: no committed private keys found"

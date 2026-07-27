@@ -27,3 +27,14 @@ Thumbs.db
 # logs / tmp
 *.log
 tmp/
+
+# scripts/run-local-network.sh writes these at the repo root. In the monorepo
+# they were covered by the root .gitignore; standalone, this file is the only
+# thing covering them.
+.netdata/
+.netlogs/
+
+# secrets
+.env
+.env.*
+!.env.example
