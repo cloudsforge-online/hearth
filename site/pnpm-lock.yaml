@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@cloudsforge/shared':
+        specifier: ^0.2.1
+        version: 0.2.1
       '@cloudsforge/ui':
         specifier: ^0.3.0
         version: 0.3.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -131,8 +134,8 @@ packages:
     resolution: {integrity: sha512-4zBIxpPzowiZpusoFkyGVwakdRJUyuH5PxQ/PrqghfdFWWasvnCdPfQXHrenDai+gyLARulZjZowCOj6fjT4pA==}
     engines: {node: '>=6.9.0'}
 
-  '@cloudsforge/shared@0.2.0':
-    resolution: {integrity: sha512-AVQ3jlPUi4M50QythkxMI5tIGJZACrgxrWVfJO4CAp9447TiJ8wd/FmXLaC5DfCUPgEcQhBdtnye3IfZnfm57A==}
+  '@cloudsforge/shared@0.2.1':
+    resolution: {integrity: sha512-mb37ncqb9Ql2zSg40Hr8d4/CiP0CEGJCMMynQs2lRr6BDLP39BVAuFLG2td5BN7EYsDOtxh56GP2CPTbVAc6Hg==}
 
   '@cloudsforge/ui@0.3.0':
     resolution: {integrity: sha512-Mn5H2N1EQPL3hZ3gsR6LfPEo6RN2LC59FCebm2f1hvFsFmVg+yBovVu+2vgijeeqivPJJOLH1lZkxJjX3Ou4eQ==}
@@ -1006,13 +1009,13 @@ snapshots:
       '@babel/helper-string-parser': 7.29.7
       '@babel/helper-validator-identifier': 7.29.7
 
-  '@cloudsforge/shared@0.2.0':
+  '@cloudsforge/shared@0.2.1':
     dependencies:
       zod: 3.25.76
 
   '@cloudsforge/ui@0.3.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
     dependencies:
-      '@cloudsforge/shared': 0.2.0
+      '@cloudsforge/shared': 0.2.1
       react: 19.2.8
       react-dom: 19.2.8(react@19.2.8)
 
