@@ -3,18 +3,41 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Hearth Wallet — Non-Custodial EMBER Wallet &amp; In-Browser Mining</title>
-<meta name="description" content="The Hearth web wallet: hold, send and receive EMBER with keys that never leave your device, and mine right in your browser. Fast, near-zero fees, non-custodial.">
+<title>Hearth Wallet — Non-Custodial EMBER Wallet</title>
+<meta name="description" content="A real non-custodial EMBER wallet that runs entirely in your browser: Ed25519 keys generated on your device, transactions signed locally, balances read live from a hearthd node.">
 <meta name="robots" content="index, follow">
 <meta name="theme-color" content="#ff4d00">
 <link rel="canonical" href="https://savvaniss.github.io/hearth/wallet.html">
 <meta property="og:title" content="Hearth Wallet">
-<meta property="og:description" content="Non-custodial EMBER wallet with in-browser mining. Your keys, your money.">
+<meta property="og:description" content="Non-custodial EMBER wallet. Keys are generated and signed in your browser; only signed transactions reach the network.">
 <meta property="og:image" content="https://savvaniss.github.io/hearth/assets/og-image.svg">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
 <link rel="manifest" href="site.webmanifest">
+<meta name="hearth-rpc" content="http://localhost:8645">
 <link rel="stylesheet" href="assets/styles.css">
+<style>
+  .field { width:100%; padding:12px; border-radius:10px; border:1px solid var(--line);
+           background:var(--ink-900); color:var(--cream); font-family:var(--mono); font-size:.9rem; }
+  .field:focus { outline:none; border-color:var(--ember-300); }
+  .lbl { display:block; margin:12px 0 6px; color:var(--cream-faint); font-family:var(--mono); font-size:.8rem;
+         text-transform:uppercase; letter-spacing:.08em; }
+  .note { border-left:2px solid var(--ember-500); padding:2px 0 2px 14px; margin:14px 0; }
+  .log { font-family:var(--mono); font-size:.82rem; line-height:1.7; margin-top:14px; }
+  .log div { color:var(--cream-dim); }
+  .log .good { color:var(--ok); }
+  .log .bad { color:var(--ember-400); }
+  .kv { display:flex; justify-content:space-between; gap:12px; padding:7px 0; border-bottom:1px solid var(--line); }
+  .kv:last-child { border-bottom:0; }
+  .kv .k { color:var(--cream-faint); font-size:.85rem; }
+  .kv .v { font-family:var(--mono); font-size:.85rem; }
+  .brk { word-break:break-all; }
+  .hide { display:none !important; }
+  code.cmd { display:block; background:var(--ink-900); border:1px solid var(--line); border-radius:10px;
+             padding:12px; font-family:var(--mono); font-size:.8rem; overflow-x:auto; white-space:pre; }
+  .btn[disabled] { opacity:.45; pointer-events:none; }
+  .row-btns { display:flex; flex-wrap:wrap; gap:10px; margin-top:14px; }
+</style>
 </head>
 <body>
 <nav class="nav">
@@ -28,79 +51,471 @@
 </nav>
 
 <section>
-  <div class="wrap grid g2" style="gap:32px; align-items:start">
-    <!-- balance + mining -->
-    <div class="card">
-      <span class="pill">Web wallet</span>
-      <div style="display:flex; align-items:center; gap:16px; margin:16px 0">
-        <div class="hearth" style="width:120px;height:120px;border-radius:16px">
-          <div class="embers"></div><div class="flame" style="width:64px;height:82px;bottom:24px"></div>
-        </div>
-        <div>
-          <div class="stat"><div class="l">balance</div><div class="n" id="bal">128.90</div></div>
-          <div class="muted mono" id="addr">ember1q7f… copy</div>
-        </div>
-      </div>
-      <div class="grid g2">
-        <button class="btn btn-primary" id="mineBtn">🔥 Start mining</button>
-        <a class="btn btn-ghost" href="#send">Send EMBER</a>
-      </div>
-      <div class="muted mono" id="mineStat" style="margin-top:14px">idle · press start to tend the fire</div>
-    </div>
+  <div class="wrap">
+    <span class="pill" id="mode">● connecting…</span>
+    <h2>Web wallet</h2>
+    <p>Your key is created here, in this tab, and stays here. Balances come from a
+      running <span class="mono">hearthd</span> node (default <span class="mono">:8645</span>, override
+      with <span class="mono">?rpc=</span>); payments are signed on this device and broadcast already
+      signed. There is no server-side wallet and no demo mode — if no node is reachable this
+      page tells you so instead of inventing numbers.</p>
+  </div>
 
-    <!-- send -->
-    <div class="card" id="send">
-      <h3>Send</h3>
-      <label class="muted mono" style="display:block;margin:6px 0">to address</label>
-      <input id="to" value="ember1qmerchant7a3f…" style="width:100%;padding:12px;border-radius:10px;border:1px solid var(--line);background:var(--ink-900);color:var(--cream);font-family:var(--mono)">
-      <label class="muted mono" style="display:block;margin:12px 0 6px">amount (EMBER)</label>
-      <input id="amt" value="12.50" style="width:100%;padding:12px;border-radius:10px;border:1px solid var(--line);background:var(--ink-900);color:var(--cream);font-family:var(--mono)">
-      <div class="muted mono" style="margin:12px 0">fee ≈ 0.0004 EMBER · confirms in ~15s (instant over Tab)</div>
-      <button class="btn btn-primary" id="sendBtn">Send payment</button>
-      <div id="sendMsg" class="mono" style="margin-top:12px"></div>
+  <!-- node unreachable -->
+  <div class="wrap card hide" id="offline" style="margin-top:24px; border-color:var(--ember-500)">
+    <h3 style="margin-top:0">No node reachable</h3>
+    <p class="muted" id="offlineWhy">Could not reach the Hearth node.</p>
+    <p class="muted">Start one locally and reload:</p>
+    <code class="cmd">cd hearth/node &amp;&amp; node bin/hearthd.js --mine</code>
+    <div class="row-btns"><button class="btn btn-primary" id="retryBtn">Retry connection</button></div>
+  </div>
+
+  <!-- no key yet -->
+  <div class="wrap card hide" id="setup" style="margin-top:24px">
+    <h3 style="margin-top:0">Create or import a key</h3>
+    <p class="muted">A wallet is one Ed25519 keypair. Creating one runs
+      <span class="mono">crypto.getRandomValues()</span> in this tab — nothing is requested from the
+      network and nothing about the key is sent anywhere.</p>
+    <div class="row-btns">
+      <button class="btn btn-primary" id="createBtn">Create a new key</button>
+      <button class="btn btn-ghost" id="showImportBtn">Import a PEM key</button>
+    </div>
+    <div class="hide" id="importBox">
+      <label class="lbl" for="importPem">PKCS#8 Ed25519 private key (PEM)</label>
+      <textarea id="importPem" class="field" rows="5" spellcheck="false"
+        placeholder="-----BEGIN PRIVATE KEY-----"></textarea>
+      <div class="row-btns"><button class="btn btn-primary" id="importBtn">Import</button></div>
+      <div class="log" id="importMsg"></div>
     </div>
   </div>
 
-  <div class="wrap card" style="margin-top:24px">
-    <h3>Recent activity</h3>
-    <table class="blocks"><tbody id="activity">
-      <tr><td>received</td><td style="color:var(--ok)">+0.42 EMBER</td><td class="muted">mining reward</td><td class="muted">2m ago</td></tr>
-      <tr><td>sent</td><td style="color:var(--ember-400)">−4.00 EMBER</td><td class="muted">Corner Bakery</td><td class="muted">1h ago</td></tr>
-      <tr><td>received</td><td style="color:var(--ok)">+50.00 EMBER</td><td class="muted">from ember1qz…</td><td class="muted">yesterday</td></tr>
-    </tbody></table>
+  <!-- wallet -->
+  <div class="wrap hide" id="app">
+    <div class="grid g2" style="gap:32px; align-items:start; margin-top:24px">
+
+      <div class="card">
+        <span class="pill">Balance · live from node</span>
+        <div style="display:flex; align-items:center; gap:16px; margin:16px 0">
+          <div class="hearth" style="width:104px;height:104px;border-radius:16px">
+            <div class="embers"></div><div class="flame" style="width:56px;height:72px;bottom:20px"></div>
+          </div>
+          <div>
+            <div class="stat">
+              <div class="l">spendable</div>
+              <div class="n" id="bal">—</div>
+            </div>
+            <div class="muted mono" style="font-size:.8rem" id="balSub">reading chain…</div>
+          </div>
+        </div>
+        <div class="kv"><span class="k">your address</span><span class="v brk" id="addr">—</span></div>
+        <div class="kv"><span class="k">confirmed total</span><span class="v" id="balTotal">—</span></div>
+        <div class="kv"><span class="k">maturing (coinbase)</span><span class="v" id="balImmature">—</span></div>
+        <div class="kv"><span class="k">unspent outputs</span><span class="v" id="utxoCount">—</span></div>
+        <div class="kv"><span class="k">chain height</span><span class="v" id="height">—</span></div>
+        <div class="row-btns">
+          <button class="btn btn-ghost" id="copyAddrBtn">Copy address</button>
+          <button class="btn btn-ghost" id="refreshBtn">Refresh</button>
+        </div>
+      </div>
+
+      <div class="card" id="send">
+        <h3 style="margin-top:0">Send EMBER</h3>
+        <label class="lbl" for="to">to address</label>
+        <input id="to" class="field" spellcheck="false" placeholder="ember1…" autocomplete="off">
+        <label class="lbl" for="amt">amount (EMBER)</label>
+        <input id="amt" class="field" spellcheck="false" placeholder="0.00" autocomplete="off">
+        <div class="kv" style="margin-top:14px"><span class="k">network fee (burned)</span><span class="v" id="feeLbl">0.0004 EMBER</span></div>
+        <div class="kv"><span class="k">total debited</span><span class="v" id="totalLbl">—</span></div>
+        <div class="row-btns"><button class="btn btn-primary" id="sendBtn">Sign &amp; broadcast</button></div>
+        <div class="log" id="sendLog"></div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:24px; padding:8px 8px 0">
+      <h3 style="margin:14px 16px 6px">Unspent outputs</h3>
+      <p class="muted" style="margin:0 16px 10px; font-size:.85rem">Every coin this address controls,
+        straight from the node's UTXO set. Freshly mined coins are locked until they are
+        <span class="mono">10</span> blocks deep.</p>
+      <table class="blocks">
+        <thead><tr><th>Amount</th><th>Source tx</th><th>Vout</th><th>Height</th><th>Status</th></tr></thead>
+        <tbody id="utxos"></tbody>
+      </table>
+    </div>
+
+    <div class="card hide" style="margin-top:24px; padding:8px 8px 0" id="pendingCard">
+      <h3 style="margin:14px 16px 6px">Pending in mempool</h3>
+      <table class="blocks">
+        <thead><tr><th>Txid</th><th>Effect on this address</th><th>Fee</th></tr></thead>
+        <tbody id="pending"></tbody>
+      </table>
+    </div>
+
+    <div class="grid g2" style="gap:32px; align-items:start; margin-top:24px">
+      <div class="card">
+        <h3 style="margin-top:0">Mining</h3>
+        <p class="muted">This page does not mine, and nothing in this project mines in a browser.
+          Hearth's proof-of-work (Homefire) is memory-hard and runs in <span class="mono">hearthd</span>.</p>
+        <p class="muted">Mining is also non-outsourceable: the coinbase public key is hashed into the
+          proof-of-work seed, so a node can only mine to a key it actually holds. Pointing
+          <span class="mono">--miner-address</span> at an address the node has no key for silently
+          mines to the node's own wallet instead. To mine to <em>this</em> address, give the node this
+          key — export it below, append it to <span class="mono">data/wallet.json</span>, then:</p>
+        <code class="cmd" id="mineCmd">node bin/hearthd.js --mine --miner-address …</code>
+        <p class="muted" style="font-size:.85rem">Mined coins are locked for 10 blocks before they can
+          be spent; until then they show up above as <em>maturing</em>.</p>
+        <div class="row-btns"><button class="btn btn-ghost" id="copyCmdBtn">Copy command</button></div>
+      </div>
+
+      <div class="card">
+        <h3 style="margin-top:0">Your key</h3>
+        <div class="note">
+          <p class="muted" style="margin:0">The private key is stored <strong>unencrypted</strong> in this
+            browser's <span class="mono">localStorage</span> under <span class="mono">hearth.wallet.v1</span>.
+            Anything that can read this browser profile can spend these coins. Clearing site data
+            destroys the key and the coins with it. Treat this as pocket money and keep a backup.</p>
+        </div>
+        <div class="kv"><span class="k">public key (SPKI DER)</span><span class="v brk" id="pubKey">—</span></div>
+        <div class="row-btns">
+          <button class="btn btn-ghost" id="exportBtn">Export key (PEM)</button>
+          <button class="btn btn-ghost" id="downloadBtn">Download backup</button>
+          <button class="btn btn-ghost" id="forgetBtn">Forget key</button>
+        </div>
+        <div class="hide" id="exportBox">
+          <label class="lbl">private key — anyone holding this owns the funds</label>
+          <textarea id="exportPem" class="field" rows="5" readonly spellcheck="false"></textarea>
+          <p class="muted" style="font-size:.8rem">Same PKCS#8 PEM format
+            <span class="mono">hearthd</span> keeps in <span class="mono">data/wallet.json</span>, so this key
+            works in the CLI wallet too.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:24px">
+      <h3 style="margin-top:0">What this wallet does and doesn't do</h3>
+      <div class="grid g2">
+        <div>
+          <p class="muted" style="margin:0 0 6px"><strong style="color:var(--ok)">Does</strong></p>
+          <p class="muted" style="font-size:.9rem; margin:0">Generates an Ed25519 key locally · derives a
+            checksummed <span class="mono">ember1</span> address · reads real balances and UTXOs from the node ·
+            builds, signs and broadcasts real transactions · shows the node's own txid and waits for the
+            block that contains it.</p>
+        </div>
+        <div>
+          <p class="muted" style="margin:0 0 6px"><strong style="color:var(--ember-400)">Doesn't</strong></p>
+          <p class="muted" style="font-size:.9rem; margin:0">No mining · no encryption at rest · no seed
+            phrase or multi-address HD derivation (one key per browser) · no transaction history beyond the
+            current UTXO set and mempool · no fee estimation beyond the fixed base fee · no hardware
+            wallet support.</p>
+        </div>
+      </div>
+    </div>
   </div>
 </section>
 
-<footer><div class="wrap"><span class="muted">Hearth Wallet · non-custodial demo · keys never leave your device</span></div></footer>
+<footer><div class="wrap"><span class="muted">Hearth Wallet · keys are generated and signed in your browser and are never sent to the node · this page does not mine</span></div></footer>
 
 <script src="assets/app.js"></script>
-<script>
-  document.querySelectorAll('.hearth').forEach(h => Hearth.igniteHearth(h, 1));
-  let bal = 128.90, mining = false, mineTimer;
-  const balEl = document.getElementById('bal');
+<script src="assets/api.js"></script>
+<script type="module">
+import * as WC from './assets/wallet-core.js';
 
-  document.getElementById('mineBtn').addEventListener('click', (e) => {
-    mining = !mining;
-    e.target.innerHTML = mining ? '⏸ Pause mining' : '🔥 Start mining';
-    document.getElementById('mineStat').textContent = mining
-      ? 'tending the fire · polite mode 35% CPU · solo'
-      : 'idle · press start to tend the fire';
-    clearInterval(mineTimer);
-    if (mining) mineTimer = setInterval(() => {
-      const r = 0.01 + Math.random()*0.03;
-      bal += r; balEl.textContent = bal.toFixed(2);
-      document.getElementById('activity').insertAdjacentHTML('afterbegin',
-        `<tr class="tag-new"><td>received</td><td style="color:var(--ok)">+${r.toFixed(3)} EMBER</td><td class="muted">mining reward</td><td class="muted">now</td></tr>`);
-    }, 3000);
-  });
+const $ = id => document.getElementById(id);
+const show = (el, on) => el.classList.toggle('hide', !on);
+const STORE = 'hearth.wallet.v1';
+const EMBER = WC.SPARKS_PER_EMBER;
 
-  document.getElementById('sendBtn').addEventListener('click', () => {
-    const amt = parseFloat(document.getElementById('amt').value || '0');
-    if (!(amt > 0) || amt > bal) { document.getElementById('sendMsg').textContent = '✗ invalid amount'; return; }
-    bal -= amt + 0.0004; balEl.textContent = bal.toFixed(2);
-    const txid = (Math.random().toString(16)+'0000').slice(2,14);
-    document.getElementById('sendMsg').innerHTML = `<span style="color:var(--ok)">✓ sent — tx ${txid}… confirmed over Tab in 380ms</span>`;
-  });
+let key = null, net = null, tipHeight = 0, utxos = [], unsubscribe = null;
+
+document.querySelectorAll('.hearth').forEach(h => Hearth.igniteHearth(h, 1));
+
+function setMode(text, color) {
+  $('mode').textContent = text;
+  $('mode').style.color = color;
+}
+
+function logLine(box, text, cls) {
+  const d = document.createElement('div');
+  if (cls) d.className = cls;
+  d.textContent = text;
+  box.appendChild(d);
+  return d;
+}
+
+function cell(tr, text, opts = {}) {
+  const td = document.createElement('td');
+  if (opts.cls) td.className = opts.cls;
+  if (opts.style) td.style.cssText = opts.style;
+  td.textContent = text;
+  tr.appendChild(td);
+}
+
+async function flash(btn, text) {
+  const old = btn.textContent;
+  btn.textContent = text;
+  setTimeout(() => { btn.textContent = old; }, 1400);
+}
+
+// ---- key lifecycle ---------------------------------------------------------
+async function loadKey() {
+  const raw = localStorage.getItem(STORE);
+  if (!raw) return null;
+  try {
+    return await WC.importKey(JSON.parse(raw).priv);
+  } catch (e) {
+    console.warn('stored key unreadable', e);
+    return null;
+  }
+}
+
+function persist(k) {
+  localStorage.setItem(STORE, JSON.stringify({ priv: k.priv, address: k.address, created: Date.now() }));
+}
+
+function adoptKey(k) {
+  key = k;
+  persist(k);
+  $('addr').textContent = k.address;
+  $('pubKey').textContent = k.pub;
+  $('exportPem').value = k.priv;
+  $('mineCmd').textContent = 'node bin/hearthd.js --mine --miner-address ' + k.address;
+  show($('setup'), false);
+  show($('app'), true);
+  refresh();
+}
+
+// ---- node reads ------------------------------------------------------------
+async function connect() {
+  show($('offline'), false);
+  setMode('● connecting…', 'var(--gold-300)');
+  try {
+    const info = await HearthAPI.get('/info');
+    net = info.network;
+    tipHeight = info.height;
+    setMode('● LIVE — ' + info.network + ' @ ' + HearthAPI.BASE, 'var(--ok)');
+    return true;
+  } catch (e) {
+    setMode('● offline', 'var(--ember-400)');
+    $('offlineWhy').textContent =
+      `Could not reach ${HearthAPI.BASE} — ${e.message}. The wallet needs a node to read balances and to broadcast payments.`;
+    show($('offline'), true);
+    show($('app'), false);
+    show($('setup'), false);
+    return false;
+  }
+}
+
+async function refresh() {
+  if (!key || !net) return;
+  try {
+    const [acct, info, pool] = await Promise.all([
+      HearthAPI.get('/address/' + key.address),
+      HearthAPI.get('/info'),
+      HearthAPI.get('/mempool'),
+    ]);
+    tipHeight = info.height;
+    utxos = acct.utxos || [];
+    renderAccount(acct, info);
+    renderUtxos(acct.utxos || []);
+    renderPending(pool.txs || []);
+  } catch (e) {
+    $('balSub').textContent = 'node unreachable — ' + e.message;
+    setMode('● offline', 'var(--ember-400)');
+  }
+}
+
+function renderAccount(acct, info) {
+  // older nodes don't report maturity; fall back to treating everything as spendable
+  const spendable = acct.spendable != null ? acct.spendable : acct.balance;
+  const immature = acct.immature != null ? acct.immature : 0;
+  $('bal').textContent = WC.emberStr(spendable, 4);
+  $('balSub').textContent = spendable === 0 && acct.balance === 0
+    ? 'no coins yet — mine to this address or receive a payment'
+    : 'EMBER · updated at height ' + info.height;
+  $('balTotal').textContent = WC.emberStr(acct.balance) + ' EMBER';
+  $('balImmature').textContent = WC.emberStr(immature) + ' EMBER';
+  $('utxoCount').textContent = String((acct.utxos || []).length);
+  $('height').textContent = '#' + Number(info.height).toLocaleString();
+  setMode('● LIVE — ' + net + ' @ ' + HearthAPI.BASE, 'var(--ok)');
+}
+
+function renderUtxos(list) {
+  const tb = $('utxos');
+  tb.textContent = '';
+  if (!list.length) {
+    const tr = document.createElement('tr');
+    cell(tr, 'no unspent outputs for this address', { cls: 'muted' });
+    tr.firstChild.colSpan = 5;
+    tb.appendChild(tr);
+    return;
+  }
+  for (const u of [...list].sort((a, b) => b.amount - a.amount)) {
+    const tr = document.createElement('tr');
+    const spendable = u.spendable !== false;
+    cell(tr, WC.emberStr(u.amount) + ' EMBER', { style: 'color:var(--gold-200);font-weight:700' });
+    cell(tr, u.txid.slice(0, 20) + '…', { cls: 'muted' });
+    cell(tr, String(u.vout));
+    cell(tr, u.height != null ? '#' + u.height : '—', { cls: 'muted' });
+    cell(tr, spendable ? 'spendable' : `maturing → #${u.maturesAtHeight}`,
+      { style: spendable ? 'color:var(--ok)' : 'color:var(--gold-300)' });
+    tb.appendChild(tr);
+  }
+}
+
+function renderPending(txs) {
+  const mine = [];
+  for (const e of txs) {
+    const tx = e.tx || e;
+    const out = (tx.outputs || []).filter(o => o.address === key.address).reduce((s, o) => s + o.amount, 0);
+    const spent = (tx.inputs || []).some(i => utxos.some(u => u.txid === i.txid && u.vout === i.vout));
+    if (out > 0 || spent) mine.push({ id: tx.id, out, spent, fee: e.fee });
+  }
+  show($('pendingCard'), mine.length > 0);
+  const tb = $('pending');
+  tb.textContent = '';
+  for (const m of mine) {
+    const tr = document.createElement('tr');
+    cell(tr, m.id.slice(0, 24) + '…', { cls: 'muted' });
+    cell(tr, m.spent ? 'spends your outputs' : '+' + WC.emberStr(m.out) + ' EMBER',
+      { style: m.spent ? 'color:var(--ember-400)' : 'color:var(--ok)' });
+    cell(tr, m.fee != null ? WC.emberStr(m.fee) + ' EMBER' : '—', { cls: 'muted' });
+    tb.appendChild(tr);
+  }
+}
+
+// ---- send ------------------------------------------------------------------
+function updateTotal() {
+  try {
+    const s = WC.emberToSparks($('amt').value || '0');
+    $('totalLbl').textContent = s > 0 ? WC.emberStr(s + WC.BASE_FEE_SPARKS) + ' EMBER' : '—';
+  } catch { $('totalLbl').textContent = '—'; }
+}
+$('amt').addEventListener('input', updateTotal);
+
+async function waitForInclusion(txId, box) {
+  const line = logLine(box, '⋯ waiting for a block to include it…');
+  const check = async (height) => {
+    try {
+      const b = await HearthAPI.get('/block/' + height);
+      if ((b.txs || []).some(t => t.id === txId)) {
+        line.textContent = `✓ confirmed in block #${b.header.height}`;
+        line.className = 'good';
+        if (unsubscribe) { unsubscribe(); unsubscribe = null; }
+        refresh();
+        return true;
+      }
+    } catch {}
+    return false;
+  };
+  if (unsubscribe) unsubscribe();
+  unsubscribe = HearthAPI.onBlock(async (b) => { await check(b.height); });
+  // SSE can be blocked by proxies; poll the tip as a backstop
+  const poll = setInterval(async () => {
+    try {
+      const info = await HearthAPI.get('/info');
+      if (await check(info.height)) clearInterval(poll);
+    } catch {}
+  }, 4000);
+  setTimeout(() => clearInterval(poll), 300000);
+}
+
+$('sendBtn').addEventListener('click', async () => {
+  const box = $('sendLog');
+  box.textContent = '';
+  const btn = $('sendBtn');
+  const to = $('to').value.trim();
+  let amountSparks;
+  try {
+    amountSparks = WC.emberToSparks($('amt').value);
+  } catch (e) {
+    logLine(box, '✗ ' + e.message, 'bad');
+    return;
+  }
+  if (!(amountSparks > 0)) { logLine(box, '✗ amount must be greater than zero', 'bad'); return; }
+  if (!(await WC.isValidAddress(to))) {
+    logLine(box, '✗ that is not a valid ember1 address (checksum failed)', 'bad');
+    return;
+  }
+
+  btn.disabled = true;
+  try {
+    const acct = await HearthAPI.get('/address/' + key.address);
+    const spendableUtxos = (acct.utxos || []).filter(u => u.spendable !== false);
+    logLine(box, `· ${spendableUtxos.length} spendable output(s), ${WC.emberStr(acct.spendable ?? acct.balance)} EMBER available`);
+
+    const tx = await WC.buildTx({ key, utxos: spendableUtxos, to, amountSparks, net });
+    logLine(box, `· signed locally — ${tx.inputs.length} input(s), ${tx.outputs.length} output(s)`);
+    logLine(box, `· txid ${tx.id}`);
+
+    logLine(box, '· broadcasting to ' + HearthAPI.BASE + ' …');
+    const r = await HearthAPI.post('/tx', { tx });
+    if (!r.ok) { logLine(box, '✗ node rejected it: ' + (r.err || 'unknown error'), 'bad'); return; }
+
+    const pool = await HearthAPI.get('/mempool');
+    const held = (pool.txs || []).some(e => (e.tx || e).id === tx.id);
+    logLine(box, held ? '✓ node accepted — tx is in its mempool' : '✓ node accepted', 'good');
+    $('amt').value = '';
+    updateTotal();
+    refresh();
+    waitForInclusion(tx.id, box);
+  } catch (e) {
+    logLine(box, '✗ ' + e.message, 'bad');
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+// ---- key management UI -----------------------------------------------------
+$('createBtn').addEventListener('click', async () => {
+  adoptKey(await WC.generateKey());
+});
+$('showImportBtn').addEventListener('click', () => show($('importBox'), true));
+$('importBtn').addEventListener('click', async () => {
+  $('importMsg').textContent = '';
+  try {
+    adoptKey(await WC.importKey($('importPem').value));
+  } catch (e) {
+    logLine($('importMsg'), '✗ ' + e.message, 'bad');
+  }
+});
+$('exportBtn').addEventListener('click', () => {
+  const box = $('exportBox');
+  show(box, box.classList.contains('hide'));
+});
+$('downloadBtn').addEventListener('click', () => {
+  const blob = new Blob([key.priv], { type: 'application/x-pem-file' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = key.address.slice(0, 18) + '.pem';
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+$('forgetBtn').addEventListener('click', () => {
+  if (!confirm('Delete this key from this browser? Without an exported backup the coins are gone for good.')) return;
+  localStorage.removeItem(STORE);
+  location.reload();
+});
+$('copyAddrBtn').addEventListener('click', async () => {
+  await navigator.clipboard.writeText(key.address);
+  flash($('copyAddrBtn'), 'Copied');
+});
+$('copyCmdBtn').addEventListener('click', async () => {
+  await navigator.clipboard.writeText($('mineCmd').textContent);
+  flash($('copyCmdBtn'), 'Copied');
+});
+$('refreshBtn').addEventListener('click', refresh);
+$('retryBtn').addEventListener('click', boot);
+
+// ---- boot ------------------------------------------------------------------
+async function boot() {
+  if (!(await connect())) return;
+  const k = await loadKey();
+  if (k) adoptKey(k);
+  else { show($('setup'), true); show($('app'), false); }
+}
+
+HearthAPI.onBlock(() => refresh());
+setInterval(() => { if (key && net) refresh(); }, 8000);
+boot();
 </script>
 </body>
 </html>

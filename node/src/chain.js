@@ -250,6 +250,13 @@ class Chain extends EventEmitter {
       return { ok: true, id };
     }
 
+    // fork: prove the work BEFORE _stateAt, which replays the UTXO set from
+    // genesis — otherwise a remote peer buys a full replay with an unproven block
+    if (!Array.isArray(block.txs) || block.txs.length === 0) return { ok: false, err: 'no txs' };
+    if (hdr.target !== this._nextTarget(hdr.prevHash)) return { ok: false, err: 'wrong difficulty target' };
+    const pw = BLOCK.verifyPow(block);
+    if (!pw.ok) return pw;
+
     // fork: validate against the state at the block's parent
     const parentState = this._stateAt(hdr.prevHash);
     const r = this._validate(block, parent, parentState.utxo);

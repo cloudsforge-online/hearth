@@ -70,7 +70,7 @@ class RPC {
       }
       if (p.startsWith('/address/')) {
         const a = p.slice('/address/'.length);
-        return json(res, 200, { address: a, balance: this.node.chain.balance(a), utxos: this.node.chain.utxosFor(a) });
+        return json(res, 200, this._address(a));
       }
       if (p === '/mempool') return json(res, 200, { size: this.node.mempool.size, txs: this.node.mempool.list() });
       if (p === '/events') return this._sse(req, res);
@@ -113,6 +113,29 @@ class RPC {
       difficultyTarget: c.nextTarget(),
       minerAddress: this.node.minerAddress,
     };
+  }
+
+  // Adds coinbase-maturity info on top of chain.utxosFor(), which omits it —
+  // without this a wallet can't tell a spendable coin from a maturing one and
+  // can only discover the difference by having a payment rejected.
+  _address(a) {
+    const c = this.node.chain;
+    const spendHeight = c.height + 1;
+    const utxos = [];
+    let balance = 0, spendable = 0;
+    for (const [k, o] of c.utxo) {
+      if (o.address !== a) continue;
+      const [txid, vout] = k.split(':');
+      const matured = !o.coinbase || (o.height != null && (spendHeight - o.height) >= P.COINBASE_MATURITY);
+      balance += o.amount;
+      if (matured) spendable += o.amount;
+      utxos.push({
+        txid, vout: Number(vout), amount: o.amount,
+        coinbase: !!o.coinbase, height: o.height, spendable: matured,
+        maturesAtHeight: o.coinbase ? (o.height + P.COINBASE_MATURITY) : null,
+      });
+    }
+    return { address: a, balance, spendable, immature: balance - spendable, height: c.height, utxos };
   }
 
   _supply() {

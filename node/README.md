@@ -49,7 +49,7 @@ node bin/hearth-cli.js blocks 10
 | GET | `/supply` | circulating supply, commons treasury, burned total |
 | GET | `/blocks?limit=N` | latest block summaries |
 | GET | `/block/:idOrHeight` | full block |
-| GET | `/address/:addr` | balance + UTXOs |
+| GET | `/address/:addr` | balance, spendable/immature split + UTXOs (each tagged `coinbase`, `spendable`, `maturesAtHeight`) |
 | GET | `/mempool` | pending transactions |
 | GET | `/events` | SSE stream of new blocks |
 | POST | `/tx` | broadcast a signed transaction |

@@ -32,7 +32,10 @@ function mineOn(parentId, key) {
   const header = {
     version: 1, prevHash: parentId, merkleRoot: C.merkleRoot(txs.map(t => t.id)),
     height,
-    timestamp: Math.max(Math.floor(Date.now() / 1000), parent.block.header.timestamp + 1),
+    // parent+1 rather than wall clock: LWMA weighs solve times, so a fork whose
+    // blocks take real seconds to brute-force would get a looser target and could
+    // carry less work than the shorter main branch it is supposed to outweigh.
+    timestamp: parent.block.header.timestamp + 1,
     target: node.chain._nextTarget(parentId), coinbasePub: key.pub, nonce: 0,
   };
   const coreHash = BLOCK.coreHash(header);
@@ -149,10 +152,22 @@ assert(node.chain.supply() + node.chain.burned === issued, 'supply + burned == t
 {
   const heightBefore = node.chain.height;                 // main tip
   assert(node.chain.balance(recipient) === sendAmount, 'payment present before reorg');
+  const mainTipId = node.chain.tipId;
   const forkParent = node.chain.chainIndex[heightBefore - 2]; // fork 2 blocks back
-  const forkKey = node.wallet.keys[0];
-  let last = forkParent, r;
-  for (let i = 0; i < 3; i++) { const m = mineOn(last, forkKey); r = m.res; last = m.res.id; }
+  // A distinct miner, so the fork's coinbase (and thus every fork block id) differs
+  // from the main branch. Reusing keys[0] reproduced the main chain block-for-block
+  // and the first "fork" block came back rejected as 'known'.
+  node.wallet.newAddress();
+  const forkKey = node.wallet.keys[node.wallet.keys.length - 1];
+  let last = forkParent, accepted = 0;
+  for (let i = 0; i < 3; i++) {
+    const m = mineOn(last, forkKey);
+    if (!m.res.ok) { console.log('  ! fork block ' + i + ' rejected: ' + m.res.err); break; }
+    accepted++; last = m.res.id;
+  }
+  assert(accepted === 3, 'all three fork blocks accepted');
+  assert(node.chain.store.get(last).work > node.chain.store.get(mainTipId).work,
+    'fork branch carries more cumulative work than the branch it replaces');
   assert(node.chain.height === heightBefore + 1, 'chain reorged to the heavier branch');
   assert(node.chain.tipId === last, 'active tip is the new branch tip');
   assert(node.chain.balance(recipient) === 0, 'orphaned payment removed by reorg');

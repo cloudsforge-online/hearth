@@ -123,7 +123,7 @@ cargo fmt --check && cargo clippy -- -D warnings && cargo test
 npx serve web        # or: open web/index.html
 ```
 `index.html` (site) · `explorer.html` (live block explorer) · `wallet.html`
-(web wallet + in-browser mining) · `pay-demo.html` (Accept EMBER checkout).
+(non-custodial web wallet — needs a reachable node) · `pay-demo.html` (Accept EMBER checkout).
 
 ---
 

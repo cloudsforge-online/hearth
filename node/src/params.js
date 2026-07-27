@@ -46,6 +46,10 @@ module.exports = {
   MEDIAN_TIME_SPAN: 11,                     // median-time-past window
   P2P_MAX_LINE: 4 * 1024 * 1024,            // drop peers that send >4MiB without a newline
   P2P_MAX_PEERS: 64,
+  P2P_MAX_LOCATOR: 32,                      // hashes a peer may put in a getblocks locator
+  P2P_MAX_BLOCKS: 200,                      // blocks served per getblocks round trip
+  P2P_MAX_ORPHANS: 32,                      // parentless blocks held while ancestors arrive (× P2P_MAX_LINE = memory bound)
+  P2P_RESYNC_MS: 20_000,                    // pull from every peer this often (converges equal-height forks)
   MEMPOOL_MAX_TXS: 50_000,                  // cap pending txs (DoS)
 
   // ---- special addresses ----
