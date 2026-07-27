@@ -16,7 +16,7 @@ allowBuilds:
 # from ourselves. pnpm writes this block itself on first install; leaving it
 # unrecorded trips verifyDepsBeforeRun on the very next command.
 minimumReleaseAgeExclude:
-  - '@cloudsforge/ui@0.1.0'
+  - '@cloudsforge/ui@0.1.1'
 
 # esbuild arrives via vite and ships a prebuilt platform binary as
 # @esbuild/<platform>, so its postinstall is not needed.

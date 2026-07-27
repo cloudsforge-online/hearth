@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@cloudsforge/ui':
-        specifier: ^0.1.0
-        version: 0.1.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+        specifier: ^0.1.1
+        version: 0.1.1(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       react:
         specifier: ^19.0.0
         version: 19.2.8
@@ -131,8 +131,8 @@ packages:
     resolution: {integrity: sha512-4zBIxpPzowiZpusoFkyGVwakdRJUyuH5PxQ/PrqghfdFWWasvnCdPfQXHrenDai+gyLARulZjZowCOj6fjT4pA==}
     engines: {node: '>=6.9.0'}
 
-  '@cloudsforge/ui@0.1.0':
-    resolution: {integrity: sha512-e1ITZuhMwyckA44HXzEx+8gx1F+uAdJIScmB9IMmSpkctB/slnZumiUT3ceRJKHYHR3xCsDEtUXc/HmG21jp/w==}
+  '@cloudsforge/ui@0.1.1':
+    resolution: {integrity: sha512-rQ3fPEKSjfZAGg1D/kdu4C+AWFnTgvtOFQdOYTQVLbfnPc/TJuG2Eg7vxbLoblXvj5ISVUoXEi9+JDkQsSGOYw==}
     peerDependencies:
       react: ^19.0.0
       react-dom: ^19.0.0
@@ -1000,7 +1000,7 @@ snapshots:
       '@babel/helper-string-parser': 7.29.7
       '@babel/helper-validator-identifier': 7.29.7
 
-  '@cloudsforge/ui@0.1.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
+  '@cloudsforge/ui@0.1.1(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
     dependencies:
       react: 19.2.8
       react-dom: 19.2.8(react@19.2.8)
