@@ -23,7 +23,14 @@ function assert(cond, msg) {
 }
 
 const tmpdir = tag => fs.mkdtempSync(path.join(os.tmpdir(), `hearth-p2p-${tag}-`));
-const bound = server => new Promise(res => server.on('listening', () => res(server.address().port)));
+// Rejects rather than waiting forever: a server that never binds used to leave the
+// whole run idle on four open sockets until someone noticed, and a gate that hangs
+// instead of failing is a gate that gets muted.
+const bound = (server, what) => new Promise((res, rej) => {
+  const t = setTimeout(() => rej(new Error(`${what} never bound`)), 10000);
+  server.once('listening', () => { clearTimeout(t); res(server.address().port); });
+  server.once('error', e => { clearTimeout(t); rej(new Error(`${what} failed to bind: ${e.message}`)); });
+});
 
 function wait(fn, ms = 20000) {
   return new Promise(res => {
@@ -74,7 +81,10 @@ function mine(node, parentId, key) {
   console.log('\nHearth p2p fork-sync test\n');
 
   A.p2p.listen(0); B.p2p.listen(0); A.rpc.listen(0); B.rpc.listen(0);
-  const ready = [bound(A.p2p.server), bound(B.p2p.server), bound(A.rpc.server), bound(B.rpc.server)];
+  const ready = [
+    bound(A.p2p.server, 'A p2p'), bound(B.p2p.server, 'B p2p'),
+    bound(A.rpc.server, 'A rpc'), bound(B.rpc.server, 'B rpc'),
+  ];
   const [, portB, rpcA] = await Promise.all(ready);
 
   const info = await (await fetch(`http://127.0.0.1:${rpcA}/info`)).json();
