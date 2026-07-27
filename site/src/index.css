@@ -1,0 +1,431 @@
+@import 'tailwindcss';
+
+/* ------------------------------------------------------------------ *
+ * Hearth — EMBER marketing site — design tokens
+ * Direction: money mined at home. A home hearth at dusk — deep coal
+ * dark, banked embers, one molten-orange flame accent, warm ash type.
+ * Cohesive with the CloudsForge studio site, but its own fire.
+ * ------------------------------------------------------------------ */
+@theme {
+  --color-coal-950: #0a0806;
+  --color-coal-900: #0f0c09;
+  --color-coal-850: #150f0b;
+  --color-coal-800: #1c140f;
+  --color-coal-700: #271b13;
+  --color-coal-600: #38271b;
+  --color-coal-500: #4a3323;
+
+  --color-ash: #efe6d9;
+  --color-ash-dim: #bdb09c;
+  --color-soot: #8c7f6c;
+
+  /* the fire: molten orange core, bright flame tip, deep coal glow */
+  --color-ember: #ff5a1e;
+  --color-ember-bright: #ff8a3d;
+  --color-flame: #ffb648;
+  --color-coalglow: #b62f18;
+
+  --font-display: 'Bricolage Grotesque', 'Inter', ui-sans-serif, sans-serif;
+  --font-sans: 'Inter', system-ui, ui-sans-serif, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', monospace;
+}
+
+/* ---------------------------------- base --------------------------- */
+:root {
+  color-scheme: dark;
+}
+
+* {
+  border-color: color-mix(in srgb, var(--color-ash) 12%, transparent);
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: var(--color-coal-900);
+  color: var(--color-ash);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow-x: hidden;
+}
+
+/* Ambient atmosphere: the glow of a banked fire rising from below,
+   a warm ember dawn top-right, coal-dark everywhere else. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(120% 80% at 50% 118%, rgba(255, 90, 30, 0.16), transparent 55%),
+    radial-gradient(90% 60% at 88% -10%, rgba(255, 140, 61, 0.12), transparent 55%),
+    radial-gradient(70% 50% at 6% 8%, rgba(182, 47, 24, 0.08), transparent 60%),
+    linear-gradient(180deg, var(--color-coal-950) 0%, var(--color-coal-900) 24%, var(--color-coal-900) 100%);
+}
+
+/* Fine soot grain so nothing reads as flat digital black. */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.05;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+#root {
+  position: relative;
+  z-index: 1;
+}
+
+::selection {
+  background: var(--color-ember);
+  color: #1a0d05;
+}
+
+::-webkit-scrollbar {
+  width: 11px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-coal-950);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-coal-600);
+  border: 3px solid var(--color-coal-950);
+  border-radius: 6px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-coal-500);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-ember);
+  outline-offset: 3px;
+  border-radius: 1px;
+}
+
+/* skip link for keyboard users */
+.skip-link {
+  position: absolute;
+  left: 1rem;
+  top: -3rem;
+  z-index: 100;
+  padding: 0.6rem 1rem;
+  background: var(--color-ember);
+  color: #190c05;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  border-radius: 3px;
+  transition: top 0.2s ease;
+}
+.skip-link:focus {
+  top: 1rem;
+}
+
+/* ------------------------------- type ------------------------------ */
+.font-display {
+  font-family: var(--font-display);
+}
+.display {
+  font-family: var(--font-display);
+  font-weight: 800;
+  line-height: 0.98;
+  letter-spacing: -0.02em;
+}
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--color-soot);
+}
+.mono {
+  font-family: var(--font-mono);
+}
+
+/* Molten gradient wash for emphasized display words. */
+.text-ember-wash {
+  background: linear-gradient(120deg, var(--color-flame), var(--color-ember) 50%, var(--color-coalglow));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* ------------------------------ layout ----------------------------- */
+.shell {
+  width: 100%;
+  max-width: 1200px;
+  margin-inline: auto;
+  padding-inline: 1.5rem;
+}
+@media (min-width: 768px) {
+  .shell {
+    padding-inline: 2.5rem;
+  }
+}
+
+.section {
+  position: relative;
+  padding-block: 5.5rem;
+  scroll-margin-top: 4.5rem;
+}
+@media (min-width: 768px) {
+  .section {
+    padding-block: 7.5rem;
+  }
+}
+
+/* Hairline divider with warm falloff — a mantle seam. */
+.seam {
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--color-ash) 14%, transparent) 20%,
+    color-mix(in srgb, var(--color-ash) 14%, transparent) 80%,
+    transparent
+  );
+}
+
+/* -------------------------- surfaces ------------------------------- */
+.panel {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--color-coal-800) 92%, transparent), var(--color-coal-850));
+  border: 1px solid color-mix(in srgb, var(--color-ash) 9%, transparent);
+  border-radius: 5px;
+}
+.panel-raised {
+  box-shadow:
+    0 1px 0 0 color-mix(in srgb, var(--color-ash) 6%, transparent) inset,
+    0 24px 60px -30px rgba(0, 0, 0, 0.85);
+}
+/* A panel that glows like a banked coal along its lower edge. */
+.panel-ember {
+  position: relative;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--color-coal-800) 90%, transparent), var(--color-coal-850));
+  border: 1px solid color-mix(in srgb, var(--color-ember) 22%, transparent);
+  border-radius: 5px;
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--color-ember) 8%, transparent) inset,
+    0 -18px 60px -40px rgba(255, 90, 30, 0.7),
+    0 24px 60px -30px rgba(0, 0, 0, 0.8);
+}
+
+/* ------------------------------ buttons ---------------------------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 0.9rem 1.5rem;
+  border-radius: 3px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition:
+    transform 0.18s ease,
+    background-color 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    color 0.18s ease;
+  white-space: nowrap;
+}
+.btn-ember {
+  background: var(--color-ember);
+  color: #190c05;
+}
+.btn-ember:hover {
+  background: var(--color-ember-bright);
+  transform: translateY(-2px);
+  box-shadow:
+    0 0 0 1px var(--color-ember),
+    0 16px 44px -14px rgba(255, 90, 30, 0.8);
+}
+.btn-ghost {
+  background: transparent;
+  color: var(--color-ash);
+  border-color: color-mix(in srgb, var(--color-ash) 20%, transparent);
+}
+.btn-ghost:hover {
+  border-color: var(--color-ember);
+  color: var(--color-ember-bright);
+  transform: translateY(-2px);
+}
+
+/* --------------------------- tag / chip ---------------------------- */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--color-ash-dim);
+  padding: 0.35rem 0.7rem;
+  border: 1px solid color-mix(in srgb, var(--color-ash) 12%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-coal-800) 60%, transparent);
+}
+.chip-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--color-ember);
+  box-shadow: 0 0 10px 1px var(--color-ember);
+}
+
+/* -------------------------- stat / mono figures -------------------- */
+.stat-k {
+  font-family: var(--font-display);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--color-ash);
+}
+.stat-l {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  line-height: 1.35;
+  color: var(--color-soot);
+}
+
+/* ------------------------------ code block ------------------------- */
+.codeblock {
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  line-height: 1.7;
+  background: var(--color-coal-950);
+  border: 1px solid color-mix(in srgb, var(--color-ash) 9%, transparent);
+  border-radius: 5px;
+  padding: 1rem 1.15rem;
+  overflow-x: auto;
+  color: var(--color-ash-dim);
+}
+.codeblock .tok-cmd {
+  color: var(--color-ember-bright);
+}
+.codeblock .tok-comment {
+  color: var(--color-soot);
+}
+.codeblock .tok-flag {
+  color: var(--color-flame);
+}
+
+/* --------------------------- scroll reveal ------------------------- */
+.reveal {
+  opacity: 0;
+  transform: translateY(16px);
+  transition:
+    opacity 0.7s cubic-bezier(0.2, 0.7, 0.2, 1),
+    transform 0.7s cubic-bezier(0.2, 0.7, 0.2, 1);
+  transition-delay: var(--reveal-delay, 0ms);
+}
+.reveal.is-in {
+  opacity: 1;
+  transform: none;
+}
+
+/* ---------------------- signature: the ember flame ----------------- */
+@keyframes emberPulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+.ember-pulse {
+  animation: emberPulse 3.4s ease-in-out infinite;
+}
+
+/* Slow flicker for the hero flame glow. */
+@keyframes flameFlicker {
+  0%,
+  100% {
+    opacity: 0.85;
+    transform: scale(1);
+  }
+  40% {
+    opacity: 1;
+    transform: scale(1.03);
+  }
+  70% {
+    opacity: 0.78;
+    transform: scale(0.99);
+  }
+}
+.flame-flicker {
+  animation: flameFlicker 5s ease-in-out infinite;
+}
+
+/* Rising sparks drifting up from the hearth. */
+@keyframes sparkRise {
+  0% {
+    transform: translateY(0) scale(1);
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-120px) scale(0.4);
+    opacity: 0;
+  }
+}
+.spark {
+  position: absolute;
+  bottom: 0;
+  width: 3px;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--color-flame);
+  box-shadow: 0 0 8px 1px var(--color-ember);
+  animation: sparkRise var(--spark-dur, 6s) linear infinite;
+  animation-delay: var(--spark-delay, 0s);
+}
+
+/* --------------------------- reduced motion ------------------------ */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  .reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+  .ember-pulse,
+  .flame-flicker,
+  .spark {
+    animation: none;
+  }
+  .spark {
+    display: none;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
