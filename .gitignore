@@ -38,3 +38,6 @@ tmp/
 .env
 .env.*
 !.env.example
+
+# site build output
+dist/

@@ -1,0 +1,10 @@
+# The build context is THIS directory, so the repo-root .dockerignore does not
+# apply here. Without this file `COPY . .` drags in a host-built node_modules,
+# and pnpm then tries to purge it mid-build and aborts with
+# ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY.
+node_modules
+dist
+.env
+.env.*
+*.log
+.DS_Store
