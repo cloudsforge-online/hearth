@@ -17,7 +17,10 @@ export default function CommonsCallout() {
           <div
             aria-hidden="true"
             className="pointer-events-none absolute -bottom-24 left-1/2 h-56 w-[70%] -translate-x-1/2 rounded-full opacity-70 blur-3xl"
-            style={{ background: 'radial-gradient(closest-side, rgba(255,90,30,0.35), transparent)' }}
+            style={{
+              background:
+                'radial-gradient(closest-side, color-mix(in srgb, var(--color-ember) 35%, transparent), transparent)',
+            }}
           />
           <div className="relative grid gap-10 md:grid-cols-[1fr_1.1fr] md:items-center">
             <div>

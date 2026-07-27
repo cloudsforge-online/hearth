@@ -14,7 +14,11 @@
   <img alt="pow" src="https://img.shields.io/badge/PoW-Homefire%20(CPU%2C%20non--outsourceable)-ff4d00">
 
   <br/><br/>
-  🌐 <b>Website &amp; live explorer: <a href="https://cloudsforge-online.github.io/hearth/">cloudsforge-online.github.io/hearth</a></b>
+  🌐 <b><a href="https://hearth.cloudsforge.online/">hearth.cloudsforge.online</a></b>
+  &nbsp;·&nbsp;
+  <b>live explorer &amp; wallet: <a href="https://explorer.cloudsforge.online/">explorer.cloudsforge.online</a></b>
+  <br/>
+  <sub>Hearth is the <b>Mine</b> in <a href="https://cloudsforge.online/">CloudsForge</a>'s one crypto world — mine it, trade it, mint it, spend it, play in it.</sub>
   <br/><br/>
   <code>proof of work · CPU mining · ASIC-resistant · fair launch · digital cash</code>
 </div>
@@ -92,11 +96,11 @@ the JS prototype on the same machine.
 
 ## Try it now
 
-**1 — Boot a real multi-node network** (seed + 2 miners + web/explorer):
+**1 — Boot a real multi-node network** (seed + 2 miners + explorer/wallet):
 
 ```bash
 docker compose up --build
-# open http://localhost:8080  ·  explorer reads the live chain from :8645
+# open http://localhost:8080  ·  the explorer reads the live chain from :8645
 ```
 No Docker? `./scripts/run-local-network.sh`. Details: **[docs/network.md](docs/network.md)**.
 
@@ -123,8 +127,15 @@ cargo fmt --check && cargo clippy -- -D warnings && cargo test
 ```bash
 npx serve web        # or: open web/index.html
 ```
-`index.html` (site) · `explorer.html` (live block explorer) · `wallet.html`
-(non-custodial web wallet — needs a reachable node) · `pay-demo.html` (Accept EMBER checkout).
+`index.html` (live block explorer) · `wallet.html` (non-custodial web wallet —
+needs a reachable node) · `pay-demo.html` (Accept EMBER checkout).
+
+The Hearth **marketing site** is a separate React app in [`site/`](site) — one
+front door, not two:
+
+```bash
+cd site && pnpm install && pnpm dev   # http://localhost:3003
+```
 
 ---
 
@@ -138,7 +149,8 @@ hearth/
 │   ├── src/  bin/  test/  Dockerfile
 ├── rust/hearthd/                      production core (Rust): SHA-256 + Homefire PoW + ledger + P2P, zero deps
 ├── app-desktop/                       Tauri desktop app scaffold (one-click node + wallet + miner)
-├── web/                               website + web wallet + explorer + Hearth Pay SDK (SEO-ready)
+├── site/                              the Hearth marketing site (React) — hearth.cloudsforge.online
+├── web/                               block explorer + web wallet + Hearth Pay SDK — explorer.cloudsforge.online
 ├── proto/                             coinnomics simulator + standalone PoW demo
 ├── scripts/run-local-network.sh       local network without Docker
 ├── docker-compose.yml                 seed + 2 miners + web

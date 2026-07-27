@@ -1,31 +1,41 @@
 <!doctype html>
-<html lang="en">
+<!-- data-cf-product selects Hearth's accent out of the CloudsForge tokens. -->
+<html lang="en" data-cf-product="crypto">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Accept EMBER — Hearth Pay | Crypto Payments in Two Lines of HTML</title>
 <meta name="description" content="Hearth Pay lets any website accept EMBER cryptocurrency in two lines of HTML. No custodian, no chargebacks, no card fees — instant settlement over Tab payment channels.">
 <meta name="robots" content="index, follow">
-<meta name="theme-color" content="#ff4d00">
-<link rel="canonical" href="https://cloudsforge-online.github.io/hearth/pay-demo.html">
+<meta name="theme-color" content="#0e0c0a">
+<link rel="canonical" href="https://explorer.cloudsforge.online/pay-demo.html">
 <meta property="og:title" content="Accept EMBER — Hearth Pay">
+<meta property="og:site_name" content="Hearth · CloudsForge">
 <meta property="og:description" content="Accept EMBER on any site in two lines of HTML. No custodian, no chargebacks, no card fees.">
-<meta property="og:image" content="https://cloudsforge-online.github.io/hearth/assets/og-image.svg">
+<!-- A PNG, absolute, served by the Hearth site: scrapers do not render SVG. -->
+<meta property="og:image" content="https://hearth.cloudsforge.online/social-hearth.png">
 <meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://hearth.cloudsforge.online/social-hearth.png">
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
 <link rel="manifest" href="site.webmanifest">
+<link rel="stylesheet" href="assets/vendor/cf-tokens.css">
+<link rel="stylesheet" href="assets/vendor/cf-ui.css">
 <link rel="stylesheet" href="assets/styles.css">
 <!-- first, so it catches failures in everything below it -->
 <script src="assets/obs.js"></script>
 </head>
 <body>
+<div id="cf-bar"></div>
 <nav class="nav">
   <div class="wrap">
     <a class="brand" href="index.html"><img src="assets/logo.svg" alt=""> Hearth</a>
     <div class="spacer"></div>
-    <a class="link" href="index.html">Home</a>
-    <a class="link" href="explorer.html">Explorer</a>
+    <a class="link" href="index.html">Explorer</a>
     <a class="link" href="wallet.html">Wallet</a>
+    <a class="link" href="pay-demo.html">Accept EMBER</a>
+    <!-- href is the production URL so the link works before (and without) JS;
+         cloudsforge.js corrects it on localhost and any other apex. -->
+    <a class="link" data-cf-surface="crypto" href="https://hearth.cloudsforge.online/">About Hearth</a>
   </div>
 </nav>
 
@@ -74,7 +84,12 @@
   </div>
 </section>
 
-<footer><div class="wrap"><span class="muted">Hearth Pay · demo settles locally; production settles on-chain / over Tab</span></div></footer>
+<footer><div class="wrap">
+  <span class="muted">Hearth Pay · a <a data-cf-surface="site" href="https://cloudsforge.online/">CloudsForge</a> product · demo settles locally; production settles on-chain / over Tab</span>
+</div></footer>
+
+<script src="assets/cloudsforge.js"></script>
+<script>CloudsForge.mountBar(document.getElementById('cf-bar'), { current: 'crypto' });</script>
 
 <script src="assets/hearth-pay.js"></script>
 <script>

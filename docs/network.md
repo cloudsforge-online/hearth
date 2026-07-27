@@ -15,9 +15,9 @@ This starts:
 | `seed` | bootstrap node (not mining) | RPC on host `:8645`, P2P `:8646` |
 | `miner1` | mining node, peers to seed | internal |
 | `miner2` | mining node, peers to seed | internal |
-| `web` | site + wallet + explorer + pay demo | http://localhost:8080 |
+| `web` | explorer + wallet + pay demo | http://localhost:8080 |
 
-Open **http://localhost:8080/explorer.html** — it reads the live chain from the
+Open **http://localhost:8080** — the explorer reads the live chain from the
 seed node at `http://localhost:8645` and shows the badge **● LIVE — hearthd**.
 
 Query it directly:
@@ -67,4 +67,4 @@ The payment appears in the next mined block; watch it land in the explorer.
 | 8080 | web (Docker only) |
 
 Override the web explorer's node with a query param, e.g.
-`http://localhost:8080/explorer.html?rpc=http://localhost:8645`.
+`http://localhost:8080/?rpc=http://localhost:8645`.

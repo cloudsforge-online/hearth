@@ -1,7 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!-- This bundle is the explorer, the wallet and the merchant demo, served at
+     explorer.cloudsforge.online. The Hearth front door is the React site in
+     ../site at hearth.cloudsforge.online; it has its own host and its own
+     canonical URLs and is deliberately not listed here.
+
+     These used to be cloudsforge-online.github.io/hearth/* — the GitHub Pages
+     copy, which is a mirror of this bundle rather than where anyone should
+     land. Every page here declares the same URLs as its canonical. -->
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url><loc>https://cloudsforge-online.github.io/hearth/</loc><changefreq>weekly</changefreq><priority>1.0</priority></url>
-  <url><loc>https://cloudsforge-online.github.io/hearth/explorer.html</loc><changefreq>always</changefreq><priority>0.8</priority></url>
-  <url><loc>https://cloudsforge-online.github.io/hearth/wallet.html</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
-  <url><loc>https://cloudsforge-online.github.io/hearth/pay-demo.html</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://explorer.cloudsforge.online/</loc><changefreq>always</changefreq><priority>0.9</priority></url>
+  <url><loc>https://explorer.cloudsforge.online/wallet.html</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://explorer.cloudsforge.online/pay-demo.html</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
 </urlset>

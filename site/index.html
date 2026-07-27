@@ -1,5 +1,8 @@
 <!doctype html>
-<html lang="en">
+<!-- data-cf-product selects Hearth's accent out of @cloudsforge/ui's tokens.css,
+     so the molten #ff5a1e is declared once, in the surface registry, and never
+     in this repository. -->
+<html lang="en" data-cf-product="crypto">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
@@ -16,6 +19,20 @@
       content="A people-mined, ASIC-resistant proof-of-work cryptocurrency built to spend, not hoard. Homefire PoW is CPU-only and non-outsourceable. Fair launch, no premine, on-chain Commons."
     />
     <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Hearth · CloudsForge" />
+    <meta property="og:url" content="https://hearth.cloudsforge.online/" />
+    <!-- A PNG, absolute: scrapers do not render SVG, and most will not resolve
+         a relative path. This is the one served copy of branding's social card. -->
+    <meta property="og:image" content="https://hearth.cloudsforge.online/social-hearth.png" />
+    <meta property="og:image:width" content="1280" />
+    <meta property="og:image:height" content="640" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Hearth — Money Mined at Home" />
+    <meta
+      name="twitter:description"
+      content="Mine EMBER on the computer you already own, convert it to Shards, and spend it across everything CloudsForge makes."
+    />
+    <meta name="twitter:image" content="https://hearth.cloudsforge.online/social-hearth.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link

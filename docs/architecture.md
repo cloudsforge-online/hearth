@@ -72,7 +72,7 @@ sub-cent while keeping the base layer lean.
 - **Web wallet:** all key material stays client-side (WebCrypto); talks to a public
   or self-hosted `hearthd` over JSON-RPC/WS. A **WASM light-miner** lets users mine
   in a browser tab.
-- **Explorer:** a static front-end (`web/explorer.html`) over the node's REST API.
+- **Explorer:** a static front-end (`web/index.html`) over the node's REST API.
 - **Hearth Pay SDK:** `web/assets/hearth-pay.js` — a drop-in merchant button that
   builds a `hearth:` payment URI and watches the merchant's node for settlement.
 

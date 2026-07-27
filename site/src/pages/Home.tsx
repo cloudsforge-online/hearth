@@ -3,6 +3,7 @@ import WhyHearth from '../components/WhyHearth'
 import CommonsCallout from '../components/CommonsCallout'
 import TheCoin from '../components/TheCoin'
 import Mining from '../components/Mining'
+import TheLoop from '../components/TheLoop'
 import Testnet from '../components/Testnet'
 
 export default function Home() {
@@ -16,6 +17,8 @@ export default function Home() {
       <TheCoin />
       <div className="seam" />
       <Mining />
+      <div className="seam" />
+      <TheLoop />
       <div className="seam" />
       <Testnet />
     </>

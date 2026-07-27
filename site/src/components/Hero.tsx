@@ -136,7 +136,10 @@ export default function Hero() {
           <div
             aria-hidden="true"
             className="absolute -inset-4 -z-10 rounded-full opacity-80 blur-3xl flame-flicker"
-            style={{ background: 'radial-gradient(closest-side, rgba(255,90,30,0.32), transparent 72%)' }}
+            style={{
+              background:
+                'radial-gradient(closest-side, color-mix(in srgb, var(--color-ember) 32%, transparent), transparent 72%)',
+            }}
           />
           <div className="relative aspect-square w-[min(78vw,26rem)]">
             <Img

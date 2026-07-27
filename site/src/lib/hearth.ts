@@ -9,6 +9,11 @@ import { cloudsforgeHosts } from '@cloudsforge/ui'
 const HOSTS = cloudsforgeHosts()
 export const STUDIO_URL = HOSTS.site
 export const PLAY_URL = HOSTS.play
+/** The CloudsForge wallet — where EMBER becomes Shards and Shards get spent. */
+export const FORGE_PAY_URL = HOSTS.wallet
+
+/** The org, not a personal account: clicking "GitHub" must not leave CloudsForge. */
+const REPO = 'https://github.com/cloudsforge-online/hearth'
 
 export const HEARTH = {
   network: 'Hearth',
@@ -17,11 +22,13 @@ export const HEARTH = {
   tagline: 'Money Mined at Home',
   pitch: 'A people-mined, ASIC-resistant proof-of-work cryptocurrency built to spend, not hoard.',
   sub: 'Mine EMBER on the computer you already own — no farms, no pools, no premine.',
-  github: 'https://github.com/savvaniss/hearth',
-  whitepaper: 'https://github.com/savvaniss/hearth/blob/main/WHITEPAPER.md',
-  // web/ is a multi-page bundle whose index.html is this marketing page, so the
-  // explorer needs its own filename — linking the root just reloads the site.
-  explorer: `${HOSTS.explorer}/explorer.html`,
+  github: REPO,
+  whitepaper: `${REPO}/blob/main/WHITEPAPER.md`,
+  // The explorer is the root of the `explorer.` bundle now that the second,
+  // unbranded marketing site it used to sit behind has been retired — so it no
+  // longer needs a filename of its own.
+  explorer: HOSTS.explorer,
+  emberWallet: `${HOSTS.explorer}/wallet.html`,
   studio: 'CloudsForge',
 } as const
 
@@ -30,6 +37,7 @@ export const NAV_LINKS = [
   { to: '#why', label: 'Why Hearth' },
   { to: '#coin', label: 'The Coin' },
   { to: '#mining', label: 'Mining' },
+  { to: '#loop', label: 'What it’s for' },
   { to: '#testnet', label: 'Testnet' },
 ] as const
 
@@ -120,6 +128,35 @@ export const MINING_POINTS = [
   },
 ] as const
 
+/**
+ * What EMBER is FOR — the mine → convert → spend loop across CloudsForge.
+ * Every step here is a thing that exists in code today; the honest status of
+ * the whole loop is stated alongside it in TheLoop, and stays consistent with
+ * the pre-mainnet caveat in Testnet.
+ */
+export const LOOP_STEPS = [
+  {
+    verb: 'Mine',
+    where: 'Hearth',
+    body: 'Homefire runs on the CPU you already own, politely, in the background. Blocks pay a wallet whose key is generated on your device and never leaves it.',
+  },
+  {
+    verb: 'Hold',
+    where: 'Your wallet, or ours',
+    body: 'Keep your own key in the web wallet, or deposit to a custodied ember1… address. CloudsForge custodies EMBER with hearthd’s own Ed25519 scheme rather than a second one it invented.',
+  },
+  {
+    verb: 'Convert',
+    where: 'Forge Pay',
+    body: 'Forge Pay watches the Hearth chain and converts EMBER into Shards — the single unit every CloudsForge product bills in. One wallet per account, not one per product.',
+  },
+  {
+    verb: 'Spend',
+    where: 'Everything else we make',
+    body: 'Trading fees in Crucible, token deploys in ForgeMint, cosmetics and worlds in Games. The money you mined at home pays for the things next door to it.',
+  },
+] as const
+
 /** Testnet quick-start. From README "Try it now" + the shipped compose file. */
 export const TESTNET_NODES = [
   { name: 'node-a', rpc: 'http://localhost:8645' },
@@ -137,11 +174,13 @@ export const FOOTER_LINKS = {
     { label: 'GitHub', href: HEARTH.github, external: true },
     { label: 'Whitepaper', href: HEARTH.whitepaper, external: true },
     { label: 'Live explorer', href: HEARTH.explorer, external: true },
+    { label: 'Web wallet', href: HEARTH.emberWallet, external: true },
   ],
   network: [
     { label: 'Why Hearth', href: '#why', external: false },
     { label: 'The coin', href: '#coin', external: false },
     { label: 'Mining', href: '#mining', external: false },
+    { label: 'What EMBER is for', href: '#loop', external: false },
     { label: 'Run the testnet', href: '#testnet', external: false },
   ],
 } as const

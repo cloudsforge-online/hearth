@@ -52,7 +52,7 @@ docker compose up --build            # seed + 2 miners + web on :8080
 1. **Homefire VM** — grow the Rust PoW toward a full RandomX-class engine.
 2. **Tab channels** — the instant retail-payments layer.
 3. **Tauri desktop app** — one-click node + wallet + miner for non-technical users.
-4. **Explorer backend** — serve real data behind `web/explorer.html`.
+4. **Explorer backend** — serve real data behind `web/index.html` (the explorer).
 
 See the [roadmap](docs/roadmap.md) for the bigger picture.
 

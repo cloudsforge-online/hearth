@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
-import { CloudsForgeBar, accountUrl } from '@cloudsforge/ui'
+import { CloudsForgeBar } from '@cloudsforge/ui'
+import { useAuth } from '../lib/auth'
 import Nav from './Nav'
 import Footer from './Footer'
 
@@ -14,6 +15,8 @@ function ScrollToTop() {
 }
 
 export default function Layout() {
+  const { user, signIn, signOut } = useAuth()
+
   return (
     <div className="flex min-h-screen flex-col">
       <a href="#main" className="skip-link">
@@ -22,11 +25,9 @@ export default function Layout() {
       <ScrollToTop />
       <CloudsForgeBar
         current="crypto"
-        account={{ signedIn: false }}
-        onSignIn={() => {
-          // Company-wide login lives at the Nimbus Account portal, not the game.
-          window.location.assign(`${accountUrl()}/account`)
-        }}
+        account={{ signedIn: !!user, handle: user?.handle, roles: user?.roles }}
+        onSignIn={signIn}
+        onSignOut={signOut}
       />
       <Nav />
       <main id="main" className="flex-1">

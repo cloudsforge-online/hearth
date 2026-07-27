@@ -1,4 +1,14 @@
-name: Deploy website (GitHub Pages)
+# Publishes the explorer + wallet bundle, and nothing else.
+#
+# This used to publish web/index.html, a second Hearth marketing site with its
+# own nav, its own ember and no mention of CloudsForge — which meant our most
+# linkable public artifact looked like a different company. That page is gone;
+# the front door is the React site in ../site at hearth.cloudsforge.online, and
+# the root of this bundle is now the explorer itself.
+#
+# Every page here declares explorer.cloudsforge.online as its canonical, so this
+# deploy is a mirror rather than a competing copy.
+name: Deploy explorer + wallet (GitHub Pages)
 
 on:
   push:
@@ -27,7 +37,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
-      - name: Upload web/ as the Pages artifact
+      - name: Upload web/ (explorer · wallet · merchant demo) as the Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: web

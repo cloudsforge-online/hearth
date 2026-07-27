@@ -43,7 +43,7 @@ Hearth local network is up.
 Try:
   curl -s localhost:8645/info
   cd node && node bin/hearth-cli.js --rpc http://localhost:8645 blocks 5
-  open web/explorer.html   (append ?rpc=http://localhost:8645)
+  open web/index.html      (the explorer; append ?rpc=http://localhost:8645)
 
 Press Ctrl-C to stop.
 EOF

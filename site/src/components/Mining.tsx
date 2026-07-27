@@ -11,7 +11,7 @@ function MiningFallback() {
       className="h-full w-full"
       style={{
         background:
-          'radial-gradient(80% 90% at 30% 100%, rgba(255,90,30,0.45), transparent 60%), linear-gradient(180deg, var(--color-coal-800), var(--color-coal-950))',
+          'radial-gradient(80% 90% at 30% 100%, color-mix(in srgb, var(--color-ember) 45%, transparent), transparent 60%), linear-gradient(180deg, var(--color-coal-800), var(--color-coal-950))',
       }}
     />
   )

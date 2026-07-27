@@ -1,31 +1,43 @@
 /* Hearth — shared design system
  * Warm, human, anti-industrial. Money mined at home.
+ *
+ * The values are not declared here. Every one maps onto the CloudsForge
+ * substrate in vendor/cf-tokens.css, with the fire coming from the accent the
+ * surface registry declares for Hearth — which arrives via
+ * `data-cf-product="crypto"` on <html>. These pages used to ship a second,
+ * slightly different ember (#ff4d00) and a second, slightly different ash, so
+ * the explorer and the marketing site looked like two companies.
+ *
+ * The names below stay because the rest of this file and both pages use them.
  * ------------------------------------------------------------------ */
 :root {
   /* ink / hearthstone */
-  --ink-900: #120d0a;
-  --ink-800: #17110d;
-  --ink-700: #1e1712;
-  --ink-600: #2a211c;
-  --line:    #38291f;
+  --ink-900: var(--cf-bg);
+  --ink-800: var(--cf-bg-raised);
+  --ink-700: var(--cf-ash-800);
+  --ink-600: var(--cf-ash-700);
+  --line:    var(--cf-line-strong);
 
-  /* ember */
-  --ember-500: #ff4d00;
-  --ember-400: #ff7a18;
-  --ember-300: #ff9e2c;
-  --gold-300:  #ffc24b;
+  /* ember — the registry accent, then the two ends of Hearth's flame ramp,
+     which are the same literals the React site uses and exist only to give
+     the accent somewhere to burn to. */
+  --ember-500: var(--cf-accent);
+  --ember-400: var(--cf-accent-hover);
+  --ember-300: #ffb648;
+  --gold-300:  #ffb648;
   --gold-200:  #ffd98a;
+  --ember-ink: var(--cf-accent-ink);
 
   /* cream text */
-  --cream: #f5ece0;
-  --cream-dim: #cdbfae;
-  --cream-faint: #93867a;
+  --cream: var(--cf-fg);
+  --cream-dim: var(--cf-fg-dim);
+  --cream-faint: var(--cf-fg-mute);
 
-  --ok: #57d38c;
+  --ok: var(--cf-success);
   --radius: 16px;
-  --maxw: 1120px;
-  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
-  --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+  --maxw: var(--cf-max-w);
+  --font: var(--cf-font-sans);
+  --mono: var(--cf-font-mono);
 }
 
 * { box-sizing: border-box; }
@@ -35,8 +47,8 @@ body {
   font-family: var(--font);
   color: var(--cream);
   background:
-    radial-gradient(1200px 600px at 50% -10%, #2a160c 0%, transparent 60%),
-    radial-gradient(800px 500px at 85% 20%, #1c1109 0%, transparent 55%),
+    radial-gradient(1200px 600px at 50% -10%, color-mix(in srgb, var(--ember-500) 11%, transparent) 0%, transparent 60%),
+    radial-gradient(800px 500px at 85% 20%, color-mix(in srgb, var(--ember-500) 6%, transparent) 0%, transparent 55%),
     var(--ink-900);
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
@@ -58,8 +70,10 @@ code, .mono { font-family: var(--mono); }
 }
 
 /* ---- nav ---- */
+/* Docks directly under the shared CloudsForge bar using its height token, so
+   the two read as one piece of chrome rather than two stacked headers. */
 .nav {
-  position: sticky; top: 0; z-index: 50;
+  position: sticky; top: var(--cf-bar-h); z-index: 50;
   backdrop-filter: blur(12px);
   background: color-mix(in oklab, var(--ink-900) 72%, transparent);
   border-bottom: 1px solid var(--line);
@@ -79,11 +93,11 @@ code, .mono { font-family: var(--mono); }
 }
 .btn:active { transform: translateY(1px); }
 .btn-primary {
-  color: #201004;
+  color: var(--ember-ink);
   background: linear-gradient(100deg, var(--gold-300), var(--ember-400) 60%, var(--ember-500));
-  box-shadow: 0 8px 30px -8px rgba(255,77,0,.6);
+  box-shadow: 0 8px 30px -8px color-mix(in srgb, var(--ember-500) 60%, transparent);
 }
-.btn-primary:hover { box-shadow: 0 12px 40px -8px rgba(255,77,0,.8); color: #201004; }
+.btn-primary:hover { box-shadow: 0 12px 40px -8px color-mix(in srgb, var(--ember-500) 80%, transparent); color: var(--ember-ink); }
 .btn-ghost { color: var(--cream); border-color: var(--line); background: var(--ink-700); }
 .btn-ghost:hover { border-color: var(--ember-300); color: var(--gold-200); }
 
@@ -120,7 +134,7 @@ code, .mono { font-family: var(--mono); }
 .hearth-stage { display: grid; place-items: center; padding: 24px; }
 .hearth {
   width: 260px; height: 260px; border-radius: 24px; position: relative;
-  background: radial-gradient(120px 120px at 50% 68%, #3a1c0c, #160e0a 70%);
+  background: radial-gradient(120px 120px at 50% 68%, color-mix(in srgb, var(--ember-500) 18%, var(--ink-800)), var(--ink-900) 70%);
   border: 1px solid var(--line); overflow: hidden;
 }
 .flame {
@@ -153,7 +167,7 @@ table.blocks th { text-align: left; color: var(--cream-faint); font-weight: 600;
 table.blocks td { padding: 12px; border-bottom: 1px solid var(--ink-600); }
 table.blocks tr:hover td { background: var(--ink-700); }
 .tag-new { color: var(--gold-200); animation: pop .6s ease; }
-@keyframes pop { from { background: rgba(255,158,44,.18); } to { background: transparent; } }
+@keyframes pop { from { background: color-mix(in srgb, var(--ember-300) 18%, transparent); } to { background: transparent; } }
 
 /* ---- section spacing ---- */
 section { padding: 56px 0; }

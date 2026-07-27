@@ -6,10 +6,11 @@
 #   seed     — non-mining bootstrap node (RPC on host :8645)
 #   miner1   — mining node, peers to seed
 #   miner2   — mining node, peers to seed
-#   web      — website + wallet + explorer + merchant demo (host :8080)
+#   web      — explorer + wallet + merchant demo (host :8080)
 #
-# Open http://localhost:8080 (site) and the explorer will read the live chain
-# from the seed node's RPC at http://localhost:8645.
+# Open http://localhost:8080 — the explorer reads the live chain from the seed
+# node's RPC at http://localhost:8645. The Hearth marketing site is a separate
+# app in ../site (port 3003); this bundle is the explorer and the wallet.
 
 services:
   seed:

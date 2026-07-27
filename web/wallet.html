@@ -1,20 +1,26 @@
 <!doctype html>
-<html lang="en">
+<!-- data-cf-product selects Hearth's accent out of the CloudsForge tokens. -->
+<html lang="en" data-cf-product="crypto">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Hearth Wallet — Non-Custodial EMBER Wallet</title>
 <meta name="description" content="A real non-custodial EMBER wallet that runs entirely in your browser: Ed25519 keys generated on your device, transactions signed locally, balances read live from a hearthd node.">
 <meta name="robots" content="index, follow">
-<meta name="theme-color" content="#ff4d00">
-<link rel="canonical" href="https://cloudsforge-online.github.io/hearth/wallet.html">
+<meta name="theme-color" content="#0e0c0a">
+<link rel="canonical" href="https://explorer.cloudsforge.online/wallet.html">
 <meta property="og:title" content="Hearth Wallet">
+<meta property="og:site_name" content="Hearth · CloudsForge">
 <meta property="og:description" content="Non-custodial EMBER wallet. Keys are generated and signed in your browser; only signed transactions reach the network.">
-<meta property="og:image" content="https://cloudsforge-online.github.io/hearth/assets/og-image.svg">
+<!-- A PNG, absolute, served by the Hearth site: scrapers do not render SVG. -->
+<meta property="og:image" content="https://hearth.cloudsforge.online/social-hearth.png">
 <meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://hearth.cloudsforge.online/social-hearth.png">
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
 <link rel="manifest" href="site.webmanifest">
 <meta name="hearth-rpc" content="http://localhost:8645">
+<link rel="stylesheet" href="assets/vendor/cf-tokens.css">
+<link rel="stylesheet" href="assets/vendor/cf-ui.css">
 <link rel="stylesheet" href="assets/styles.css">
 <style>
   .field { width:100%; padding:12px; border-radius:10px; border:1px solid var(--line);
@@ -42,13 +48,17 @@
 <script src="assets/obs.js"></script>
 </head>
 <body>
+<div id="cf-bar"></div>
 <nav class="nav">
   <div class="wrap">
     <a class="brand" href="index.html"><img src="assets/logo.svg" alt=""> Hearth</a>
     <div class="spacer"></div>
-    <a class="link" href="index.html">Home</a>
-    <a class="link" href="explorer.html">Explorer</a>
+    <a class="link" href="index.html">Explorer</a>
+    <a class="link" href="wallet.html">Wallet</a>
     <a class="link" href="pay-demo.html">Accept EMBER</a>
+    <!-- href is the production URL so the link works before (and without) JS;
+         cloudsforge.js corrects it on localhost and any other apex. -->
+    <a class="link" data-cf-surface="crypto" href="https://hearth.cloudsforge.online/">About Hearth</a>
   </div>
 </nav>
 
@@ -214,7 +224,12 @@
   </div>
 </section>
 
-<footer><div class="wrap"><span class="muted">Hearth Wallet · keys are generated and signed in your browser and are never sent to the node · this page does not mine</span></div></footer>
+<footer><div class="wrap">
+  <span class="muted">Hearth Wallet · a <a data-cf-surface="site" href="https://cloudsforge.online/">CloudsForge</a> product · keys are generated and signed in your browser and are never sent to the node · this page does not mine</span>
+</div></footer>
+
+<script src="assets/cloudsforge.js"></script>
+<script>CloudsForge.mountBar(document.getElementById('cf-bar'), { current: 'crypto' });</script>
 
 <script src="assets/app.js"></script>
 <script src="assets/api.js"></script>

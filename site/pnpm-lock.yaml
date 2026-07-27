@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@cloudsforge/ui':
-        specifier: ^0.2.0
-        version: 0.2.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+        specifier: ^0.3.0
+        version: 0.3.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       react:
         specifier: ^19.0.0
         version: 19.2.8
@@ -131,8 +131,11 @@ packages:
     resolution: {integrity: sha512-4zBIxpPzowiZpusoFkyGVwakdRJUyuH5PxQ/PrqghfdFWWasvnCdPfQXHrenDai+gyLARulZjZowCOj6fjT4pA==}
     engines: {node: '>=6.9.0'}
 
-  '@cloudsforge/ui@0.2.0':
-    resolution: {integrity: sha512-PhS4f2wAlQZblUKIfXF8T6EYz27Q6AoGkN88kngtxCen7GeenMO7Jk/ErYD50ljzgLmR1MmcT61/EujGujnNXA==}
+  '@cloudsforge/shared@0.2.0':
+    resolution: {integrity: sha512-AVQ3jlPUi4M50QythkxMI5tIGJZACrgxrWVfJO4CAp9447TiJ8wd/FmXLaC5DfCUPgEcQhBdtnye3IfZnfm57A==}
+
+  '@cloudsforge/ui@0.3.0':
+    resolution: {integrity: sha512-Mn5H2N1EQPL3hZ3gsR6LfPEo6RN2LC59FCebm2f1hvFsFmVg+yBovVu+2vgijeeqivPJJOLH1lZkxJjX3Ou4eQ==}
     peerDependencies:
       react: ^19.0.0
       react-dom: ^19.0.0
@@ -886,6 +889,9 @@ packages:
   yallist@3.1.1:
     resolution: {integrity: sha512-a4UGQaWPH59mOXUYnAG2ewncQS4i4F43Tv3JoAM+s2VDAmS9NsK8GpDMLrCHPksFT7h3K6TOoUNn2pb7RoXx4g==}
 
+  zod@3.25.76:
+    resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
+
 snapshots:
 
   '@babel/code-frame@7.29.7':
@@ -1000,8 +1006,13 @@ snapshots:
       '@babel/helper-string-parser': 7.29.7
       '@babel/helper-validator-identifier': 7.29.7
 
-  '@cloudsforge/ui@0.2.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
+  '@cloudsforge/shared@0.2.0':
     dependencies:
+      zod: 3.25.76
+
+  '@cloudsforge/ui@0.3.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
+    dependencies:
+      '@cloudsforge/shared': 0.2.0
       react: 19.2.8
       react-dom: 19.2.8(react@19.2.8)
 
@@ -1544,3 +1555,5 @@ snapshots:
       lightningcss: 1.32.0
 
   yallist@3.1.1: {}
+
+  zod@3.25.76: {}

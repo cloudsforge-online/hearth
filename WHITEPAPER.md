@@ -182,7 +182,7 @@ Hearth treats UX as consensus-critical:
   Install, press *Start your hearth*, done. Light-client mode for phones.
 - **Web everything.** A browser **web wallet** (keys stay client-side), a
   **WASM light-miner** so you can mine in a tab, and a public **block explorer**
-  (`web/explorer.html`).
+  (`web/index.html`).
 - **Hearth Pay.** Merchants accept EMBER with two lines of HTML
   (`web/assets/hearth-pay.js`): a payment button that opens the shopper's wallet
   and fires a callback on settlement. No custodian, no chargebacks, no card fees.

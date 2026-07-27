@@ -12,7 +12,8 @@ reuses the exact web wallet/explorer in [`../web`](../web).
 > [../docs/roadmap.md](../docs/roadmap.md), Phase 2.
 
 ## What it does
-- Loads the bundled Hearth web UI (`web/index.html`, wallet, explorer, pay demo).
+- Loads the bundled Hearth web UI from `../web` — the wallet on open, plus the
+  explorer and the merchant demo.
 - Exposes native commands to run a local node as a child process:
   - `start_node(mine)` — launch `hearthd` (mining optional)
   - `stop_node()` — stop it

@@ -4,30 +4,40 @@
  * Hearth — EMBER marketing site — design tokens
  * Direction: money mined at home. A home hearth at dusk — deep coal
  * dark, banked embers, one molten-orange flame accent, warm ash type.
- * Cohesive with the CloudsForge studio site, but its own fire.
+ *
+ * None of it is declared here. The substrate is the CloudsForge ash ramp
+ * and bone type from @cloudsforge/ui's tokens.css; the fire is the accent
+ * the surface registry declares for Hearth (#ff5a1e), which arrives via
+ * `data-cf-product="crypto"` on <html> in index.html. This block only maps
+ * those onto the names the components already use — so retuning the house
+ * palette, or Hearth's accent in the registry, moves this site too.
  * ------------------------------------------------------------------ */
 @theme {
-  --color-coal-950: #0a0806;
-  --color-coal-900: #0f0c09;
-  --color-coal-850: #150f0b;
-  --color-coal-800: #1c140f;
-  --color-coal-700: #271b13;
-  --color-coal-600: #38271b;
-  --color-coal-500: #4a3323;
+  --color-coal-950: var(--cf-bg-sunken);
+  --color-coal-900: var(--cf-bg);
+  --color-coal-850: var(--cf-bg-raised);
+  --color-coal-800: var(--cf-ash-800);
+  --color-coal-700: var(--cf-ash-700);
+  --color-coal-600: var(--cf-ash-600);
+  --color-coal-500: var(--cf-ash-500);
 
-  --color-ash: #efe6d9;
-  --color-ash-dim: #bdb09c;
-  --color-soot: #8c7f6c;
+  --color-ash: var(--cf-fg);
+  --color-ash-dim: var(--cf-fg-dim);
+  --color-soot: var(--cf-fg-mute);
 
-  /* the fire: molten orange core, bright flame tip, deep coal glow */
-  --color-ember: #ff5a1e;
-  --color-ember-bright: #ff8a3d;
+  /* the fire: the registry accent, its hover, and the ink that reads on it */
+  --color-ember: var(--cf-accent);
+  --color-ember-bright: var(--cf-accent-hover);
+  --color-ember-ink: var(--cf-accent-ink);
+  /* The two ends of Hearth's flame gradient. Not registry values — they exist
+     only to give the accent somewhere to burn to and cool into, and are used
+     nowhere but the wash, the sparks and the logo. */
   --color-flame: #ffb648;
   --color-coalglow: #b62f18;
 
-  --font-display: 'Bricolage Grotesque', 'Inter', ui-sans-serif, sans-serif;
-  --font-sans: 'Inter', system-ui, ui-sans-serif, sans-serif;
-  --font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', monospace;
+  --font-display: var(--cf-font-display);
+  --font-sans: var(--cf-font-sans);
+  --font-mono: var(--cf-font-mono);
 }
 
 /* ---------------------------------- base --------------------------- */
@@ -65,9 +75,9 @@ body::before {
   z-index: 0;
   pointer-events: none;
   background:
-    radial-gradient(120% 80% at 50% 118%, rgba(255, 90, 30, 0.16), transparent 55%),
-    radial-gradient(90% 60% at 88% -10%, rgba(255, 140, 61, 0.12), transparent 55%),
-    radial-gradient(70% 50% at 6% 8%, rgba(182, 47, 24, 0.08), transparent 60%),
+    radial-gradient(120% 80% at 50% 118%, color-mix(in srgb, var(--color-ember) 16%, transparent), transparent 55%),
+    radial-gradient(90% 60% at 88% -10%, color-mix(in srgb, var(--color-ember-bright) 12%, transparent), transparent 55%),
+    radial-gradient(70% 50% at 6% 8%, color-mix(in srgb, var(--color-coalglow) 8%, transparent), transparent 60%),
     linear-gradient(180deg, var(--color-coal-950) 0%, var(--color-coal-900) 24%, var(--color-coal-900) 100%);
 }
 
@@ -89,7 +99,7 @@ body::after {
 
 ::selection {
   background: var(--color-ember);
-  color: #1a0d05;
+  color: var(--color-ember-ink);
 }
 
 ::-webkit-scrollbar {
@@ -121,7 +131,7 @@ body::after {
   z-index: 100;
   padding: 0.6rem 1rem;
   background: var(--color-ember);
-  color: #190c05;
+  color: var(--color-ember-ink);
   font-family: var(--font-mono);
   font-size: 0.75rem;
   font-weight: 600;
@@ -219,7 +229,7 @@ body::after {
   border-radius: 5px;
   box-shadow:
     0 0 0 1px color-mix(in srgb, var(--color-ember) 8%, transparent) inset,
-    0 -18px 60px -40px rgba(255, 90, 30, 0.7),
+    0 -18px 60px -40px color-mix(in srgb, var(--color-ember) 70%, transparent),
     0 24px 60px -30px rgba(0, 0, 0, 0.8);
 }
 
@@ -248,14 +258,14 @@ body::after {
 }
 .btn-ember {
   background: var(--color-ember);
-  color: #190c05;
+  color: var(--color-ember-ink);
 }
 .btn-ember:hover {
   background: var(--color-ember-bright);
   transform: translateY(-2px);
   box-shadow:
     0 0 0 1px var(--color-ember),
-    0 16px 44px -14px rgba(255, 90, 30, 0.8);
+    0 16px 44px -14px color-mix(in srgb, var(--color-ember) 80%, transparent);
 }
 .btn-ghost {
   background: transparent;
