@@ -19,7 +19,9 @@ export const HEARTH = {
   sub: 'Mine EMBER on the computer you already own — no farms, no pools, no premine.',
   github: 'https://github.com/savvaniss/hearth',
   whitepaper: 'https://github.com/savvaniss/hearth/blob/main/WHITEPAPER.md',
-  explorer: 'https://savvaniss.github.io/hearth/',
+  // web/ is a multi-page bundle whose index.html is this marketing page, so the
+  // explorer needs its own filename — linking the root just reloads the site.
+  explorer: `${HOSTS.explorer}/explorer.html`,
   studio: 'CloudsForge',
 } as const
 
