@@ -40,11 +40,15 @@ class RPC {
 
   listen(port) {
     this.server = http.createServer((req, res) => this._handle(req, res));
-    this.server.listen(port, () => this.node.log(`rpc/http listening on :${port}`));
+    this.server.on('error', e => this.node.error('rpc listen failed', { port, err: String(e && e.message || e) }));
+    this.server.listen(port, () => this.node.log(`rpc/http listening on :${port}`, { port }));
     // push new blocks to SSE subscribers
     this.node.chain.on('block', b => {
       const data = 'data: ' + JSON.stringify(blockSummary(this.node, b)) + '\n\n';
-      for (const c of this.sseClients) { try { c.write(data); } catch {} }
+      for (const c of this.sseClients) {
+        // a client that has gone away stays in the set forever otherwise
+        try { c.write(data); } catch { this.sseClients.delete(c); }
+      }
     });
   }
 
@@ -52,6 +56,13 @@ class RPC {
     const url = new URL(req.url, 'http://x');
     const p = url.pathname;
     if (req.method === 'OPTIONS') return json(res, 204, {});
+
+    const started = Date.now();
+    // one record per request, at debug so a busy node does not pay for it by
+    // default — but a 5xx below is always reported
+    res.on('finish', () => this.node.debug('rpc request', {
+      method: req.method, path: p, status: res.statusCode, ms: Date.now() - started,
+    }));
 
     try {
       if (p === '/info') return json(res, 200, this._info());
@@ -85,6 +96,11 @@ class RPC {
       }
       return json(res, 404, { err: 'no route' });
     } catch (e) {
+      // this used to be the whole story of a failing RPC: a 500 to the caller
+      // and nothing at all on the node
+      this.node.error('rpc request failed', {
+        method: req.method, path: p, err: String(e && e.message || e), stack: e && e.stack,
+      });
       return json(res, 500, { err: String(e && e.message || e) });
     }
   }
@@ -160,7 +176,9 @@ class RPC {
       case 'getbalance': return { balance: c.balance(params.address) };
       case 'getblockcount': return { count: c.height };
       case 'sendtx': return this.node.submitTx(params.tx);
-      default: return { err: 'unknown method' };
+      default:
+        this.node.warn('rpc unknown method', { method: String(method).slice(0, 64) });
+        return { err: 'unknown method' };
     }
   }
 }

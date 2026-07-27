@@ -18,6 +18,8 @@
 
   const BASE = rpcBase();
 
+  const report = (o) => global.HearthObs && global.HearthObs.report(Object.assign({ rpc: BASE }, o));
+
   async function get(path) {
     const r = await fetch(BASE + path, { headers: { accept: 'application/json' } });
     if (!r.ok) throw new Error('rpc ' + r.status);
@@ -38,7 +40,12 @@
       const r = await fetch(BASE + '/info', { signal: ctl.signal });
       clearTimeout(t);
       return r.ok;
-    } catch { return false; }
+    } catch (e) {
+      // the pages fall back to demo data here, which looks exactly like a
+      // working node to a reader — so an unreachable node has to be said aloud
+      report({ level: 'warn', type: 'NodeUnreachable', message: String(e && e.message || e) });
+      return false;
+    }
   }
 
   /** Subscribe to live blocks via Server-Sent Events. Returns an unsubscribe fn. */
@@ -46,8 +53,13 @@
     let es;
     try {
       es = new EventSource(BASE + '/events');
-      es.onmessage = (e) => { try { cb(JSON.parse(e.data)); } catch {} };
-    } catch { /* SSE unsupported */ }
+      es.onmessage = (e) => {
+        try { cb(JSON.parse(e.data)); }
+        catch (err) { report({ type: 'SSEHandlerError', message: String(err && err.message || err), stack: err && err.stack }); }
+      };
+    } catch (e) {
+      report({ level: 'warn', type: 'SSEUnavailable', message: String(e && e.message || e) });
+    }
     return () => es && es.close();
   }
 

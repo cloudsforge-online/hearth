@@ -12,6 +12,10 @@ const P = require('./params');
 
 const isHash = s => typeof s === 'string' && /^[0-9a-f]{64}$/.test(s);
 
+// remoteAddress is gone once the socket is destroyed, so a close/error log
+// would otherwise name no peer at all
+const peerName = sock => (sock.remoteAddress ? `${sock.remoteAddress}:${sock.remotePort}` : 'closed');
+
 function isBlock(b) {
   if (!b || typeof b !== 'object') return false;
   const h = b.header;
@@ -31,21 +35,31 @@ class P2P {
     this.timer = null;
     this.stopped = false;
     this._loc = null;         // memoized locator
+    this._down = new Set();   // peers we have already reported as unreachable
   }
 
   listen(port) {
     this.server = net.createServer(sock => this._setup(sock, 'in'));
-    this.server.listen(port, () => this.node.log(`p2p listening on :${port}`));
+    this.server.on('error', e => this.node.error('p2p listen failed', { port, err: String(e && e.message || e) }));
+    this.server.listen(port, () => this.node.log(`p2p listening on :${port}`, { port }));
   }
 
   connect(hostport) {
     if (this.stopped) return;
     const [host, port] = hostport.split(':');
     const sock = net.connect({ host, port: Number(port) }, () => {
-      this.node.log(`p2p connected to ${hostport}`);
+      this._down.delete(hostport);
+      this.node.log(`p2p connected to ${hostport}`, { peer: hostport, dir: 'out', peers: this.peers.size + 1 });
       this._setup(sock, 'out');
     });
-    sock.on('error', () => {/* retry loop below */});
+    // a seed that is down or moved looks identical to a healthy node otherwise:
+    // the retry loop below hides it forever. Said once per outage, since the
+    // loop reconnects every 3s and would otherwise fill the log with one peer.
+    sock.on('error', e => {
+      if (this._down.has(hostport)) return;
+      this._down.add(hostport);
+      this.node.warn('p2p connect failed', { peer: hostport, err: String(e && e.message || e) });
+    });
     sock.on('close', () => {
       if (this.stopped) return;
       setTimeout(() => this.connect(hostport), 3000).unref();
@@ -63,27 +77,52 @@ class P2P {
 
   _setup(sock, dir) {
     // cap inbound peers to resist connection flooding
-    if (this.peers.size >= P.P2P_MAX_PEERS) { sock.destroy(); return; }
+    if (this.peers.size >= P.P2P_MAX_PEERS) {
+      this.node.warn('p2p peer refused: at capacity', { peer: peerName(sock), dir, peers: this.peers.size });
+      sock.destroy();
+      return;
+    }
     this.peers.add(sock);
+    // a misbehaving peer must not be able to write the log as fast as it can
+    // write the socket, so each fault is reported once per connection
+    const said = new Set();
+    const once = (key, level, msg, fields) => { if (!said.has(key)) { said.add(key); this.node[level](msg, fields); } };
     let buf = '';
     sock.on('data', d => {
       buf += d.toString();
       // bound the read buffer: a peer that never sends a newline can't exhaust memory
-      if (buf.length > P.P2P_MAX_LINE) { this.peers.delete(sock); sock.destroy(); return; }
+      if (buf.length > P.P2P_MAX_LINE) {
+        this.node.warn('p2p peer dropped: oversized frame', { peer: peerName(sock), dir, bytes: buf.length });
+        this.peers.delete(sock); sock.destroy(); return;
+      }
       let nl;
       while ((nl = buf.indexOf('\n')) >= 0) {
         const line = buf.slice(0, nl); buf = buf.slice(nl + 1);
-        if (line.trim()) { try { this._onMsg(sock, JSON.parse(line)); } catch {} }
+        if (!line.trim()) continue;
+        try { this._onMsg(sock, JSON.parse(line)); }
+        catch (e) {
+          once('parse', 'warn', 'p2p malformed message', {
+            peer: peerName(sock), dir, err: String(e && e.message || e), bytes: line.length,
+          });
+        }
       }
     });
-    sock.on('error', () => this.peers.delete(sock));
-    sock.on('close', () => this.peers.delete(sock));
+    sock.on('error', e => {
+      once('err', 'warn', 'p2p peer error', { peer: peerName(sock), dir, err: String(e && e.message || e) });
+      this.peers.delete(sock);
+    });
+    sock.on('close', () => {
+      if (this.peers.delete(sock)) this.node.warn('p2p peer disconnected', { peer: peerName(sock), dir, peers: this.peers.size });
+    });
     // handshake carries the network id so a testnet node can't corrupt mainnet
     this._send(sock, this._hello());
     this._startResync();
   }
 
-  _send(sock, msg) { try { sock.write(JSON.stringify(msg) + '\n'); } catch {} }
+  _send(sock, msg) {
+    try { sock.write(JSON.stringify(msg) + '\n'); }
+    catch (e) { this.node.debug('p2p send failed', { peer: peerName(sock), t: msg && msg.t, err: String(e && e.message || e) }); }
+  }
 
   broadcast(msg, except) {
     for (const p of this.peers) if (p !== except) this._send(p, msg);
@@ -160,7 +199,10 @@ class P2P {
     const r = this.node.chain.addBlock(b);
     if (r.ok) this._connectOrphans(r.id);
     else if (r.err === 'unknown parent') this._orphan(b);
-    else if (r.err !== 'known') this.node.log(`p2p rejected block ${b.header.height}: ${r.err}`);
+    // a peer feeding us invalid blocks is either broken or hostile; either way
+    // it is the one failure here that nothing else in the system would show
+    else if (r.err !== 'known') this.node.error(`p2p rejected block ${b.header.height}: ${r.err}`,
+      { height: b.header.height, prevHash: b.header.prevHash, err: r.err });
     return r;
   }
 
@@ -170,7 +212,10 @@ class P2P {
     switch (msg.t) {
       case 'hello': {
         // refuse peers on a different network (prevents cross-chain contamination)
-        if (msg.net && msg.net !== P.NETWORK) { this.peers.delete(sock); sock.destroy(); return; }
+        if (msg.net && msg.net !== P.NETWORK) {
+          this.node.warn('p2p peer dropped: wrong network', { peer: peerName(sock), theirs: String(msg.net).slice(0, 32), ours: P.NETWORK });
+          this.peers.delete(sock); sock.destroy(); return;
+        }
         // negotiate on ANY tip we don't hold, not just a taller one — an
         // equal-height peer on a different branch is the case that split forever
         const have = isHash(msg.tip) && chain.store.has(msg.tip);

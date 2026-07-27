@@ -7,8 +7,9 @@
 # needed" deploy path silently served an empty directory (nginx 403) on any host
 # that had not cloned this repository.
 #
-# No build step: these are hand-written multi-page static files, and the default
-# nginx config serves them correctly.
+# No build step: these are hand-written multi-page static files. The bundled
+# nginx.conf is only here for the log format and a real 404 — see that file.
 FROM nginx:alpine@sha256:4a73073bd557c65b759505da037898b61f1be6cbcc3c2c3aeac22d2a470c1752
 COPY . /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80

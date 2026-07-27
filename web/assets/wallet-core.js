@@ -77,7 +77,7 @@ export function seedFromPem(pem) {
   let der;
   try {
     der = toHex(Uint8Array.from(atob(b64), c => c.charCodeAt(0)));
-  } catch { throw new Error('not a valid PEM private key'); }
+  } catch (e) { throw new Error('not a valid PEM private key', { cause: e }); }
   if (!der.startsWith(PKCS8_PREFIX) || der.length !== PKCS8_PREFIX.length + 64)
     throw new Error('not an Ed25519 PKCS#8 key');
   return der.slice(PKCS8_PREFIX.length);

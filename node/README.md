@@ -31,6 +31,19 @@ node bin/hearthd.js \
 Env vars (handy in containers): `HEARTH_DATA`, `HEARTH_RPC`, `HEARTH_P2P`,
 `HEARTH_PEERS` (comma-separated), `HEARTH_MINE=1`, `HEARTH_THROTTLE`.
 
+## Logs
+
+`HEARTH_LOG_LEVEL` (`trace|debug|info|warn|error|fatal`, default `info`) and
+`HEARTH_LOG_FORMAT` (`text|json`). The format defaults to `text` on a terminal
+and `json` everywhere else, so an interactive run stays readable while a
+container emits one pino-shaped JSON object per line:
+
+```json
+{"level":30,"time":1785178645587,"service":"hearthd","msg":"⛏  mined block #1 …","height":1,"reward":5.4}
+```
+
+`--quiet` still silences everything.
+
 ## Wallet CLI
 
 ```bash
