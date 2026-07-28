@@ -61,6 +61,45 @@ The Hearth app mines as a good houseguest:
 
 Mining should be invisible — spare cycles turned into money, not a space heater.
 
+## Mining in a browser
+
+`web/mine.html` is a real miner, not a demo: the same Homefire the node runs,
+hashing in a pool of Web Workers, submitting blocks to a live chain.
+
+**Why a browser can do this at all.** Non-outsourceability means the winner must
+sign the digest with the key the coinbase pays, so a browser has to hold its own
+key — which it already does, in the wallet. The node hands out a candidate built
+for *your* public key and keeps the transactions; you return a nonce, a digest
+and a signature. Your private key never leaves the page.
+
+  GET  /mining/template?pub=<spki-der-hex>   → header core, target, PoW params
+  POST /mining/submit  {templateId, nonce, powDigest, powSig}
+
+The node cannot mine on your behalf and no operator can take your work, because
+work built for your key is worthless to anyone else. That is the same property
+that kills pools, applied to a browser tab.
+
+**Why it is not slow.** One attempt is ~8,450 SHA-256 rounds — 8,192 to fill the
+scratchpad, 256 to walk it. `crypto.subtle.digest` is async, so WebCrypto would
+mean thousands of promises per nonce. `web/assets/mining/sha256.js` is a
+synchronous implementation that allocates nothing in the hot path, and
+`homefire.js` keeps one scratchpad across attempts. Measured at the dev params
+(64 KiB / 256 steps), that is **~225 H/s per thread — about 1.37× the node's own
+native-crypto implementation**, because `createHash`'s per-call overhead
+dominates when you need thousands of calls.
+
+**Politeness, concretely.** An effort slider sets a duty cycle; workers sleep
+proportionally between batches rather than pinning a core. A hidden tab drops to
+a trickle. The loop yields for a second reason too: a Worker that never yields
+cannot receive `postMessage`, so it could not be stopped or handed new work.
+
+**Correctness.** A digest that differs from the node's in one bit would mine
+nothing while looking busy for hours. `node/test/browser-pow.js` compares the two
+implementations directly — SHA-256 padding edges, `powSeed`, Homefire digests,
+target comparison — then mines a block with the browser code and has the node
+verify it. `node/test/mining-api.js` drives the HTTP endpoints and asserts that a
+proof signed by anyone but the coinbase key is rejected. Both run in CI.
+
 ## Difficulty & security
 - Retarget every block with LWMA to resist timestamp manipulation and hashrate
   swings.
@@ -74,8 +113,9 @@ Mining should be invisible — spare cycles turned into money, not a space heate
   design. Use warmshares + an optional trustless co-op instead.
 - **Will it drain my battery?** Not by default — polite mining runs on AC/idle and
   throttles.
-- **How do I start?** Install the Hearth app, press *Start your hearth*. Or mine in
-  a browser tab with the WASM light-miner from `web/wallet.html`.
+- **How do I start?** Open `web/mine.html`, create or load a key, press *Start
+  mining*. Or run a node with `hearthd --mine`. There is no WASM light-miner and
+  never was — this line used to promise one in `web/wallet.html`.
 
 ## Production vs. proof-of-concept
 The JS in `proto/` demonstrates memory-hardness and non-outsourceability so the

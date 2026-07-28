@@ -79,9 +79,11 @@ A message confirms when its block does — around 15s, not instantly.
 | GET | `/tx/:txid` | one transaction, its block and its confirmation depth |
 | GET | `/address/:addr` | balance, spendable/immature split + UTXOs (each tagged `coinbase`, `spendable`, `maturesAtHeight`) |
 | GET | `/records?app=&key=&since=&limit=` | application records on the active chain |
+| GET | `/mining/template?pub=` | a block candidate whose coinbase pays that key |
 | GET | `/mempool` | pending transactions |
 | GET | `/events` | SSE stream of new blocks; `?app=` streams that app's records instead |
 | POST | `/tx` | broadcast a signed transaction |
+| POST | `/mining/submit` | `{templateId, nonce, powDigest, powSig}` from a remote miner |
 | POST | `/rpc` | JSON-RPC (`getinfo`, `getbalance`, `getblockcount`, `sendtx`) |
 
 ## Tests
@@ -90,6 +92,8 @@ A message confirms when its block does — around 15s, not instantly.
 node test/unit.js     # primitives: crypto, tx, pow, emission, difficulty
 node test/e2e.js      # mine, pay, verify ledger/burn/persistence end to end
 node test/records.js  # record consensus rules, sealed boxes, a whole conversation
+node test/browser-pow.js # the browser miner's hashing vs the node's, digest for digest
+node test/mining-api.js  # mine a block over HTTP the way a browser tab does
 node test/p2p-fork.js # partition two nodes and prove the reorg
 ```
 
