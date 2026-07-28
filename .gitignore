@@ -7,6 +7,11 @@ data/
 node_modules/
 npm-debug.log*
 
+# the full ethereum/tests corpus, fetched by node/scripts/fetch-vectors.sh.
+# The small representative subset under node/test/conformance/fixtures/ IS
+# committed, so the conformance harness runs offline.
+node/test/conformance/vectors/
+
 # rust
 **/target/
 **/*.rs.bk
