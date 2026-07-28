@@ -601,7 +601,14 @@ function traceStateVector(v, o = {}) {
       result: { exception: 'insufficient funds for gas * price', gasLeft: 0n, gasUsed: 0n, returnData: '0x', createdAddress: null, revert: null, internalError: null, intrinsicGas: intrinsic },
     };
   }
-  db.setNonce(from, db.getNonce(from) + 1n);
+  /* The nonce bump belongs to the CALL path only. `EVM.create` does its own,
+   * and the address it derives is `keccak(rlp([sender, nonce_BEFORE_the_bump]))`
+   * — so bumping here too traces a creation at the wrong address entirely, with
+   * the wrong pre-existing account under it. `chain/statetransition.js:303`
+   * makes the same distinction, for the same reason. This is silent when it is
+   * wrong: the trace still runs, still says OK, and simply describes a
+   * transaction that never happened. */
+  if (!isCreation) db.setNonce(from, db.getNonce(from) + 1n);
 
   const evm = new EVM({
     state: db,

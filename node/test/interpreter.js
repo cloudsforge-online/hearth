@@ -493,15 +493,57 @@ group('CREATE and CREATE2');
   const poor = mk(returnsNBytes(100), 20000n);
   ok(poor.r.exception === ERR.OUT_OF_GAS && poor.r.gasLeft === 0n, 'a creation that cannot pay 200/byte fails');
   ok(mk(returnsNBytes(100), 20100n).r.exception === null, '…and 100 more gas is enough to make it succeed');
-  // Collision.
-  {
+  /* Collision — all three arms of it.
+   *
+   * "Occupied" is nonce, OR code, OR storage. The third arm is EIP-7610 and is
+   * the one EIP-684 does not mention: an address holding storage but no code
+   * and nonce 0 is NOT a blank slate to be reset, it is taken. Reading EIP-684
+   * alone produces an implementation that silently wipes somebody's storage,
+   * which is a state-root divergence and therefore a chain split.
+   *
+   * Balance is deliberately not an arm: anyone can send to an address before a
+   * contract lands there, and being able to do so would be a griefing vector. */
+  const occupied = (seed) => {
     const db = new StateDB(new MemoryDB());
     const victim = createAddress(addr(0xca), 0n);
-    db.setCode(victim, hex('00'));
+    seed(db, victim);
     db.commit(); db.beginTransaction();
     const evm = new EVM({ state: db, block: {}, tx: {} });
-    const col = evm.create({ caller: addr(0xca), initcode: hex('00'), gas: 100000n });
-    ok(col.exception === ERR.COLLISION && col.gasLeft === 0n, 'creating over an occupied address consumes all gas');
+    // The initcode would SSTORE slot 1 = 0x22 if it ever ran, so a wrongly
+    // permitted creation is visible in the storage as well as in the result.
+    const r = evm.create({ caller: addr(0xca), initcode: hex('60226001556000600060006000f3'), gas: 100000n });
+    return { db, victim, r };
+  };
+  {
+    const c = occupied((db, v) => db.setCode(v, hex('00')));
+    ok(c.r.exception === ERR.COLLISION && c.r.gasLeft === 0n, 'creating over an address that has code consumes all gas');
+  }
+  {
+    const c = occupied((db, v) => db.setNonce(v, 1n));
+    ok(c.r.exception === ERR.COLLISION && c.r.gasLeft === 0n, '…and over one with a non-zero nonce');
+  }
+  {
+    const c = occupied((db, v) => db.setStorage(v, 1n, 1n));
+    ok(c.r.exception === ERR.COLLISION && c.r.gasLeft === 0n,
+      '…and over one with storage but no code and nonce 0 (EIP-7610)');
+    ok(c.db.getStorage(c.victim, 1n)[31] === 1,
+      'and that storage survives untouched — a collision is not a reset');
+    ok(c.db.getNonce(c.victim) === 0n && c.db.getCode(c.victim).length === 0,
+      'nor does the failed creation leave a nonce or code behind');
+    ok(c.db.getNonce(addr(0xca)) === 1n, "but the creator's nonce is still spent");
+  }
+  {
+    // Balance alone must NOT collide: the creation runs and deploys.
+    const c = occupied((db, v) => db.setBalance(v, 10n));
+    ok(c.r.exception === null, 'a balance alone does not make an address occupied');
+    ok(c.db.getBalance(c.victim) === 10n, 'and the pre-existing balance survives the deployment');
+    ok(c.db.getStorage(c.victim, 1n)[31] === 0x22, 'the initcode really ran');
+  }
+  {
+    // Storage written and then cleared inside the transaction leaves an empty
+    // root, so the address is free again — the test is the root, not a history.
+    const c = occupied((db, v) => { db.setStorage(v, 1n, 1n); db.setStorage(v, 1n, 0n); });
+    ok(c.r.exception === null, 'storage written and cleared again leaves the address free');
   }
   // EIP-3860: the initcode cap is an exceptional halt inside CREATE, not a failed create.
   {

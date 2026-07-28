@@ -691,6 +691,61 @@ group('trace — replaying a conformance vector');
   eq(s.result.exception, null, 'and it succeeds');
   ok(String(s.source).includes('Shanghai'), 'the source names the fork the vector is for');
   ok([].concat(s.note).some((n) => n.includes('no state root')), 'and the output says plainly that it is not computing a state root');
+
+  /* A CREATION vector, which is a different code path and used to be traced at
+   * the wrong address entirely. `EVM.create` derives the address from the
+   * nonce BEFORE it bumps it and bumps it itself, exactly as
+   * chain/statetransition.js does — so a tracer that also bumps the nonce up
+   * front deploys at `createAddress(sender, 1)` and never sees what is sitting
+   * at `createAddress(sender, 0)`. Nothing complains: the trace runs, reports
+   * OK, and describes a transaction that did not happen. This vector puts a
+   * storage-carrying account at the right address, so getting it wrong is the
+   * difference between a collision and a clean deployment. */
+  const cfile = path.join(sdir, 'create.json');
+  // keccak256(rlp([0xa94f…, 0]))[12:] — the canonical first-creation address.
+  const CREATED = '0x6295ee1b4f6dd65047762f924ecd367c17eabf8f';
+  fs.writeFileSync(cfile, JSON.stringify({
+    initcollide: {
+      env: {
+        currentCoinbase: '0x2adc25665018aa1fe0e6bc666dac8fc2697ff9ba',
+        currentDifficulty: '0x020000',
+        currentGasLimit: '0x1c9c380',
+        currentNumber: '0x01',
+        currentTimestamp: '0x03e8',
+      },
+      pre: {
+        [CREATED]: { balance: '0x0a', code: '0x', nonce: '0x00', storage: { '0x01': '0x01' } },
+        [SENDER]: { balance: '0x0de0b6b3a7640000', code: '0x', nonce: '0x00', storage: {} },
+      },
+      transaction: {
+        nonce: '0x00', gasPrice: '0x01',
+        gasLimit: ['0x030d40'], to: '',
+        value: ['0x00'], data: ['0x600160015500'],
+        sender: SENDER,
+        secretKey: '0x45a915e4d060149eb4365960e6a7a45f334393093061116b197e3240065ff2d8',
+      },
+      post: { Shanghai: [{ indexes: { data: 0, gas: 0, value: 0 }, hash: '0x' + '00'.repeat(32), logs: '0x' + '00'.repeat(32) }] },
+    },
+  }, null, 2));
+
+  const c = trace.traceVector(cfile, null, {});
+  eq(c.result.exception, 'contract address collision',
+    'a creation onto an address that holds storage traces as a collision, not a deployment');
+  eq(c.result.createdAddress, null, 'nothing is deployed');
+  eq(c.events.filter((e) => e.type === 'step').length, 0, 'and not one opcode of the initcode runs');
+
+  // The same transaction with the collider removed: the address the tracer
+  // deploys at is the direct witness for which nonce it derived from. With the
+  // off-by-one it is createAddress(sender, 1) = 0xec0e71…, and the collision
+  // case above silently passes over an empty account and reports success.
+  const clean = JSON.parse(fs.readFileSync(cfile, 'utf8'));
+  delete clean.initcollide.pre[CREATED];
+  const nfile = path.join(sdir, 'create-clean.json');
+  fs.writeFileSync(nfile, JSON.stringify(clean, null, 2));
+  const n = trace.traceVector(nfile, null, {});
+  eq(n.result.exception, null, 'with the address free the same creation succeeds');
+  eq(String(n.result.createdAddress).toLowerCase(), CREATED,
+    'and deploys at createAddress(sender, 0) — the tracer must not bump the nonce a creation is derived from');
 }
 
 // ===========================================================================

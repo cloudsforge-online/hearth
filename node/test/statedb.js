@@ -679,6 +679,25 @@ group('original storage for SSTORE pricing', () => {
   sdb.beginTransaction();
   ok(num(sdb.originalStorage(A, 1n)) === 55n, 'the next transaction takes its baseline from where the last one ended');
   ok(num(sdb.originalStorage(A, 3n)) === 33n, 'for every slot, not just the ones asked about before');
+
+  /* createAccount wipes the storage, so the baseline has to move to zero with
+   * it — otherwise SSTORE prices the EIP-2200 rows against a value that is no
+   * longer there. NOTHING IN THE CONFORMANCE CORPUS REACHES THIS: post-EIP-7610
+   * the EVM never calls createAccount on an address that has storage, because
+   * that is a collision. It is pinned here because createAccount is a public
+   * method of this module and this is its documented contract; see the note on
+   * originalStorage. */
+  const rst = new StateDB();
+  rst.setStorage(A, 1n, 10n);
+  rst.setStorage(A, 2n, 20n);
+  rst.beginTransaction();
+  ok(num(rst.originalStorage(A, 1n)) === 10n, 'reset: the baseline starts at the pre-transaction value');
+  const mark = rst.snapshot();
+  rst.createAccount(A);
+  ok(rst.originalStorage(A, 1n).equals(Buffer.alloc(32)), 'createAccount takes the baseline to zero for a slot already read');
+  ok(rst.originalStorage(A, 2n).equals(Buffer.alloc(32)), 'and for one read for the first time afterwards');
+  rst.revertTo(mark);
+  ok(num(rst.originalStorage(A, 1n)) === 10n, 'and reverting the creation puts the baseline back');
 });
 
 // ---- historical state ------------------------------------------------------
@@ -743,6 +762,46 @@ group('account creation', () => {
   const raw = sdb.getAccount(C);
   raw.balance = 999n;
   ok(sdb.getBalance(C) === 3n, 'and getAccount hands back a copy, not the live record');
+});
+
+// ---- the storage root, as CREATE reads it ----------------------------------
+/* `getStorageRoot` exists for exactly one caller — the EIP-7610 arm of the CREATE
+ * collision test — so its contract is that "occupied" is one comparison, with no
+ * existence check in front of it. An absent account must therefore report the
+ * EMPTY root and not null, or `hasStorage` throws on the commonest case there is. */
+group('storage root', () => {
+  const sdb = new StateDB();
+  ok(sdb.getStorageRoot(A).equals(EMPTY_TRIE_ROOT), 'an absent account reports the empty storage root');
+  ok(sdb.hasStorage(A) === false, 'and holds no storage');
+
+  sdb.setBalance(A, 1n);
+  ok(sdb.hasStorage(A) === false, 'a funded account with no slots still holds none');
+  sdb.setNonce(A, 9n); sdb.setCode(A, '0x6001');
+  ok(sdb.hasStorage(A) === false, '…nor does a nonce or code make storage appear');
+
+  sdb.setStorage(A, 1n, 5n);
+  ok(sdb.hasStorage(A) === true, 'one written slot makes it non-empty');
+  ok(sdb.getStorageRoot(A).equals(sdb.getAccount(A).storageRoot), 'and the root is the account record’s');
+
+  // Zero is absence, so clearing the last slot must take the root back to empty
+  // — otherwise an account that once held storage would collide forever.
+  sdb.setStorage(A, 1n, 0n);
+  ok(sdb.hasStorage(A) === false, 'clearing the last slot empties the root again');
+
+  // Journaled with everything else: a reverted write must un-occupy the address.
+  sdb.setStorage(B, 3n, 7n);
+  const mark = sdb.snapshot();
+  sdb.setStorage(B, 4n, 8n);
+  ok(sdb.hasStorage(B) === true, 'a second slot keeps it occupied');
+  sdb.revertTo(mark);
+  ok(sdb.hasStorage(B) === true && sdb.getStorage(B, 4n).equals(Buffer.alloc(32)),
+    'and a revert restores the earlier root, not the empty one');
+
+  const m2 = sdb.snapshot();
+  sdb.setStorage(C, 1n, 1n);
+  ok(sdb.hasStorage(C) === true, 'a fresh account gains storage');
+  sdb.revertTo(m2);
+  ok(sdb.hasStorage(C) === false, 'and loses it again on revert');
 });
 
 console.log(`\n${fail === 0 ? 'PASS' : 'FAIL'} — ${pass}/${pass + fail} checks`);
