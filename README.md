@@ -195,3 +195,16 @@ Please report vulnerabilities privately — see **[SECURITY.md](SECURITY.md)**.
 <sub><b>Keywords:</b> Hearth, EMBER, cryptocurrency, proof of work, CPU mining, ASIC resistant,
 memory-hard proof of work, decentralized digital cash, mine crypto at home, no premine,
 fair launch, crypto wallet, block explorer, blockchain node, Rust blockchain, tail emission, fee burn.</sub>
+
+## How this was built
+
+Parts of this repository were produced with AI assistance, and it seems worth saying so plainly
+rather than leaving it to be inferred.
+
+- **Code** — written with Claude Opus 5 and Claude Opus 4.8 (Anthropic), reviewed and directed by
+  a human, and gated on the same tests and CI as anything else here.
+- **Artwork** — brand marks, icons and in-game art generated with OpenAI's image models
+  (GPT Image 1, 1.5 and 2), driven by the manifest pipeline in `asset-forge`.
+
+The models were used under paid API access and the output is the project's to use. Nothing here is
+claimed to be hand-written that is not, and nothing is claimed to work that has not been tested.
