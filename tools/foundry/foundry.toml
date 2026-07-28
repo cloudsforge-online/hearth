@@ -1,0 +1,45 @@
+# Foundry, configured for Hearth.
+#
+# The compiler settings match contracts/ exactly — solc 0.8.26, evmVersion
+# shanghai, optimizer at 999999 runs, no metadata trailer. That is not
+# cosmetic: contracts/README.md pins the Uniswap V2 init code hash to those
+# settings, and anything you compile here that has to interoperate with the
+# router (a pair, a token you intend to pool) must be built the same way or the
+# explorer will refuse to verify it against the deployed bytecode.
+#
+# Do NOT raise evm_version. `cancun` or later emits MCOPY / TSTORE / TLOAD,
+# which Hearth v1 does not implement — the contract compiles here and reverts
+# with an invalid-opcode error on chain, at runtime, in production.
+
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+test = "test"
+script = "script"
+
+solc_version = "0.8.26"
+evm_version = "shanghai"
+optimizer = true
+optimizer_runs = 999_999
+bytecode_hash = "none"
+
+# Hearth v1 has legacy (type 0) gas pricing only, so there is no priority fee
+# to set and no base fee to pay. Foundry still needs `--legacy` on the command
+# line for broadcasting; see tools/foundry/README.md.
+
+[rpc_endpoints]
+# `forge script --rpc-url hearth` resolves this. There is no default, because
+# there is no public endpoint yet: set HEARTH_RPC_URL yourself.
+hearth = "${HEARTH_RPC_URL}"
+
+[etherscan]
+# Left empty deliberately. Hearth has no Etherscan-compatible verification API
+# yet (docs/listing-checklist.md §3), so `forge verify-contract` has nothing to
+# talk to. Filling this in with a plausible-looking URL would produce a
+# confusing failure instead of an obvious one.
+
+[fmt]
+line_length = 100
+tab_width = 4
+bracket_spacing = true

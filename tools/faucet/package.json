@@ -1,0 +1,15 @@
+{
+  "name": "@cloudsforge/hearth-faucet",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Testnet EMBER faucet for Hearth — zero dependencies, plain node:http",
+  "license": "MIT",
+  "type": "commonjs",
+  "main": "src/index.js",
+  "bin": { "hearth-faucet": "src/index.js" },
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node test/faucet.test.js"
+  },
+  "engines": { "node": ">=18" }
+}

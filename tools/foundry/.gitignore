@@ -1,0 +1,13 @@
+out/
+cache/
+
+# `forge install foundry-rs/forge-std` fetches this. Not vendored and not a git
+# submodule: a submodule in this repository would be a permanent maintenance
+# cost for a template, and the install is one documented command.
+lib/
+
+# `forge script --broadcast` writes transaction logs here, including sender
+# addresses and full calldata.
+broadcast/
+
+.env

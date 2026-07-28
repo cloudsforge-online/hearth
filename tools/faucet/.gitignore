@@ -1,0 +1,16 @@
+# The rate-limiter's persisted state. Operational data, and it records every
+# address that has been funded and from which IP.
+faucet-state.json
+faucet-state.json.tmp
+
+# There is no npm dependency here and there never should be. If a node_modules
+# appears, something has gone wrong.
+node_modules/
+
+.env
+
+# Belt and braces. The faucet already refuses a key file that resolves inside
+# this repository, but a key that cannot be added is better than one that is
+# merely refused at runtime.
+*.key
+*.pem

@@ -152,3 +152,42 @@ jobs:
         run: node scripts/compile.mjs
       - name: Build tests
         run: node --test test/build.test.mjs
+
+  tools:
+    name: Developer kit (faucet tests + template configs parse)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # The faucet holds a funded key and its whole engineering problem is
+      # REFUSING: per-address and per-IP limits, a global payout cap, a clear
+      # answer when dry, and — the one that looks correct in review and is not —
+      # a check-and-record that is atomic against concurrent requests for the
+      # same address. These run over real HTTP against a stub node and need no
+      # network and no dependencies.
+      - name: Faucet
+        run: node tools/faucet/test/faucet.test.js
+      # Not a compile — just proof that the templates and the probe still parse
+      # after a refactor upstream. `hardhat.config.js` in particular is the file
+      # that pins evmVersion to shanghai, and a syntax error in it fails as
+      # "cannot find network hearth", which is not a useful signal.
+      - name: Templates and probe parse
+        run: |
+          node --check tools/rpc-probe/stub.js
+          node --check tools/hardhat/hardhat.config.js
+          for f in tools/hardhat/scripts/*.js; do node --check "$f"; done
+      # The probe imports node/src/jsonrpc and node/src/chain/transaction
+      # directly, so this catches an interface change in either the moment it
+      # lands rather than the next time someone runs the developer kit.
+      - name: The probe boots and answers the chain id in both encodings
+        run: |
+          node tools/rpc-probe/stub.js --port 8745 &
+          sleep 2
+          post() { curl -sf -X POST -H 'content-type: application/json' \
+            -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"$1\",\"params\":[]}" \
+            http://127.0.0.1:8745; }
+          test "$(post eth_chainId  | sed 's/.*"result":"\([^"]*\)".*/\1/')" = "0x1cf3"
+          test "$(post net_version  | sed 's/.*"result":"\([^"]*\)".*/\1/')" = "7411"
+          echo "ok: eth_chainId is hex, net_version is decimal"

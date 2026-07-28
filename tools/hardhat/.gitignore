@@ -1,0 +1,17 @@
+node_modules/
+artifacts/
+cache/
+typechain-types/
+
+# Lockfiles are not committed for a template: it is meant to be copied and
+# re-resolved, and a pinned tree here would go stale silently.
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+
+# Written by scripts/deploy-dex.js. Addresses belong to a deployment, not to the
+# repository — and committing one from a local hardhat node is how a front-end
+# ends up pointed at an address that exists on nobody's chain.
+deployments.*.json
+
+.env
