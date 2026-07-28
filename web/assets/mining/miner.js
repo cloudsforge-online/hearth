@@ -1,29 +1,71 @@
 /* The browser miner: a pool of workers, a template, and the one signature that
  * makes the reward yours.
  *
- * The winning digest has to be Ed25519-signed by the key the coinbase pays. So
- * this file, and not the node, holds the key: the node hands out a candidate
- * that pays whoever asked for it, and if you ask with someone else's public key
- * you have just mined them a block. Work handed to you cannot be redirected —
- * which is a different and weaker property than non-outsourceability, because
- * the private key never enters the hash loop. See docs/mining.md.
+ * The winning digest has to be signed by the key the coinbase pays. So this
+ * file, and not the node, holds the key: the node hands out a candidate that
+ * pays whoever asked for it, and if you ask with someone else's public key you
+ * have just mined them a block. Work handed to you cannot be redirected — which
+ * is a different and weaker property than non-outsourceability, because the
+ * private key never enters the hash loop. See docs/mining.md.
  *
  * The private key never leaves this page. It is not sent on submit — only the
  * signature over the digest is.
+ *
+ * ---------------------------------------------------------------------------
+ * THE CURVE CHANGED, AND THE HASHING DID NOT (docs/evm-spec.md §4).
+ *
+ * Homefire is untouched: the pad fill, the walk, the digest and the target
+ * comparison are exactly what they were, they still live in homefire.js and
+ * worker.js, and node/test/browser-pow.js still checks them digest for digest
+ * against the node. Nothing in this file's hash loop moved.
+ *
+ * What moved is the key the proof BINDS. The coinbase has to receive the block
+ * reward and the fees, so it must be an account the account-model chain can
+ * credit — which means a secp256k1 key and a 0x address, not an Ed25519 key and
+ * an ember1 one. So `coinbasePub` is now the uncompressed secp256k1 public key
+ * and the proof signature is ECDSA over the same digest bytes.
+ *
+ * There is exactly one secp256k1 implementation in this front-end — the wallet's
+ * port of node/src/crypto/secp256k1.js, cross-checked against it over hundreds
+ * of random keys in assets/wallet-selftest.js. Two independent browser ports of
+ * one curve is how they drift apart, so this file imports that one rather than
+ * carrying its own.
+ *
+ * THE WIRE FORMAT THIS ASSUMES, which phase 5 owns and had not landed when this
+ * was written. `powSig` is r || s, 32 bytes each, 128 lowercase hex characters,
+ * with s in the low half of the group order (EIP-2). No recovery id: the header
+ * already carries `coinbasePub`, so the verifier has the key and does not need
+ * to recover it. If phase 5 chooses a 65-byte recoverable form instead, this is
+ * the one line to change — `POW_SIG_FORM` below names it.
+ * ---------------------------------------------------------------------------
  */
 
-import * as ed from '../vendor/noble-ed25519.js';
-import { seedFromPem } from '../wallet-core.js';
+import { sign as secpSign, bigToBuf32 } from '../wallet/secp256k1.js';
+
+/** Named so a mismatch with the node is a grep, not an investigation. */
+export const POW_SIG_FORM = 'secp256k1-r||s-64-lowS';
 
 const DEFAULT_WORKERS = () => Math.max(1, (navigator.hardwareConcurrency || 4) - 1);
 
 export class Miner extends EventTarget {
-  /** @param {{rpc: string, key: {priv: string, pub: string, address: string}}} opts */
+  /**
+   * @param {{rpc: string,
+   *          key: {priv: Uint8Array, pubHex: string, address: string}}} opts
+   *   `key` is what assets/wallet/keystore.js hands back: a 32-byte secp256k1
+   *   private key, the uncompressed public key as 0x-hex, and the EIP-55 address.
+   */
   constructor({ rpc, key, workers, duty = 0.6, pauseOnBattery = true }) {
     super();
     this.rpc = rpc.replace(/\/$/, '');
     this.key = key;
-    this.seed = seedFromPem(key.priv);       // 32-byte hex, for signing
+    if (!(key && key.priv instanceof Uint8Array && key.priv.length === 32)) {
+      // Better here than three hundred hashes later, at submit time, on the one
+      // block this machine will find all week.
+      throw new Error('miner: needs a 32-byte secp256k1 private key — an Ed25519 key from the '
+        + 'pre-EVM wallet cannot sign a proof this chain accepts');
+    }
+    // The template endpoint takes bare hex, as it always has.
+    this.pubParam = String(key.pubHex || '').replace(/^0x/, '');
     this.workerCount = workers || DEFAULT_WORKERS();
     this.duty = duty;
     this.pauseOnBattery = pauseOnBattery;
@@ -136,7 +178,7 @@ export class Miner extends EventTarget {
 
   async _refresh() {
     if (!this.running) return;
-    const r = await fetch(`${this.rpc}/mining/template?pub=${this.key.pub}`);
+    const r = await fetch(`${this.rpc}/mining/template?pub=${this.pubParam}`);
     if (!r.ok) throw new Error('template ' + r.status);
     const t = await r.json();
     // Same height AND same parent means nothing we are working on changed.
@@ -202,10 +244,13 @@ export class Miner extends EventTarget {
   }
 
   async _submit({ templateId, nonce, digest }) {
-    // The one place the key is used. Sign the digest bytes, exactly as the node
-    // verifies them (block.js: C.verify(coinbasePub, Buffer.from(digest,'hex'), powSig)).
-    const sig = await ed.signAsync(hexToBytes(digest), hexToBytes(this.seed));
-    const powSig = toHex(sig);
+    /* The one place the key is used. The digest is 32 bytes, which is exactly an
+     * ECDSA message hash, so it is signed as-is rather than hashed again — the
+     * node verifies over the same bytes it handed out. RFC 6979 makes the nonce
+     * deterministic, so re-signing the same digest is idempotent and a tab that
+     * has been open all week never risks a repeated k. */
+    const sig = secpSign(hexToBytes(digest), this.key.priv);
+    const powSig = toHex(bigToBuf32(sig.r)) + toHex(bigToBuf32(sig.s));   // see POW_SIG_FORM
 
     const res = await fetch(`${this.rpc}/mining/submit`, {
       method: 'POST',

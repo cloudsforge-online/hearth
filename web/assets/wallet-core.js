@@ -1,4 +1,21 @@
-/* Hearth browser wallet core — the in-page mirror of node/src/crypto.js,
+/* SUPERSEDED — this is the PRE-EVM wallet core, and no page imports it any more.
+ *
+ * Hearth moved to the account model (docs/evm-spec.md): Ed25519 became
+ * secp256k1, `ember1…` bech32 addresses became `0x…` keccak addresses, inputs
+ * and outputs became nonce/gasPrice/gasLimit/to/value/data, and 8 decimals
+ * became 18. Not one function below survives that. The replacements live in
+ * web/assets/wallet/ — account.js, transaction.js, secp256k1.js, amount.js — and
+ * are cross-checked against node/src by web/assets/wallet-selftest.js.
+ *
+ * It is still here for one reason: node/test/keystore.js imports it (and
+ * web/assets/keystore.js) and runs in `npm test`, and node/** belongs to another
+ * agent this cycle. When that test is retired or repointed at
+ * web/assets/wallet/keystore.js, this file, web/assets/keystore.js and
+ * web/assets/vendor/noble-ed25519.js can all go — nothing else references any of
+ * the three.
+ *
+ * ---------------------------------------------------------------------------
+ * Hearth browser wallet core — the in-page mirror of node/src/crypto.js,
  * node/src/tx.js and node/src/wallet.js.
  *
  * Everything here runs on the user's device. The private key is generated with
