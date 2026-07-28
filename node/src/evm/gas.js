@@ -339,9 +339,12 @@ function selfdestructCost({ cold = false, beneficiaryEmpty = false, balance = 0n
  * @returns {{cost: bigint, refund: bigint, sentry: boolean}}
  *
  * `sentry` is true when EIP-2200's reentrancy guard trips (2300 gas or less remaining).
- * The interpreter must then halt the frame with out-of-gas and charge nothing — the
- * point of the guard is that a 2300-gas stipend frame can never write storage, so that
- * `transfer()`-style callbacks stay non-reentrant with respect to state.
+ * `cost` is then 0 because there is no price to quote, NOT because the frame gets off
+ * lightly: the interpreter must treat it as an ordinary out-of-gas exceptional halt,
+ * which consumes ALL remaining gas in the frame and reverts its state. Reading `cost:
+ * 0` as "charge nothing and carry on" would let a stipend frame write storage, which
+ * is the exact attack the guard exists to stop — a 2300-gas `transfer()` callback must
+ * never be able to reach SSTORE.
  */
 function sstoreCost({ cold = false, original = 0n, current = 0n, value = 0n, gasRemaining = 0n }) {
   const orig = big(original);
