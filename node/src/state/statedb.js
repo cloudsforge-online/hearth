@@ -138,6 +138,10 @@ class StateDB {
     this._journal = [];
     this._destroyed = new Set();
     this._touched = new Set();
+    // Accounts reset by createAccount within this transaction. Separate from
+    // _destroyed because a reset is not a self-destruct: the account stays,
+    // its storage does not. originalStorage has to know — see the note there.
+    this._reset = new Set();
     this._warmAddr = new Set();
     this._warmSlot = new Set();
     this._refund = 0n;
@@ -239,6 +243,12 @@ class StateDB {
     const prev = this._load(hex);
     this._mutable(hex, false);
     this._write(hex, { ...emptyAccount(), balance: prev === null ? 0n : prev.balance });
+    // The storage is gone as of now, so originalStorage must stop answering
+    // from the pre-transaction root. Journaled, so a revert un-resets it.
+    if (!this._reset.has(hex)) {
+      this._reset.add(hex);
+      this._journal.push(() => this._reset.delete(hex));
+    }
   }
 
   getNonce(addr) { const a = this._load(toAddress(addr).toString('hex')); return a === null ? 0n : a.nonce; }
@@ -349,7 +359,22 @@ class StateDB {
    */
   originalStorage(addr, slot) {
     const a = toAddress(addr);
-    const key = a.toString('hex') + toWord(slot).toString('hex');
+    const hex = a.toString('hex');
+    // A CREATE landing on an address that has storage but no code and nonce 0
+    // resets it — not a collision, a legal reset. The storage is wiped, so the
+    // "original" value is zero from here on, even though the pre-transaction
+    // root still holds the old one.
+    //
+    // Checked BEFORE the memo, because a slot read earlier in the same
+    // transaction has already cached the pre-reset value.
+    //
+    // Left unhandled this is not a rounding error: SSTORE prices the EIP-2200
+    // rows against `original`, so it charges rows 8/9 instead of row 3 and
+    // subRefund drives the refund counter negative and throws. Ten
+    // GeneralStateTests catch it — the create2collision and
+    // RevertInCreateInInit families.
+    if (this._reset.has(hex)) return ZERO_WORD;
+    const key = hex + toWord(slot).toString('hex');
     const memo = this._committed.get(key);
     if (memo) return memo;
     let v = ZERO_WORD;
@@ -484,6 +509,7 @@ class StateDB {
     this._journal.length = 0;
     this._destroyed.clear();
     this._touched.clear();
+    this._reset.clear();
     this._warmAddr.clear();
     this._warmSlot.clear();
     this._committed.clear();
