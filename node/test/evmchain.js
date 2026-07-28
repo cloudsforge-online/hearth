@@ -12,6 +12,15 @@
  * single one of the mutants.
  */
 
+// Mine on the test network unless told otherwise. Homefire is memory-hard by
+// design, so at production sizes one attempt fills a 64 KiB pad and this suite
+// spent 63 seconds finding nonces — not one line of it consensus logic.
+// `hearth-test` shrinks the pad and the walk, leaving difficulty, retargeting
+// and every consensus rule untouched. It has its own chain id and genesis, so
+// nothing signed here is valid anywhere real.
+// MUST precede the params require: these are resolved at module load.
+process.env.HEARTH_NETWORK = process.env.HEARTH_NETWORK || 'hearth-test';
+
 const assert = require('assert');
 const P = require('../src/params');
 const HDR = require('../src/chain/header');
@@ -105,7 +114,11 @@ group('genesis');
   const mainnetGenesis = genesis.build({});
   const testnetGenesis = genesis.build({ chainId: 7412, extraData: '0x' + Buffer.from('hearth-testnet/7412').toString('hex') });
   ok(mainnetGenesis.hash !== testnetGenesis.hash, 'mainnet and testnet have DIFFERENT genesis hashes');
-  eq(Buffer.from(mainnetGenesis.config.extraData.slice(2), 'hex').toString(), 'hearth/7411',
+  // Read from params rather than a literal: the assertion is that the default
+  // genesis NAMES whichever network the node is, which is the property that
+  // stops two chains sharing an ancestor. Hardcoding 'hearth/7411' would make
+  // this suite pass only on the network it happens to run as.
+  eq(Buffer.from(mainnetGenesis.config.extraData.slice(2), 'hex').toString(), `${P.NETWORK}/${P.CHAIN_ID}`,
     'and the default genesis names its network and chain id in extraData');
   eq(TX.CHAIN_ID, P.CHAIN_ID, 'the transaction layer reads the chain id from params rather than declaring one');
 
@@ -564,7 +577,7 @@ group('the RPC adapter speaks native values');
   ok(b.size > 0n, 'size is the RLP byte length');
   eq(b.transactions.length, 1, 'the block carries one transaction');
   eq(typeof b.transactions[0].nonce, 'bigint', 'a full transaction has bigint fields');
-  eq(b.transactions[0].chainId, 7411n, 'and its chain id');
+  eq(b.transactions[0].chainId, BigInt(P.CHAIN_ID), 'and its chain id');
 
   const receipts = R.getBlockReceipts(3n);
   eq(receipts.length, 1, 'getBlockReceipts answers the whole block');

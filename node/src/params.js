@@ -7,6 +7,13 @@ const SPARKS_PER_EMBER = 100_000_000;          // 1e8, smallest unit = "spark"
 
 const NETWORK = process.env.HEARTH_NETWORK || 'hearth';
 
+/* A test network mines cheaply (see POW_SCRATCH_KIB). Matched by suffix, so
+ * `hearth-test` and `hearth-test-evm` qualify while `hearth` and
+ * `hearth-testnet` — the real ones — deliberately do not. Note `hearth-testnet`
+ * ends in "testnet", not "-test": exactly the near-miss worth being explicit
+ * about, since getting it wrong would make a real network trivial to mine. */
+const IS_TEST_NETWORK = NETWORK === 'hearth-test' || NETWORK.startsWith('hearth-test-');
+
 /* EIP-155 CHAIN IDS, PER NETWORK — and the separation is mandatory, not tidy.
  *
  * The retired UTXO scheme put a `net` field INSIDE the signed transaction body
@@ -29,6 +36,11 @@ const NETWORK = process.env.HEARTH_NETWORK || 'hearth';
 const CHAIN_IDS = Object.freeze({
   hearth: 7411,
   'hearth-testnet': 7412,
+  // The in-process test chain. Its own id for the same reason testnet has one:
+  // it mines with a different PoW cost and a different genesis, so nothing
+  // signed against it may be valid anywhere real. Registered here rather than
+  // left to HEARTH_CHAIN_ID so suites need no environment beyond the name.
+  'hearth-test': 7413,
 });
 
 function resolveChainId(network) {
@@ -94,8 +106,24 @@ module.exports = {
 
   // ---- Proof of work (Homefire) ----
   // dev sizes keep local mining snappy; production ≈ 2 GiB / thousands of steps.
-  POW_SCRATCH_KIB: 64,                          // (dev)  production: ~2,097,152 (2 GiB)
-  POW_WALK_STEPS: 256,                          // (dev)  production: ~2048+
+  // On a test network the PAD and the WALK shrink — this is the lever that
+  // actually makes tests fast, and the obvious alternative does not work.
+  //
+  // Making the difficulty TARGET easier buys nothing: LWMA drives blocks toward
+  // TARGET_BLOCK_TIME whatever it starts at, so after a few blocks the work per
+  // block is the same. Freezing the target instead (MIN=GENESIS=MAX) is worse —
+  // it makes any test that exercises retargeting spin forever. Both were tried
+  // and measured.
+  //
+  // What costs the time is one ATTEMPT: Homefire fills a 64 KiB pad with chained
+  // SHA-256 and then walks it 256 times, and at ~1-in-256 that is roughly 2.2M
+  // hashes per block. Shrinking the pad and the walk makes each attempt cheap
+  // while leaving difficulty, retargeting and every consensus rule untouched.
+  //
+  // It does change the PoW function, so a test chain's digests are its own —
+  // which is correct, and consistent with it having its own chain id and genesis.
+  POW_SCRATCH_KIB: IS_TEST_NETWORK ? 1 : 64,    // (dev)  production: ~2,097,152 (2 GiB)
+  POW_WALK_STEPS: IS_TEST_NETWORK ? 8 : 256,    // (dev)  production: ~2048+
   // genesis difficulty target (32-byte big-endian threshold, as hex).
   // Easy on purpose so the first blocks come in ~seconds on one machine.
   // ~8 leading zero bits ⇒ ≈1/256 chance/hash ⇒ a block every ~1–2s at dev hashrate
