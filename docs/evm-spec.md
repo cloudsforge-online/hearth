@@ -310,10 +310,37 @@ win available here.
 - **No mempool visibility.** `eth_getBlockByNumber('pending')` returns null by design and there is no
   `txpool_content`, so a pending transaction can only be found if you already know its hash.
 
-**Where the JSON-RPC server mounts is still undecided**, and it collides: `node/src/rpc.js:152`
-already answers `POST /rpc` with the legacy `{method:'getinfo'}` shape. Pick a path before phase 5
-wires it, or a client hitting `/rpc` gets a 200 that is not JSON-RPC 2.0 — which reads as an empty
-chain rather than a misconfiguration.
+### Where it mounts — settled
+
+**Port 8545, root path `/`.** Owner decision: use the port the ecosystem already defaults to.
+
+That is MetaMask's localhost default, what every Hardhat and Foundry tutorial assumes, and what a
+developer tries before reading anything. Verified free across the whole composed stack — nothing
+had to be moved to take it.
+
+The REST API **stays on 8645**, untouched. It serves the explorer and the SSE feed, and
+`node/src/rpc.js:152` answers `POST /rpc` with the legacy `{method:'getinfo'}` shape. Mounting the
+Ethereum RPC there would have collided with it, and a client would have received a 200 that is not
+JSON-RPC 2.0 — which reads as an empty chain rather than a misconfiguration. Two ports, two
+protocols, no ambiguity.
+
+| | REST + SSE | Ethereum JSON-RPC |
+| --- | --- | --- |
+| container port | 8645 | **8545** |
+| path | `/info`, `/address/:a`, `/block/:id`, `/tx/:id`, `/supply`, `/events` | `/` |
+| host: seed | 8645 | **8545** |
+| host: miner1 | 8647 | 8547 |
+| host: miner2 | 8649 | 8549 |
+
+Inside its container every node listens on 8545; the host ports differ only so three nodes can run
+side by side, mirroring the existing 8645/8647/8649 pattern. **8546 is reserved** for the WebSocket
+endpoint (`eth_subscribe`) in v2, because that is the paired convention and taking it for anything
+else now would be awkward to undo.
+
+Publicly this is one hostname — `rpc.<apex>` → 8545 — and that URL goes into
+`ethereum-lists/chains` and `chainid.network`, where MetaMask caches it, exchanges hardcode it and
+dapps bake it into configs. **It cannot be changed after publication without stranding all of them
+at once**, which is why it is written down here rather than left to whoever wires the server.
 
 Served alongside the existing REST API, which stays for the explorer and Forge Pay. Hex quantity
 encoding must be exact — `0x0` not `0x00`, no leading zeros — because clients are strict.
