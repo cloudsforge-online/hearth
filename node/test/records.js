@@ -4,6 +4,16 @@
  *
  * Run: node test/records.js   (also part of `npm test`) */
 
+// Mine on the test network unless told otherwise. Nothing below is about the
+// PoW function — this suite mines only to get records onto a chain and to age
+// coinbases past maturity — but at production sizes every attempt fills a
+// 64 KiB pad and walks it 256 times, and finding the nonces was 148 of this
+// file's 149 seconds. `hearth-test` shrinks the pad and the walk, leaving
+// difficulty, retargeting and every consensus rule untouched. It has its own
+// chain id and genesis, so nothing mined here is valid anywhere real.
+// MUST precede the params require: these are resolved at module load.
+process.env.HEARTH_NETWORK = process.env.HEARTH_NETWORK || 'hearth-test';
+
 const fs = require('fs');
 const os = require('os');
 const path = require('path');

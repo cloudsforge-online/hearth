@@ -3,6 +3,16 @@
  * emission, commons split, fee burn, coinbase maturity, anti-inflation, and
  * chain reorganization (fork choice). Run: node test/e2e.js */
 
+// Mine on the test network unless told otherwise. The fork-choice half of this
+// file brute-forces two competing branches, so it pays for mining twice over,
+// and at production sizes one attempt fills a 64 KiB pad and walks it 256
+// times. `hearth-test` shrinks the pad and the walk only — difficulty, LWMA
+// retargeting, emission, maturity and fork choice are all still the production
+// rules, which is what this suite is actually about. It has its own chain id
+// and genesis, so nothing mined here is valid anywhere real.
+// MUST precede the params require: these are resolved at module load.
+process.env.HEARTH_NETWORK = process.env.HEARTH_NETWORK || 'hearth-test';
+
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
