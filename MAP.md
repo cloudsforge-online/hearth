@@ -138,18 +138,49 @@ GitHub Pages (`.github/workflows/pages.yml`).
 
 | Page | What it is |
 |---|---|
-| `web/index.html` | Block explorer: 4 stats, latest 12 blocks, and a search box resolving height / 64-hex txid / 64-hex block hash / `ember1…` address (`web/index.html:315-334`) |
+| `web/index.html` + `web/assets/explorer/*.js` | Block explorer for the **account-model EVM chain**, written against the `eth_*` JSON-RPC contract (`node/src/jsonrpc/methods.js`). Blocks, transactions with decoded logs and revert reasons, EOA-vs-contract addresses with disassembly, ERC-20 tokens, `eth_getLogs` search, and a `/supply` view. Hash-routed, zero dependencies, no build step. See §2.5.1 |
 | `web/wallet.html` | Non-custodial wallet — generate, unlock, read balances, build/sign/broadcast |
 | `web/mine.html` | Browser miner over `/mining/template` and `/mining/submit` |
 | `web/pay-demo.html` | Merchant-button **mockup** — see §8 |
 | `web/explorer.html` | 0-second redirect to `./`, kept so old links land |
 
-The node URL resolves `?rpc=` → `<meta name="hearth-rpc">` → same-origin `/rpc`
-→ `:8645` (`web/assets/api.js:20-27`). Same-origin `/rpc` is the deployed path
-and nginx proxies it (`web/nginx.conf:63`). When no node answers, the explorer
-switches to sample data and says so twice — in the mode pill and in a banner
-above the invented rows — and hides the search box entirely rather than
-answering queries from fiction (`web/index.html:360-375`, `:363-366`).
+The wallet and the miner resolve the node URL `?rpc=` → `<meta name="hearth-rpc">`
+→ same-origin `/rpc` → `:8645` (`web/assets/api.js:20-27`) and speak the REST
+API. Same-origin `/rpc` is the deployed path and nginx proxies it
+(`web/nginx.conf:63`).
+
+#### 2.5.1 The explorer
+
+`web/index.html` is a shell; every view is an ES module under
+`web/assets/explorer/`, loaded with `<script type="module">`. No framework, no
+bundler, no npm dependency — deliberately, so it stays a directory of files
+nginx can serve.
+
+| Module | Responsibility |
+|---|---|
+| `app.js` | Hash router, boot, the search box |
+| `rpc.js` | JSON-RPC 2.0 client; batches matched by id; three distinct failure types |
+| `views.js` | One function per view |
+| `chaindata.js` | Multi-call queries and caches; the bounded address scan |
+| `abi.js` | Event/selector hashing, log decoding, revert decoding |
+| `disasm.js` | EVM disassembly; a transcription of `node/src/evm/opcodes.js` |
+| `keccak.js` | Keccak-256 — EIP-55 checksums, code hashes, signature hashing |
+| `emission.js` | A port of `params.js:140-151`, for the supply figure |
+| `format.js`, `dom.js`, `search.js` | Pure formatting, DOM builders, query shape dispatch |
+| `fixtures.js` | A canned chain answering the same wire protocol; opt-in with `?fixtures=1` |
+| `selftest.js` | 147 assertions, runnable as `node web/assets/explorer/selftest.js` |
+
+**It does not invent data.** The old page fell back to a sample-data generator
+when no node answered; this one renders an explicit "no node answered" state
+naming the endpoint and the failure, and offers the fixture chain as an opt-in
+link. Fixtures are never engaged automatically and are labelled in the mode pill,
+in a banner, and on every page.
+
+`selftest.js` cross-checks the three modules that are *copies* of something in
+`node/src` — `keccak.js` against `node/src/crypto/keccak.js`, `disasm.js` against
+all 256 entries of `node/src/evm/opcodes.js`, and `emission.js` against
+`node/src/params.js` — so the copies cannot drift silently. The node's files are
+the authority in all three cases.
 
 ### 2.6 `app-desktop/` — unshipped
 
@@ -555,11 +586,17 @@ and `HEARTH_DATA` (`hearth-cli.js:20-27`).
   screen in `site/` touches it.
 - **API surface the explorer does not show.** `GET /records` is consumed only by
   `hearth-chat` (`node/bin/hearth-chat.js:70`, `:117`); the filtered SSE stream
-  `?app=&key=` likewise (`hearth-chat.js:130`). The explorer renders records only
-  as a table inside a transaction detail (`web/index.html:266-275`) — there is no
-  records browser. `POST /rpc` (`getinfo`/`getbalance`/`getblockcount`/`sendtx`)
-  has no in-repo client at all. `/mempool` is read by the wallet but not the
-  explorer.
+  `?app=&key=` likewise (`hearth-chat.js:130`). `POST /rpc`
+  (`getinfo`/`getbalance`/`getblockcount`/`sendtx`) has no in-repo client at all.
+  `/mempool` is read by the wallet but not the explorer. The explorer no longer
+  reads the REST API at all — it is `eth_*`-only — so records, which are a UTXO
+  construct, have no explorer surface.
+- **Where the `eth_*` JSON-RPC server is mounted is not decided.**
+  `node/src/jsonrpc/server.js` accepts POST at whatever path it is given, and
+  `node/src/rpc.js:152` already answers `POST /rpc` with the older
+  `{method:'getinfo'}` shape. The explorer defaults to same-origin `/rpc/` and
+  reports "answered, but not with JSON-RPC 2.0" if it gets the legacy shape
+  (`web/assets/explorer/rpc.js`).
 - **`web/pay-demo.html` is a mockup, and says so on the control.**
   `web/assets/hearth-pay-demo.js` builds a real `hearth:` URI and then
   **simulates** settlement on a 1,200 ms timer; the txid is deliberately not
@@ -624,8 +661,11 @@ the same (`signing.ts:436-448`, `node/src/crypto.js:8-13`, `node/src/tx.js:45`).
   `recordIndex` are all `Map`s (`chain.js:31-40`), and `_reindex` on every reorg
   walks the full chain (`chain.js:109-113`).
 - **`ember1commons…` is not a checksummed address.** The Commons sink
-  (`params.js:127`) fails `isValidAddress`, which is why the explorer's search
-  deliberately does not checksum-test the address branch (`web/index.html:308-313`).
+  (`params.js:127`) fails `isValidAddress`. Under the account model it becomes a
+  `0x…` address that **has not been chosen** (`docs/tokenomics.md:253-254`), so
+  the explorer's supply view can only *model* the treasury balance until one
+  exists; it reads a real balance from `<meta name="hearth-commons-address">` or
+  `?commons=` when given one, and says "not configured" when not.
 - **Hearth does not do fiat, custody or conversion.** Deposit addresses, Shard
   conversion and withdrawal all live in Forge Pay and ForgeKeyvault. This
   repository's wallets are non-custodial only.
@@ -655,7 +695,10 @@ is pino-shaped JSON in a container and prose at a TTY, switchable with
 **CI** (`.github/workflows/ci.yml`): unit, e2e, records+chat, browser-PoW
 conformance, browser keystore, remote mining API, P2P fork-sync, and the
 coinnomics model; `cargo fmt --check` + `clippy -D warnings` + build + test for
-Rust; `node --check` over `web/assets/*.js`; and three secret-hygiene gates
+Rust; `node --check` over `web/assets/*.js` — a top-level glob that does **not**
+reach the explorer's modules in `web/assets/explorer/`, and does not run
+`web/assets/explorer/selftest.js` at all; both are worth adding
+(`ci.yml:83`); and three secret-hygiene gates
 whose private-key matcher requires a PEM header *followed by real base64*, so
 the legitimate PEM literals in `web/` do not force the check to be muted
 (`ci.yml:99-113`).

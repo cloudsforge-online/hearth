@@ -4,28 +4,44 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Hearth Block Explorer — Live EMBER Blocks, Supply &amp; Hashrate</title>
-<meta name="description" content="Live block explorer for the Hearth network: watch EMBER blocks, home-mined by thousands of addresses, with circulating supply, Commons treasury and network hashrate in real time.">
+<title>Hearth Block Explorer — EMBER Blocks, Transactions, Contracts &amp; Supply</title>
+<meta name="description" content="Block explorer for Hearth, an account-model EVM chain secured by Homefire proof-of-work. Blocks, transactions with decoded logs, contracts with disassembly, ERC-20 tokens, eth_getLogs search, and a circulating supply figure that excludes the Commons treasury.">
 <meta name="robots" content="index, follow">
 <meta name="theme-color" content="#0e0c0a">
 <link rel="canonical" href="https://explorer.cloudsforge.online/">
 <meta property="og:title" content="Hearth Block Explorer">
 <meta property="og:site_name" content="Hearth · CloudsForge">
-<meta property="og:description" content="Watch the Hearth network live — home-mined EMBER blocks, supply, and hashrate.">
+<meta property="og:description" content="Blocks, transactions, contracts and tokens on Hearth — the account-model EVM chain mined at home.">
 <!-- A PNG, absolute, served by the Hearth site: scrapers do not render SVG. -->
 <meta property="og:image" content="https://hearth.cloudsforge.online/og-hearth.png">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://hearth.cloudsforge.online/og-hearth.png">
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
 <link rel="manifest" href="site.webmanifest">
-<!-- No hearth-rpc pin: the node is same-origin /rpc, proxied by nginx.
-     This used to be hardcoded to http://localhost:8645, which meant the
-     deployed explorer asked the VISITOR'S OWN machine for the chain,
-     always failed, and fell back to sample data. Set this meta only to
-     point a page at a node on a different origin. -->
+
+<!-- WHERE THE CHAIN IS.
+     Resolution order is ?rpc= → this meta → same-origin /rpc/ → :8545, and the
+     same-origin default is the deployed path that web/nginx.conf proxies. Set
+     this meta only to aim the page at a node on another origin — and remember
+     the CSP's connect-src has to allow it (HEARTH_CSP_CONNECT).
+
+     Phase 5/6 still has to settle one thing: node/src/jsonrpc/server.js accepts
+     POST at whatever path it is mounted on, and node/src/rpc.js already answers
+     POST /rpc with the older {method:'getinfo'} shape. Those two must not
+     collide. If they do, this page reports "answered, but not with JSON-RPC 2.0"
+     rather than showing an empty chain.
+<meta name="hearth-eth-rpc" content="http://localhost:8545">
+-->
+<!-- The Commons treasury address under the account model has not been chosen
+     (docs/tokenomics.md §8). Set it here and /supply reads the real balance
+     instead of only modelling it.
+<meta name="hearth-commons-address" content="0x…">
+-->
+
 <link rel="stylesheet" href="assets/vendor/cf-tokens.css">
 <link rel="stylesheet" href="assets/vendor/cf-ui.css">
 <link rel="stylesheet" href="assets/styles.css">
+<link rel="stylesheet" href="assets/explorer.css">
 <!-- first, so it catches failures in everything below it -->
 <script src="assets/obs.js"></script>
 </head>
@@ -35,62 +51,48 @@
   <div class="wrap">
     <a class="brand" href="index.html"><img src="assets/logo.svg" alt=""> Hearth</a>
     <div class="spacer"></div>
-    <a class="link" href="index.html">Explorer</a>
+    <a class="link" data-view="home" href="#/">Explorer</a>
+    <a class="link" data-view="blocks" href="#/blocks">Blocks</a>
+    <a class="link" data-view="tokens" href="#/tokens">Tokens</a>
+    <a class="link" data-view="logs" href="#/logs">Logs</a>
+    <a class="link" data-view="supply" href="#/supply">Supply</a>
     <a class="link" href="wallet.html">Wallet</a>
     <a class="link" href="mine.html">Mine</a>
-    <a class="link" href="pay-demo.html">Accept EMBER</a>
     <!-- href is the production URL so the link works before (and without) JS;
          cloudsforge.js corrects it on localhost and any other apex. -->
-    <a class="link" data-cf-surface="crypto" href="https://hearth.cloudsforge.online/">About Hearth</a>
+    <a class="link" data-cf-surface="crypto" href="https://hearth.cloudsforge.online/">About</a>
   </div>
 </nav>
 
 <section>
   <div class="wrap">
-    <span class="pill" id="mode">● connecting…</span>
+    <span class="pill x-mode x-mode-warn" id="mode">● connecting…</span>
     <h2>Block explorer</h2>
-    <p>Every block, every payment, in the open. This reads the
-      <span class="mono">hearthd</span> node behind this site; point it somewhere else
-      with <span class="mono">?rpc=</span>. If no node answers, the page says so and
-      falls back to clearly-labelled sample data rather than pretending.</p>
+    <p>Hearth is an account-model EVM chain secured by Homefire proof-of-work. This page reads a
+      node over the standard <span class="mono">eth_*</span> JSON-RPC surface — the same one
+      MetaMask, ethers and Foundry speak — at <span class="x-endpoint" id="endpoint">…</span>.
+      Point it elsewhere with <span class="mono">?rpc=</span>. When no node answers, this page says
+      so and shows nothing; it does not invent blocks.</p>
 
-    <div class="grid g4" style="margin:24px 0">
-      <div class="card stat"><div class="n" id="s-height">—</div><div class="l">block height</div></div>
-      <div class="card stat"><div class="n" id="s-hr">—</div><div class="l">network hashrate</div></div>
-      <div class="card stat"><div class="n" id="s-supply">—</div><div class="l">circulating EMBER</div></div>
-      <div class="card stat"><div class="n" id="s-commons">—</div><div class="l">Commons treasury</div></div>
+    <div id="banner" class="hide"></div>
+
+    <div class="card" style="margin:24px 0">
+      <form id="searchForm" class="x-search" autocomplete="off">
+        <input id="q" class="field" spellcheck="false" autocomplete="off"
+               placeholder="block height · 0x block hash · 0x transaction hash · 0x address · Transfer(address,address,uint256)">
+        <button class="btn btn-primary" type="submit">Search</button>
+      </form>
+      <div class="x-searchmsg" id="searchMsg"></div>
     </div>
 
-    <div class="card hide" id="searchCard" style="margin:0 0 24px">
-      <h3 style="margin-top:0">Look something up</h3>
-      <p class="muted" style="margin:0 0 12px; font-size:.9rem">A block height, a block hash, a
-        transaction id, or an <span class="mono">ember1…</span> address. All four are read straight
-        from the node — the API has always answered them; nothing here asked.</p>
-      <div style="display:flex; gap:10px; flex-wrap:wrap">
-        <input id="q" class="field" style="flex:1; min-width:280px" spellcheck="false" autocomplete="off"
-               placeholder="12345 · a 64-character block hash or txid · ember1…">
-        <button class="btn btn-primary" id="goBtn">Search</button>
-      </div>
-      <div class="log" id="searchLog"></div>
-    </div>
-
-    <div class="card hide" id="detail" style="margin:0 0 24px"></div>
-
-    <div class="card" style="padding:8px 8px 0">
-      <table class="blocks">
-        <thead>
-          <tr><th>Height</th><th>Age</th><th>Miner</th><th>Txs</th><th>Reward</th><th>Hash</th></tr>
-        </thead>
-        <tbody id="rows"></tbody>
-      </table>
-    </div>
-    <p class="muted" style="margin-top:14px">New blocks arrive every ~15s and flash gold. Click any row to open the block. Home-mined blocks come from distinct addresses — that's decentralization you can watch.</p>
+    <div id="view"></div>
   </div>
 </section>
 
 <footer><div class="wrap">
   <span class="muted">Hearth Explorer · a <a data-cf-surface="site" href="https://cloudsforge.online/">CloudsForge</a> product</span>
   <div class="spacer" style="flex:1"></div>
+  <a href="#/supply">Supply</a>
   <a data-cf-surface="crypto" href="https://hearth.cloudsforge.online/">About Hearth</a>
   <a href="wallet.html">Wallet</a>
   <a href="https://github.com/cloudsforge-online/hearth">GitHub</a>
@@ -98,297 +100,12 @@
 
 <script src="assets/cloudsforge.js"></script>
 <script>CloudsForge.mountBar(document.getElementById('cf-bar'), { current: 'crypto' });</script>
-<script src="assets/app.js"></script>
-<script src="assets/api.js"></script>
-<script>
-  const tbody = document.getElementById('rows');
-  const mode = document.getElementById('mode');
-  const EMBER = 1e8;
-  // Build rows with textContent (never innerHTML) so node-supplied strings —
-  // e.g. a miner's coinbase address — can't inject markup (XSS-safe).
-  function addRow(r, flash) {
-    const tr = document.createElement('tr');
-    if (flash) tr.className = 'tag-new';
-    if (r.open) { tr.style.cursor = 'pointer'; tr.addEventListener('click', () => lookup(r.open)); }
-    const cells = [
-      { text: '#' + (+r.height).toLocaleString(), style: 'font-weight:700' },
-      { text: r.age, cls: 'muted' },
-      { text: r.miner + '…' },
-      { text: String(r.txs) },
-      { text: r.reward + ' EMBER', style: 'color:var(--gold-200)' },
-      { text: r.hash.slice(0, 16) + '…', cls: 'muted' },
-    ];
-    for (const c of cells) {
-      const td = document.createElement('td');
-      if (c.cls) td.className = c.cls;
-      if (c.style) td.style.cssText = c.style;
-      td.textContent = c.text;
-      tr.appendChild(td);
-    }
-    tbody.appendChild(tr);
-  }
-
-  function setStats({height, hashrate, supply, commons}) {
-    if (height != null) document.getElementById('s-height').textContent = '#' + (+height).toLocaleString();
-    if (hashrate != null) document.getElementById('s-hr').textContent = hashrate;
-    if (supply != null) document.getElementById('s-supply').textContent = supply;
-    if (commons != null) document.getElementById('s-commons').textContent = commons;
-  }
-
-  // ---- detail panel --------------------------------------------------------
-  // The node has always exposed tx lookup with confirmations, per-UTXO address
-  // detail and full blocks; this page showed four stats and twelve rows. Every
-  // value below is a field the API already returns.
-  const detail = document.getElementById('detail');
-  const searchLog = document.getElementById('searchLog');
-  const el = (tag, cls, text) => {
-    const n = document.createElement(tag);
-    if (cls) n.className = cls;
-    if (text != null) n.textContent = text;
-    return n;
-  };
-  const ember = s => (s / EMBER).toFixed(8).replace(/0+$/, '').replace(/\.$/, '') + ' EMBER';
-
-  function kvRow(parent, k, v, { mono = true, click = null } = {}) {
-    const row = el('div');
-    row.style.cssText = 'display:flex;justify-content:space-between;gap:16px;padding:7px 0;border-bottom:1px solid var(--line)';
-    row.appendChild(el('span', 'muted', k)).style.fontSize = '.85rem';
-    const val = el('span', mono ? 'mono brk' : 'brk', String(v));
-    val.style.fontSize = '.85rem';
-    if (click) {
-      val.style.cssText += ';cursor:pointer;color:var(--gold-300)';
-      val.addEventListener('click', () => lookup(click));
-    }
-    row.appendChild(val);
-    parent.appendChild(row);
-    return row;
-  }
-
-  function table(parent, headers) {
-    const wrap = el('div');
-    wrap.style.cssText = 'margin-top:16px;overflow-x:auto';
-    const t = el('table', 'blocks');
-    const thead = el('thead');
-    const tr = el('tr');
-    headers.forEach(h => tr.appendChild(el('th', null, h)));
-    thead.appendChild(tr);
-    t.appendChild(thead);
-    const tb = el('tbody');
-    t.appendChild(tb);
-    wrap.appendChild(t);
-    parent.appendChild(wrap);
-    return tb;
-  }
-
-  function row(tb, cells) {
-    const tr = el('tr');
-    for (const c of cells) {
-      const td = el('td', c.cls || null, c.text);
-      if (c.style) td.style.cssText = c.style;
-      if (c.click) { td.style.cursor = 'pointer'; td.addEventListener('click', () => lookup(c.click)); }
-      tr.appendChild(td);
-    }
-    tb.appendChild(tr);
-    return tr;
-  }
-
-  function openDetail(title) {
-    detail.textContent = '';
-    detail.classList.remove('hide');
-    const head = el('div');
-    head.style.cssText = 'display:flex;align-items:baseline;gap:12px;flex-wrap:wrap';
-    head.appendChild(el('h3', null, title)).style.margin = '0';
-    const close = el('button', 'btn btn-ghost', 'Close');
-    close.style.cssText = 'margin-left:auto;padding:6px 14px;font-size:.85rem';
-    close.addEventListener('click', () => detail.classList.add('hide'));
-    head.appendChild(close);
-    detail.appendChild(head);
-    detail.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    return detail;
-  }
-
-  function renderBlock(b) {
-    const box = openDetail('Block #' + b.header.height);
-    const h = b.header;
-    kvRow(box, 'timestamp', new Date(h.timestamp * 1000).toISOString());
-    kvRow(box, 'previous block', h.prevHash, { click: h.height > 0 ? h.prevHash : null });
-    kvRow(box, 'merkle root', h.merkleRoot);
-    kvRow(box, 'difficulty target', h.target);
-    kvRow(box, 'nonce', h.nonce);
-    kvRow(box, 'pow digest', h.powDigest);
-    kvRow(box, 'coinbase key', h.coinbasePub);
-    kvRow(box, 'transactions', b.txs.length);
-
-    const tb = table(box, ['Txid', 'Type', 'In', 'Out', 'Value out']);
-    for (const tx of b.txs) {
-      const out = (tx.outputs || []).reduce((s, o) => s + o.amount, 0);
-      row(tb, [
-        { text: tx.id, cls: 'brk', style: 'color:var(--gold-300)', click: tx.id },
-        { text: tx.type || 'normal', cls: 'muted' },
-        { text: String((tx.inputs || []).length) },
-        { text: String((tx.outputs || []).length) },
-        { text: ember(out) },
-      ]);
-    }
-  }
-
-  function renderTx(found) {
-    const tx = found.tx;
-    const box = openDetail('Transaction');
-    kvRow(box, 'txid', tx.id);
-    kvRow(box, 'type', tx.type || 'normal', { mono: false });
-    kvRow(box, 'confirmations', found.confirmations);
-    kvRow(box, 'in block', '#' + found.height, { click: found.blockId });
-    kvRow(box, 'block hash', found.blockId, { click: found.blockId });
-
-    if ((tx.inputs || []).length) {
-      const tb = table(box, ['Spends', 'Vout', 'From key']);
-      for (const i of tx.inputs) {
-        row(tb, [
-          { text: i.txid, cls: 'brk', style: 'color:var(--gold-300)', click: i.txid },
-          { text: String(i.vout) },
-          { text: (i.pub || '').slice(0, 24) + '…', cls: 'muted' },
-        ]);
-      }
-    } else {
-      box.appendChild(el('p', 'muted', 'Coinbase — this transaction has no inputs; it mints the block reward.'))
-        .style.cssText = 'margin-top:16px;font-size:.9rem';
-    }
-
-    const tb = table(box, ['Pays', 'Amount']);
-    for (const o of tx.outputs || []) {
-      row(tb, [
-        { text: o.address, cls: 'brk', click: o.address },
-        { text: ember(o.amount), style: 'color:var(--gold-200)' },
-      ]);
-    }
-
-    const records = tx.records || [];
-    if (records.length) {
-      const rt = table(box, ['App', 'Key', 'Bytes']);
-      for (const r of records) {
-        row(rt, [
-          { text: r.app }, { text: r.key, cls: 'brk' },
-          { text: String((r.data || '').length), cls: 'muted' },
-        ]);
-      }
-    }
-  }
-
-  function renderAddress(a) {
-    const box = openDetail('Address');
-    kvRow(box, 'address', a.address);
-    kvRow(box, 'spendable', ember(a.spendable));
-    kvRow(box, 'maturing', ember(a.immature));
-    kvRow(box, 'confirmed total', ember(a.balance));
-    kvRow(box, 'unspent outputs', (a.utxos || []).length);
-    if (!(a.utxos || []).length) {
-      box.appendChild(el('p', 'muted', 'No unspent outputs. This address either never received coins, or has spent everything it held.'))
-        .style.cssText = 'margin-top:16px;font-size:.9rem';
-      return;
-    }
-    const tb = table(box, ['Amount', 'Source tx', 'Vout', 'Height', 'Status']);
-    for (const u of [...a.utxos].sort((x, y) => y.amount - x.amount)) {
-      row(tb, [
-        { text: ember(u.amount), style: 'color:var(--gold-200)' },
-        { text: u.txid, cls: 'brk', style: 'color:var(--gold-300)', click: u.txid },
-        { text: String(u.vout) },
-        { text: u.height != null ? '#' + u.height : '—', cls: 'muted' },
-        { text: u.spendable ? 'spendable' : 'maturing → #' + u.maturesAtHeight,
-          style: u.spendable ? 'color:var(--ok)' : 'color:var(--gold-300)' },
-      ]);
-    }
-  }
-
-  /**
-   * One box for four kinds of identifier. A 64-hex string is ambiguous — it is
-   * either a txid or a block hash — so try the transaction index first and fall
-   * back to the block store rather than making the reader know which they hold.
-   *
-   * The address branch deliberately does NOT check the 40-hex-body-plus-checksum
-   * shape a real address has. The Commons treasury is a sink address that fits no
-   * such shape (params.js: COMMONS_ADDRESS) and is an output of every single
-   * coinbase, so a strict test would reject the one address on this page people
-   * are most likely to click. `GET /address/:a` answers for any string — an
-   * address that never existed simply has no outputs, which is the honest answer.
-   */
-  async function lookup(raw) {
-    const q = String(raw || '').trim();
-    searchLog.textContent = '';
-    if (!q) return;
-    document.getElementById('q').value = q;
-    try {
-      if (/^\d+$/.test(q)) return renderBlock(await HearthAPI.get('/block/' + q));
-      if (/^ember1[0-9a-z]{1,72}$/.test(q)) return renderAddress(await HearthAPI.get('/address/' + q));
-      if (!/^[0-9a-f]{64}$/i.test(q)) {
-        searchLog.appendChild(el('div', 'bad',
-          '✗ not a height, a 64-character hash, or an ember1 address'));
-        return;
-      }
-      const id = q.toLowerCase();
-      try { return renderTx(await HearthAPI.get('/tx/' + id)); } catch { /* try a block */ }
-      return renderBlock(await HearthAPI.get('/block/' + id));
-    } catch (e) {
-      searchLog.appendChild(el('div', 'bad', '✗ nothing on this chain matches that (' + e.message + ')'));
-    }
-  }
-
-  document.getElementById('goBtn').addEventListener('click', () => lookup(document.getElementById('q').value));
-  document.getElementById('q').addEventListener('keydown', e => { if (e.key === 'Enter') lookup(e.target.value); });
-
-  async function runLive() {
-    mode.textContent = '● LIVE — hearthd';
-    mode.style.color = 'var(--ok)';
-    document.getElementById('searchCard').classList.remove('hide');
-    async function refresh() {
-      const [{blocks}, info, sup] = await Promise.all([
-        HearthAPI.get('/blocks?limit=12'), HearthAPI.get('/info'), HearthAPI.get('/supply'),
-      ]);
-      tbody.innerHTML = '';
-      blocks.forEach((b, i) => addRow({
-        height: b.height, age: 'blk #' + b.height, miner: b.miner.slice(0, 16),
-        txs: b.txCount, reward: (b.reward / EMBER).toFixed(4), hash: b.id, open: b.id,
-      }, i === 0));
-      setStats({ height: info.height, hashrate: (info.hashrate||0).toLocaleString() + ' H/s',
-        supply: (sup.circulatingEmber).toFixed(2), commons: (sup.commonsEmber).toFixed(2) });
-    }
-    await refresh();
-    HearthAPI.onBlock(() => refresh());
-    setInterval(refresh, 5000);
-  }
-
-  function runDemo() {
-    mode.textContent = '● SAMPLE DATA — no node reachable';
-    mode.style.color = 'var(--gold-300)';
-    // Search reads a real chain or it reads nothing. Offering the box here would
-    // only produce an error per query, or worse, invite an invented answer.
-    document.getElementById('searchCard').classList.add('hide');
-    document.getElementById('detail').classList.add('hide');
-    // The badge alone was not enough: the rows below are invented, and at a
-    // glance they read exactly like a busy chain. Say it where the numbers are.
-    const warn = document.createElement('p');
-    warn.textContent = 'These blocks are not real. No Hearth node answered, so this page is '
-      + 'drawing sample data to show what the explorer looks like.';
-    warn.style.cssText = 'margin:.75rem 0;padding:.6rem .8rem;border-radius:.4rem;'
-      + 'background:rgba(255,90,30,.08);border:1px solid rgba(255,90,30,.35);'
-      + 'color:var(--gold-300);font-size:.85rem';
-    tbody.closest('table').before(warn);
-    let height = 1284301, supply = 21430000, commons = 2143000;
-    const paint = (initial) => {
-      const chain = Hearth.makeChain(height, 12);
-      tbody.innerHTML = '';
-      chain.forEach((b, i) => addRow({
-        height: b.height, age: Hearth.timeAgo(b.agoSec), miner: b.miner,
-        txs: b.txs, reward: b.reward, hash: b.hash,
-      }, i === 0 && !initial));
-      setStats({ height, hashrate: (18 + Math.random()*1.4).toFixed(1) + ' MH/s',
-        supply: (supply/1e6).toFixed(2) + 'M', commons: (commons/1e6).toFixed(2) + 'M' });
-    };
-    paint(true);
-    setInterval(() => { height++; supply += 5.4; commons += 0.6; paint(false); }, 4000);
-  }
-
-  HearthAPI.online().then(ok => ok ? runLive().catch(runDemo) : runDemo());
-</script>
+<script type="module" src="assets/explorer/app.js"></script>
+<noscript>
+  <div class="wrap">
+    <p class="muted">This explorer reads a node over JSON-RPC from the browser, so it needs
+    JavaScript. The node's REST and JSON-RPC endpoints answer directly without it.</p>
+  </div>
+</noscript>
 </body>
 </html>
