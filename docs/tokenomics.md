@@ -38,17 +38,24 @@ Any "EMBER" contract on any other chain is not this asset and is not endorsed.
 | --- | --- | --- |
 | Decimals | 8 | **18** |
 | Smallest unit | 1 spark = 1e-8 EMBER | 1 wei = 1e-18 EMBER |
-| Constant | `SPARKS_PER_EMBER = 100_000_000` (`node/src/params.js:6`) | not yet in code |
+| Constant | `SPARKS_PER_EMBER = 100_000_000` (`node/src/params.js:6`) | `WEI_PER_EMBER = 10n ** 18n` (`node/src/params.js`) |
 
 `decimals: 8 → 18` is a deliberate, specified change
 ([`evm-spec.md`](evm-spec.md) §1): ERC-20 tooling, wallets and DEX maths all
 assume 18 for a native asset, and keeping 8 would produce subtly wrong displays
 everywhere.
 
-**Honest gap:** `node/src/params.js:6` still defines 1e8, and the emission
-function at `params.js:140-151` still returns sparks. The 18-decimal migration is
-specified and not yet implemented. **Integrate against 18** — that is what
-mainnet will ship — but be aware the constant in this tree has not moved yet.
+**Closed in phase 5, and NO FIGURE IN THIS DOCUMENT MOVED.** The account-model
+chain uses `WEI_PER_EMBER` and `subsidyWei(height)`, which is the *same*
+`subsidy(height)` scaled by exactly `1e10` (1 spark = 1e10 wei). The curve, the
+half-life, the tail, the Commons share and the ~90M figure are all in EMBER and
+are therefore unchanged; the only column that moves is the smallest unit.
+
+`SPARKS_PER_EMBER = 1e8` deliberately stays as it is, because it is the UTXO
+chain's consensus and both chains run side by side during the transition
+(`hearthd --evm` selects the account model). So: **a figure quoted in this
+document in _sparks_ describes the UTXO chain, and its account-model equivalent
+is that number times 1e10.** Every figure quoted in EMBER is correct on both.
 
 Every EMBER figure in this document is unit-independent: multiply by `1e18` for
 wei.
@@ -251,7 +258,16 @@ Two further notes an integrator will hit:
   UTXO model. The explorer's address search skips the checksum test for this
   reason (`web/index.html:308-313`).
 - Under the account model the Commons becomes a `0x…` address and this changes.
-  The replacement address has not been chosen and is not in the spec.
+  **The replacement address has still not been chosen.** Phase 5 made that a
+  genesis field (`commonsAddress` in `genesis.json`, defaulted from
+  `EVM_COMMONS_ADDRESS` in `node/src/params.js`) so it is consensus and every
+  node on a network must agree on it — but its default is the **zero address**,
+  which means the 10% is *burned* rather than accumulated. That is the honest
+  default: a node cannot invent a treasury key, and paying to an address someone
+  made up is worse than burning. `GET /supply` on the account-model node reports
+  `commonsIsBurnAddress: true` while that is the case, and the emission schedule
+  is unaffected either way. **Choose it before a network that matters launches;
+  changing it afterwards is a hard fork.**
 
 ---
 

@@ -169,6 +169,59 @@ function mine(node, parentId, key) {
   assert(A.p2p.orphans.size === 0, 'orphans drained once the missing ancestor arrived');
   assert(A.chain.tipId === BLOCK.blockId(c3), 'reorged onto the branch completed from the orphan pool');
 
+  // ---- 7. the budgets: transactions, and the size of a sync page -----------
+  {
+    /* `tx` had NO budget: it was gated on `typeof tx.id === 'string'` and nothing
+     * else, while the read loop drains every newline in a frame in one synchronous
+     * event. A peer is now metered exactly as it is for blocks, and dropped once it
+     * has spent the invalid-transaction budget. */
+    const junkSock = { write: () => true, destroy() { this.destroyed = true; }, destroyed: false };
+    A.p2p.peers.add(junkSock);
+    junkSock.cfTxVerify = { tokens: P.P2P_TX_VERIFY_BURST, at: Date.now() };
+    junkSock.cfInvalidTx = 0;
+    for (let i = 0; i <= P.P2P_MAX_INVALID_TXS + 1 && !junkSock.destroyed; i++) {
+      A.p2p._onMsg(junkSock, { t: 'tx', tx: { id: String(i).padStart(64, '0'), inputs: [], outputs: [] } });
+    }
+    assert(junkSock.destroyed, 'a peer spraying invalid transactions is disconnected');
+    assert(junkSock.cfInvalidTx >= P.P2P_MAX_INVALID_TXS, 'after exactly the invalid-transaction budget');
+
+    // an honest peer relaying valid transactions is never charged for them
+    const good = { write: () => true, destroy() {}, cfTxVerify: { tokens: 1, at: Date.now() }, cfInvalidTx: 0 };
+    A.p2p.peers.add(good);
+    const before = good.cfTxVerify.tokens;
+    A.p2p._onMsg(good, { t: 'tx', tx: { id: 'b'.repeat(64), inputs: [], outputs: [] } });
+    assert(good.cfTxVerify.tokens < before, 'junk keeps its token');
+    A.p2p.peers.delete(good);
+    A.p2p.peers.delete(junkSock);
+  }
+
+  {
+    /* A getblocks page was bounded by COUNT alone, and 200 blocks averaging over
+     * ~20.5 KB is a frame bigger than the receiver's own P2P_MAX_LINE — so an
+     * honest chain that reached that size could never finish syncing, and the
+     * symptom is "peer dropped: oversized frame" in a loop. */
+    const frames = [];
+    const sizeSpy = { write: s2 => { frames.push(s2); return true; } };
+    const realGet = A.chain.getBlock.bind(A.chain);
+    // big enough that the byte cap fires before the count cap or the tip
+    const filler = 'f'.repeat(400_000);
+    A.chain.getBlock = (h) => {
+      const b = realGet(h);
+      return b ? { ...b, filler } : b;
+    };
+    A.p2p._onMsg(sizeSpy, { t: 'getblocks', locator: [A.chain.chainIndex[0]] });
+    A.chain.getBlock = realGet;
+    assert(frames.length === 1, 'a getblocks request is answered with one frame');
+    assert(frames[0].length <= P.P2P_MAX_FRAME_BYTES + 64, `the page is bounded by BYTES (${frames[0].length})`);
+    assert(frames[0].length < P.P2P_MAX_LINE, "and fits inside the receiver's own frame limit");
+    const page = JSON.parse(frames[0]);
+    assert(page.t === 'blocks' && Array.isArray(page.blocks) && page.blocks.length > 0,
+      'and still carries at least one block, so sync makes progress');
+    assert(page.blocks.length < P.P2P_MAX_BLOCKS, 'having stopped short of the count limit');
+    assert(page.blocks.length < A.chain.height,
+      `and short of the ${A.chain.height} blocks it had to offer — the BYTE cap is what stopped it`);
+  }
+
   for (let i = 0; i < P.P2P_MAX_ORPHANS * 3; i++) {
     const clone = JSON.parse(JSON.stringify(c3));
     clone.header.nonce = 10_000_000 + i;
