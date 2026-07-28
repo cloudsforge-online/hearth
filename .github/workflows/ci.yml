@@ -78,9 +78,19 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      # find, not a glob. The glob was web/assets/*.js and the explorer lives in
+      # web/assets/explorer/ — fourteen files, ~3,900 lines, none of them checked.
+      # A syntax check that silently skips most of the code it names is worse
+      # than none, because it reports green.
       - name: Syntax-check front-end JS
         run: |
-          for f in web/assets/*.js; do node --check "$f"; done
+          find web/assets -name '*.js' -print0 | xargs -0 -n1 node --check
+      # The explorer duplicates three things the node owns — keccak, the opcode
+      # table, the emission schedule. This asserts the copies still agree with
+      # node/src, so a consensus change cannot silently leave the explorer
+      # showing the old answer.
+      - name: Explorer self-test
+        run: node web/assets/explorer/selftest.js
 
   secret-hygiene:
     name: Secret hygiene

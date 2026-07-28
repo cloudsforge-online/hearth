@@ -290,6 +290,31 @@ work without any of them knowing this chain is bespoke.
 
 **v2:** filters (`eth_newFilter`, `eth_getFilterChanges`), `eth_feeHistory`, `eth_subscribe`.
 
+**Add `eth_getBlockReceipts` to v1.** `getBlockReceipts` already exists in the chain interface and
+`eth_getLogs` uses it internally, but it is not exposed as a method — so anything wanting
+per-transaction status for a block, an explorer above all, makes N round trips instead of one.
+Geth and Erigon both expose it. It is a two-line addition to the method table and the cheapest
+win available here.
+
+**Four things the RPC surface cannot supply, which phase 5 should decide on rather than inherit:**
+
+- **No revert reason on a receipt.** It can only be recovered by replaying `eth_call` against
+  *current* state, which is not the state the transaction ran in — so the answer is best-effort and
+  sometimes simply wrong. A `revertReason` field on the receipt (several chains add one) makes it
+  correct instead.
+- **No total or circulating supply on `eth_*`.** It can only be modelled from the emission schedule,
+  which drifts silently if the account-model genesis differs by even one block. The node should
+  serve plain-decimal supply endpoints; aggregators poll exactly this.
+- **No address index, and there cannot be one cheaply.** "Transactions of an address" is a bounded
+  block walk. The Etherscan-compatible `/api` shim in `docs/listing-checklist.md` is the real fix.
+- **No mempool visibility.** `eth_getBlockByNumber('pending')` returns null by design and there is no
+  `txpool_content`, so a pending transaction can only be found if you already know its hash.
+
+**Where the JSON-RPC server mounts is still undecided**, and it collides: `node/src/rpc.js:152`
+already answers `POST /rpc` with the legacy `{method:'getinfo'}` shape. Pick a path before phase 5
+wires it, or a client hitting `/rpc` gets a 200 that is not JSON-RPC 2.0 — which reads as an empty
+chain rather than a misconfiguration.
+
 Served alongside the existing REST API, which stays for the explorer and Forge Pay. Hex quantity
 encoding must be exact — `0x0` not `0x00`, no leading zeros — because clients are strict.
 
