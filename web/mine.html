@@ -1,0 +1,277 @@
+<!doctype html>
+<!-- data-cf-product selects Hearth's accent out of the CloudsForge tokens. -->
+<html lang="en" data-cf-product="crypto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mine EMBER in your browser — Hearth</title>
+<meta name="description" content="Mine EMBER in a browser tab on the computer you already own. Homefire is CPU-only and non-outsourceable, so the block you find pays your key and nobody else's. No pool, no operator, no account.">
+<meta name="robots" content="index, follow">
+<meta name="theme-color" content="#0e0c0a">
+<link rel="canonical" href="https://explorer.cloudsforge.online/mine.html">
+<meta property="og:title" content="Mine EMBER in your browser">
+<meta property="og:site_name" content="Hearth · CloudsForge">
+<meta property="og:description" content="Homefire is CPU-only and non-outsourceable. Open a tab, mine EMBER, keep every block you find.">
+<meta property="og:image" content="https://hearth.cloudsforge.online/og-hearth.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://hearth.cloudsforge.online/og-hearth.png">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="manifest" href="site.webmanifest">
+<link rel="stylesheet" href="assets/vendor/cf-tokens.css">
+<link rel="stylesheet" href="assets/vendor/cf-ui.css">
+<link rel="stylesheet" href="assets/styles.css">
+<!-- first, so it catches failures in everything below it -->
+<script src="assets/obs.js"></script>
+<style>
+  .hide { display:none !important; }
+  .hero-art { width:100%; height:auto; max-height:300px; object-fit:cover;
+              border-radius:.6rem; display:block; margin:18px 0 }
+  .duty { width:100%; accent-color: var(--cf-accent) }
+  .found { border-left:3px solid var(--ok); padding-left:.7rem; margin:.5rem 0 }
+  .warn-box { padding:.7rem .9rem; border-radius:.45rem; background:rgba(255,90,30,.08);
+              border:1px solid rgba(255,90,30,.35); color:var(--gold-300); font-size:.88rem }
+</style>
+</head>
+<body>
+<div id="cf-bar"></div>
+<nav class="nav">
+  <div class="wrap">
+    <a class="brand" href="index.html"><img src="assets/logo.svg" alt=""> Hearth</a>
+    <div class="spacer"></div>
+    <a class="link" href="index.html">Explorer</a>
+    <a class="link" href="wallet.html">Wallet</a>
+    <a class="link" href="mine.html">Mine</a>
+    <a class="link" href="pay-demo.html">Accept EMBER</a>
+    <a class="link" data-cf-surface="crypto" href="https://hearth.cloudsforge.online/">About Hearth</a>
+  </div>
+</nav>
+
+<section>
+  <div class="wrap">
+    <span class="pill" id="mode">● checking for a node…</span>
+    <h2>Mine EMBER in this tab</h2>
+    <p>Homefire is CPU-only and <b>non-outsourceable</b>: the winning hash has to be
+      signed by the key the reward pays. There is no pool to join, because work
+      handed to you is worth nothing to anyone else. Your key stays in this
+      browser — only the signature ever leaves it.</p>
+
+    <!-- webp first: the same picture is 75 KB as webp against 239 KB as jpeg.
+         The 2 MB master lives in web/art and is never served. -->
+    <picture>
+      <source srcset="assets/mine-hero.webp" type="image/webp">
+      <img class="hero-art" src="assets/mine-hero.jpg" width="1400" height="933"
+           alt="A laptop on a kitchen table at night, its screen glowing ember-orange across the room"
+           loading="lazy" decoding="async">
+    </picture>
+
+    <!-- key -->
+    <div class="card" style="margin:20px 0" id="keyCard">
+      <h3 style="margin-top:0">Where the reward goes</h3>
+      <div id="noKey">
+        <p class="muted">Mining needs a key to pay. This page uses the same one as the
+          <a href="wallet.html">wallet</a>, stored in this browser under
+          <span class="mono">hearth.wallet.v1</span>.</p>
+        <div class="row-btns">
+          <button class="btn btn-primary" id="createKey">Create a key</button>
+          <a class="btn" href="wallet.html">Open the wallet</a>
+        </div>
+      </div>
+      <div id="haveKey" class="hide">
+        <p class="muted" style="margin:0 0 .3rem">Rewards are paid to</p>
+        <p class="mono" id="addr" style="word-break:break-all;margin:0"></p>
+        <p class="muted" style="margin:.6rem 0 0">
+          Balance <span class="mono" id="bal">—</span> EMBER
+          · <span id="immature" class="muted"></span>
+        </p>
+      </div>
+    </div>
+
+    <!-- controls -->
+    <div class="card hide" id="controls" style="margin:20px 0">
+      <div class="row-btns" style="margin-bottom:12px">
+        <button class="btn btn-primary" id="startBtn">Start mining</button>
+        <button class="btn hide" id="stopBtn">Stop</button>
+      </div>
+      <label class="lbl" for="duty">
+        Effort — <span id="dutyLabel">60%</span>
+        <span class="muted">(lower keeps your machine responsive and quiet)</span>
+      </label>
+      <input class="duty" type="range" id="duty" min="10" max="100" step="5" value="60">
+      <label class="lbl" for="threads" style="margin-top:10px">
+        Threads — <span id="threadLabel">—</span>
+        <span class="muted">(of <span id="cores">?</span> cores)</span>
+      </label>
+      <input class="duty" type="range" id="threads" min="1" max="16" step="1" value="1">
+    </div>
+
+    <div class="grid g4" style="margin:24px 0">
+      <div class="card stat"><div class="n" id="s-hr">—</div><div class="l">your hashrate</div></div>
+      <div class="card stat"><div class="n" id="s-total">0</div><div class="l">hashes this session</div></div>
+      <div class="card stat"><div class="n" id="s-found">0</div><div class="l">blocks found</div></div>
+      <div class="card stat"><div class="n" id="s-height">—</div><div class="l">chain height</div></div>
+    </div>
+
+    <div class="card" style="padding:14px">
+      <h3 style="margin-top:0">Activity</h3>
+      <div class="log" id="log" style="max-height:260px;overflow:auto">Idle.</div>
+    </div>
+
+    <p class="muted" style="margin-top:14px">
+      A browser tab is a real miner here, not a toy: the hashing is the same
+      Homefire the node runs, and this implementation is checked digest-for-digest
+      against it in CI. It is still one machine against the whole network — expect
+      to find blocks rarely, and only on a testnet with little competition to find
+      them at all.
+    </p>
+  </div>
+</section>
+
+<footer><div class="wrap">
+  <span class="muted">Hearth · a <a data-cf-surface="site" href="https://cloudsforge.online/">CloudsForge</a> product</span>
+  <div class="spacer" style="flex:1"></div>
+  <a data-cf-surface="crypto" href="https://hearth.cloudsforge.online/">About Hearth</a>
+  <a href="wallet.html">Wallet</a>
+  <a href="https://github.com/cloudsforge-online/hearth">GitHub</a>
+</div></footer>
+
+<script src="assets/cloudsforge.js"></script>
+<script>CloudsForge.mountBar(document.getElementById('cf-bar'), { current: 'crypto' });</script>
+<script src="assets/api.js"></script>
+<script type="module">
+import { generateKey, importKey, emberStr } from './assets/wallet-core.js';
+import { Miner } from './assets/mining/miner.js';
+
+const STORE = 'hearth.wallet.v1';          // shared with wallet.html, deliberately
+const $ = id => document.getElementById(id);
+const mode = $('mode');
+let key = null, miner = null;
+
+function log(msg, cls) {
+  const el = document.createElement('div');
+  if (cls) el.className = cls;
+  el.textContent = `${new Date().toLocaleTimeString()}  ${msg}`;
+  const box = $('log');
+  if (box.textContent === 'Idle.') box.textContent = '';
+  box.prepend(el);
+  while (box.childElementCount > 80) box.lastElementChild.remove();
+}
+
+async function loadKey() {
+  const raw = localStorage.getItem(STORE);
+  if (!raw) return null;
+  try { return await importKey(JSON.parse(raw).priv); }
+  catch { return null; }
+}
+
+async function showKey(k) {
+  key = k;
+  $('noKey').classList.add('hide');
+  $('haveKey').classList.remove('hide');
+  $('controls').classList.remove('hide');
+  $('addr').textContent = k.address;
+  refreshBalance();
+}
+
+async function refreshBalance() {
+  if (!key) return;
+  try {
+    const a = await HearthAPI.get('/address/' + key.address);
+    $('bal').textContent = emberStr(a.spendable, 4);
+    $('immature').textContent = a.immature > 0
+      ? `${emberStr(a.immature, 4)} EMBER still maturing` : '';
+  } catch { /* the banner already says the node is unreachable */ }
+}
+
+$('createKey').addEventListener('click', async () => {
+  const k = await generateKey();
+  localStorage.setItem(STORE, JSON.stringify({ priv: k.priv, address: k.address, created: Date.now() }));
+  log('Created a new key. Back it up from the wallet page.');
+  showKey(k);
+});
+
+// ---- controls ----
+const cores = navigator.hardwareConcurrency || 4;
+$('cores').textContent = cores;
+$('threads').max = Math.max(1, cores);
+$('threads').value = Math.max(1, cores - 1);
+$('threadLabel').textContent = $('threads').value;
+$('threads').addEventListener('input', e => { $('threadLabel').textContent = e.target.value; });
+$('duty').addEventListener('input', e => {
+  $('dutyLabel').textContent = e.target.value + '%';
+  if (miner) miner.setDuty(e.target.value / 100);
+});
+
+$('startBtn').addEventListener('click', async () => {
+  if (!key) return;
+  miner = new Miner({
+    rpc: HearthAPI.BASE,
+    key,
+    workers: Number($('threads').value),
+    duty: Number($('duty').value) / 100,
+  });
+  miner.addEventListener('template', e => {
+    $('s-height').textContent = '#' + (e.detail.height - 1);
+    log(`New work for height ${e.detail.height} · ${e.detail.txCount} tx`);
+  });
+  miner.addEventListener('hashrate', e => {
+    $('s-hr').textContent = Math.round(e.detail.hashrate).toLocaleString() + ' H/s';
+    $('s-total').textContent = e.detail.total.toLocaleString();
+  });
+  miner.addEventListener('accepted', e => {
+    $('s-found').textContent = miner.accepted;
+    log(`BLOCK FOUND at height ${e.detail.height} — ${emberStr(e.detail.reward, 4)} EMBER`, 'found');
+    refreshBalance();
+  });
+  miner.addEventListener('stale', () => log('Someone else found that height first.'));
+  miner.addEventListener('rejected', e => log('Share rejected: ' + e.detail.err));
+  miner.addEventListener('error', e => log('Error: ' + e.detail.message));
+  miner.addEventListener('duty', e => {
+    if (e.detail.effective < e.detail.duty) log('Tab is in the background — mining at a trickle.');
+  });
+
+  $('startBtn').classList.add('hide');
+  $('stopBtn').classList.remove('hide');
+  $('threads').disabled = true;
+  log(`Starting ${$('threads').value} thread(s).`);
+  try { await miner.start(); }
+  catch (err) { log('Could not start: ' + err.message); stop(); }
+});
+
+function stop() {
+  if (miner) miner.stop();
+  miner = null;
+  $('startBtn').classList.remove('hide');
+  $('stopBtn').classList.add('hide');
+  $('threads').disabled = false;
+  $('s-hr').textContent = '—';
+  log('Stopped.');
+}
+$('stopBtn').addEventListener('click', stop);
+
+// ---- boot ----
+(async () => {
+  const online = await HearthAPI.online();
+  if (online) {
+    const info = await HearthAPI.get('/info');
+    mode.textContent = `● ${info.network} — height ${info.height}`;
+    mode.style.color = 'var(--ok)';
+    $('s-height').textContent = '#' + info.height;
+  } else {
+    // Mining against nothing is not a degraded experience, it is no experience.
+    // Say so instead of showing controls that cannot work.
+    mode.textContent = '● no node reachable';
+    mode.style.color = 'var(--gold-300)';
+    const w = document.createElement('p');
+    w.className = 'warn-box';
+    w.textContent = 'No Hearth node answered, so there is no work to mine. '
+      + 'Point this page at a node with ?rpc=<url>, or run one locally.';
+    $('keyCard').before(w);
+    $('controls').classList.add('hide');
+    return;
+  }
+  const k = await loadKey();
+  if (k) showKey(k);
+})();
+</script>
+</body>
+</html>

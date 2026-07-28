@@ -70,8 +70,14 @@ sub-cent while keeping the base layer lean.
 - **Desktop (Tauri):** Rust core + web UI = small binaries, native performance,
   and the rich "living hearth" graphics without Electron's bloat.
 - **Web wallet:** all key material stays client-side (WebCrypto); talks to a public
-  or self-hosted `hearthd` over JSON-RPC/WS. A **WASM light-miner** lets users mine
-  in a browser tab.
+  or self-hosted `hearthd` over JSON-RPC/WS.
+- **Browser miner:** `web/mine.html` — a Web Worker pool running the same Homefire
+  the node runs, against `/mining/template` and `/mining/submit`. Not WASM: the
+  bottleneck is `crypto.subtle.digest` being async at ~8,450 hashes per attempt,
+  so the win came from a synchronous SHA-256, not from a different language. The
+  page holds the key and signs the winning digest itself, which
+  non-outsourceability requires and which is also why no operator can take the
+  work. See [mining.md](mining.md#mining-in-a-browser).
 - **Explorer:** a static front-end (`web/index.html`) over the node's REST API,
   reached same-origin at `/rpc` so the page and the node it describes cannot
   disagree about being up.

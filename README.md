@@ -7,7 +7,7 @@
   <br/><br/>
 
   <a href="https://github.com/cloudsforge-online/hearth/actions/workflows/ci.yml"><img alt="ci" src="https://github.com/cloudsforge-online/hearth/actions/workflows/ci.yml/badge.svg"></a>
-  <img alt="tests" src="https://img.shields.io/badge/node-126%2F126%20checks-brightgreen">
+  <img alt="tests" src="https://img.shields.io/badge/node-158%2F158%20checks-brightgreen">
   <img alt="rust" src="https://img.shields.io/badge/rust%20core-29%20tests%20%C2%B7%20clippy%20clean-orange">
   <img alt="deps" src="https://img.shields.io/badge/rust%20deps-2%20(ed25519%2C%20getrandom)-blue">
   <img alt="license" src="https://img.shields.io/badge/license-MIT-lightgrey">
@@ -78,6 +78,7 @@ Everything below **runs**:
 - ✅ **HTTP/JSON-RPC/SSE API** + a live **block explorer**, **web wallet**, and **Hearth Pay** merchant SDK
 - ✅ **application records** — consensus-committed, namespaced, byte-metered data inside the signed transaction body, with a tx index and per-app subscriptions (**[docs/records.md](docs/records.md)**)
 - ✅ **encrypted on-chain chat** built on them — X25519 reading keys, sealed boxes, `hearth-chat announce · send · inbox · watch`
+- ✅ **browser mining** (`web/mine.html`) — a Web Worker pool running real Homefire against `/mining/template`, ~225 H/s per thread, checked digest-for-digest against the node in CI
 - ✅ a **Rust production core** (`rust/hearthd`) — Homefire PoW, **Ed25519-signed ledger, mempool, and Tab payment channels**; `fmt`/`clippy`/`29 tests` clean
 - ✅ **Docker Compose** to boot a multi-node network on your Mac
 - ✅ **CI** running Node tests + Rust build on every push
@@ -86,7 +87,7 @@ Hardened against an adversarial audit — unlimited-mint, fork-choice, coinbase
 maturity, timestamp, DoS, address-checksum, deterministic-emission, and XSS
 issues are fixed with tests (see **[docs/security-review.md](docs/security-review.md)**).
 
-Verified locally: **126 node checks + 29 Rust tests pass**, two nodes sync over
+Verified locally: **158 node checks + 29 Rust tests pass**, two nodes sync over
 P2P, a reorg replaces the active chain, and the Rust core mines ~8× faster than
 the JS prototype on the same machine.
 
@@ -114,7 +115,7 @@ node bin/hearthd.js --mine                       # a mining node + API on :8645
 node bin/hearth-cli.js supply                    # query it
 node bin/hearth-cli.js send <toAddress> 5        # send 5 EMBER
 node bin/hearth-chat.js announce                 # then: send / inbox / watch
-npm test                                         # 126 checks
+npm test                                         # 158 checks
 ```
 
 **3 — Build the Rust core** (needs stable Rust):
@@ -132,7 +133,8 @@ data only when none answers):
 npx serve web        # or: open web/index.html
 ```
 `index.html` (live block explorer) · `wallet.html` (non-custodial web wallet —
-needs a reachable node) · `pay-demo.html` (Accept EMBER checkout).
+needs a reachable node) · `mine.html` (mine EMBER in the tab) ·
+`pay-demo.html` (Accept EMBER checkout).
 
 The Hearth **marketing site** is a separate React app in [`site/`](site) — one
 front door, not two:

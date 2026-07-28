@@ -23,8 +23,22 @@ class Miner {
   stop() { this.running = false; }
 
   _candidate() {
-    const { chain, mempool, wallet } = this.node;
+    const { wallet } = this.node;
     const key = wallet.keyForAddress(this.node.minerAddress) || wallet.keys[0];
+    return { ...this.candidateFor(key.pub, key.address), key };
+  }
+
+  /**
+   * A candidate block whose coinbase pays whoever holds `coinbasePub`.
+   *
+   * Split out of `_candidate` for remote miners — a browser signs the winning
+   * digest itself, so the node never sees its private key and cannot mine on its
+   * behalf. That is not a convenience: Homefire is non-outsourceable, so a
+   * candidate built for someone else's key is worthless to this node. It can
+   * only ever hand out work that pays the requester.
+   */
+  candidateFor(coinbasePubHex, coinbaseAddress) {
+    const { chain, mempool } = this.node;
     const height = chain.height + 1;
     const picked = mempool.select();
     // Total fees and the burned portion, from the selected txs. The burn is per
@@ -42,7 +56,7 @@ class Miner {
       valid.push(tx);
     }
     const tips = totalFee - burnable;
-    const coinbase = TX.coinbase(height, key.address, tips);
+    const coinbase = TX.coinbase(height, coinbaseAddress, tips);
     const txs = [coinbase, ...valid];
     const header = {
       version: 1,
@@ -52,10 +66,10 @@ class Miner {
       // strictly increasing past the parent so it always clears median-time-past
       timestamp: Math.max(Math.floor(this.node.now() / 1000), chain.tip.header.timestamp + 1),
       target: chain.nextTarget(),
-      coinbasePub: key.pub,
+      coinbasePub: coinbasePubHex,
       nonce: 0,
     };
-    return { header, txs, key, coreHash: BLOCK.coreHash(header) };
+    return { header, txs, coreHash: BLOCK.coreHash(header), tips };
   }
 
   _mineOne() {
