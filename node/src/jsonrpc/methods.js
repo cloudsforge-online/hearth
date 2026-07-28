@@ -746,6 +746,34 @@ function buildMethods(options = {}) {
       return r ? formatReceipt(r) : null;
     },
 
+    /**
+     * Every receipt in one block, which is what an explorer actually wants: without
+     * it, rendering a block's per-transaction status costs N round trips instead of
+     * one. Geth and Erigon both expose it, and `getBlockReceipts` was already in the
+     * chain interface because eth_getLogs scans with it — this only publishes it.
+     *
+     * Takes a number, a tag or a block HASH, matching geth: `resolveRef` already
+     * accepts all three, and a client that has a hash in hand should not have to
+     * resolve it to a height first.
+     */
+    async eth_getBlockReceipts(params) {
+      arity(params, 1, 1);
+      /* geth's BlockNumberOrHash accepts a BARE 32-byte hash here, not only the
+       * EIP-1898 `{blockHash}` object — and every explorer sends the bare form,
+       * because that is what geth documents. `parseBlockParam` reads a plain
+       * string as a QUANTITY, which turns a hash into an astronomical block
+       * number and answers null, so the hash form is recognised first. There is
+       * no ambiguity to resolve: no chain will ever reach block 2^256. */
+      const p0 = typeof params[0] === 'string' && /^0x[0-9a-fA-F]{64}$/.test(params[0])
+        ? { blockHash: params[0] } : params[0];
+      const ref = await resolveRef(p0, 'block', { strict: false });
+      if (ref === 'pending') return null;      // no pending block, per eth_getBlockByNumber
+      const block = await chain.getBlockByNumber(ref, false);
+      if (!block) return null;                 // null, not [], so "unknown" ≠ "empty"
+      const receipts = await chain.getBlockReceipts(ref) || [];
+      return receipts.map(formatReceipt);
+    },
+
     // ---- logs ----
 
     async eth_getLogs(params) {

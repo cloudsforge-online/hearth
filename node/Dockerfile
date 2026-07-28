@@ -18,8 +18,10 @@ ENV HEARTH_DATA=/data
 RUN mkdir -p /data && chown node:node /data
 VOLUME ["/data"]
 
-# rpc/http + p2p
-EXPOSE 8645 8646
+# REST/http + p2p, and the Ethereum JSON-RPC endpoint when HEARTH_EVM=1
+# (docs/evm-spec.md §6). 8546 is reserved for the v2 WebSocket endpoint and is
+# deliberately not exposed.
+EXPOSE 8545 8645 8646
 
 USER node
 ENTRYPOINT ["node", "bin/hearthd.js"]
