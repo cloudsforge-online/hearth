@@ -27,8 +27,8 @@ guess and nobody has to ask.
 | Field | Value | Source |
 | --- | --- | --- |
 | Chain name | Hearth | [`evm-spec.md`](evm-spec.md) §1 |
-| **Chain ID (decimal)** | **`7411`** | `node/src/chain/transaction.js:57` |
-| **Chain ID (hex)** | **`0x1cf3`** | the same number |
+| **Chain ID (decimal)** | **`7411`** mainnet · **`7412`** testnet | `node/src/chain/transaction.js:57` declares 7411 as a constant; it must become per-network configuration ([`evm-spec.md`](evm-spec.md) §1) |
+| **Chain ID (hex)** | **`0x1cf3`** · testnet `0x1cf4` | the same numbers |
 | Native currency name | Ember | [`listing-checklist.md`](listing-checklist.md) §1.1 — **and see §6, the name is not finally decided** |
 | Native currency symbol | `EMBER` | |
 | **Native currency decimals** | **`18`** | [`evm-spec.md`](evm-spec.md) §1 — changed from 8, deliberately |
@@ -41,9 +41,9 @@ guess and nobody has to ask.
 | Block gas limit | 30,000,000 | |
 | Consensus | proof-of-work (Homefire), heaviest-cumulative-work | |
 | Finality | probabilistic, **unbounded reorg depth** | [`exchange-integration.md`](exchange-integration.md) §4 |
-| RPC URL | ⬜ does not exist yet | |
+| RPC URL | ⬜ does not exist yet. **The port and path are settled** — 8545, root path — see §3 | [`evm-spec.md`](evm-spec.md) §6 |
 | WebSocket URL | ⬜ not in v1 at all (`eth_subscribe` is v2) | [`evm-spec.md`](evm-spec.md) §6 |
-| Block explorer URL | ⬜ does not exist yet for `0x` addresses | [`listing-checklist.md`](listing-checklist.md) §3 |
+| Block explorer URL | ⬜ not deployed against a chain. The **explorer is built** and is `0x`-native (`web/index.html`) — it has nothing to read | [`listing-checklist.md`](listing-checklist.md) §3 |
 | Faucet URL | ⬜ not deployed — the service is built, at [`../tools/faucet`](../tools/faucet) | |
 | Multicall3 | ⬜ not deployed. See §7 | |
 | SLIP-44 coin type | ⬜ unregistered. Derive under coin type **60** (Ethereum) meanwhile | [`listing-checklist.md`](listing-checklist.md) §1.2 |
@@ -92,23 +92,38 @@ fixed-width and zero-padded. Clients enforce this; so does Hearth.
 
 ---
 
-## 3. Where the RPC will be served, and an open question
+## 3. Where the RPC is served — settled
 
-`node/src/jsonrpc/server.js` exists and works, but **it is not yet mounted by
-`hearthd`** — nothing in `node/bin/` or `node/src/node.js` constructs it. Two
-things are therefore undecided, and both are things an integrator will hit
-first:
+**Port 8545, root path `/`.** Owner decision, recorded in
+[`evm-spec.md`](evm-spec.md) §6: use the port the ecosystem already defaults to.
+It is MetaMask's localhost default and what every Hardhat and Foundry tutorial
+assumes, so a developer's first guess is correct. Verified free across the whole
+composed stack — nothing had to be moved to take it.
 
-**a. The port.** [`exchange-integration.md`](exchange-integration.md) §1 lists
-8645 as the default RPC port, which is `DEFAULT_RPC_PORT` in
-`node/src/params.js:130` — the port the **UTXO-era REST API** already occupies.
+| | REST + SSE | **Ethereum JSON-RPC** |
+| --- | --- | --- |
+| container port | 8645 | **8545** |
+| path | `/info`, `/address/:a`, `/block/:id`, `/tx/:id`, `/supply`, `/events` | **`/`** |
+| host: seed | 8645 | **8545** |
+| host: miner1 | 8647 | 8547 |
+| host: miner2 | 8649 | 8549 |
 
-**b. The path — and this one is a live collision.** The REST server already
-answers `POST /rpc` with a completely different protocol: a
-`{method, params}` shape whose method set is
-`getinfo` / `getbalance` / `getblockcount` / `sendtx` (`node/src/rpc.js:242-254`).
-Anything else gets `{"err":"unknown method"}` at **HTTP 200**, with no `jsonrpc`
-field and no error object.
+Inside its container every node listens on 8545; the host ports differ only so
+three nodes can run side by side. **8546 is reserved** for the v2 WebSocket
+endpoint (`eth_subscribe`), because that is the paired convention.
+
+Publicly this is one hostname — `rpc.<apex>` → 8545 — and that URL goes into
+`ethereum-lists/chains` and `chainid.network`, where MetaMask caches it, exchanges
+hardcode it and dapps bake it into configs. **It cannot be changed after
+publication without stranding all of them at once.**
+
+### Why not 8645, where the REST API already is
+
+Because `POST /rpc` there is already a different protocol. The REST server answers
+it with a `{method, params}` shape whose method set is
+`getinfo` / `getbalance` / `getblockcount` / `sendtx` (`node/src/rpc.js:139`,
+`:242-254`), and anything else gets `{"err":"unknown method"}` at **HTTP 200** —
+with no `jsonrpc` field and no error object.
 
 Observed against a running node in this tree:
 
@@ -130,11 +145,19 @@ Hardhat, pointed at `http://127.0.0.1:8645`, fails with:
 HardhatError: HH110: Invalid JSON-RPC response received: {"err":"no route"}
 ```
 
-**Until phase 5 chooses, assume nothing.** The choice is between a separate port
-(cleanest; the REST API keeps `/rpc` and its existing clients keep working) and
-a new path such as `/eth` on 8645. Whichever it is, it must be decided before it
-is published, because it goes into `ethereum-lists/chains` and into every wallet
-in the world, and it cannot be changed afterwards.
+A 200 that is not JSON-RPC 2.0 reads to a client as an **empty chain** rather than
+as a misconfiguration, which is the worst available failure mode. Two ports, two
+protocols, no ambiguity.
+
+### What is still true: nothing serves it
+
+`node/src/jsonrpc/server.js` exists, is tested, and passes 301 checks — but
+**nothing constructs it.** No code in `node/bin/` or `node/src/node.js` starts it,
+because there is no account-model chain for it to read. Mounting it on 8545 is
+phase 5's job ([`roadmap.md`](roadmap.md)).
+
+Until then, `tools/rpc-probe/stub.js` serves the same method surface over a chain
+with no state, and it is the thing to point your tooling at.
 
 ---
 
@@ -358,10 +381,14 @@ common self-inflicted rejection ([`listing-checklist.md`](listing-checklist.md)
 **`shortName`** in `ethereum-lists/chains` must be globally unique and is not
 chosen.
 
-**The testnet's chain id.** [`exchange-integration.md`](exchange-integration.md)
-§8 commits to a public account-model testnet with *"a documented chain id
-distinct from 7411"*. That id has not been chosen. Everything in this document
-describes 7411, which is mainnet.
+**~~The testnet's chain id~~ — decided.** It is **7412**
+([`evm-spec.md`](evm-spec.md) §1): adjacent, memorable, and inside the same
+verified-free range. A separate id is mandatory rather than cosmetic — the retired
+UTXO scheme carried a `net` field *inside the signed body*, so a testnet signature
+was structurally invalid on mainnet, and EIP-155's chain id is what replaces that
+protection. Share one id and every testnet transaction is replayable on mainnet
+and back. Unless stated otherwise, everything in this document describes 7411,
+which is mainnet.
 
 ---
 

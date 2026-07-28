@@ -2,6 +2,16 @@
 
 Two ways to bring up a real multi-node Hearth network on your machine.
 
+> **This page is about the UTXO chain**, which is the only one that produces
+> blocks. The account-model EVM chain has no consensus layer yet, so there is
+> nothing to boot and nothing to point MetaMask at
+> ([`roadmap.md`](roadmap.md)). The addresses below are `ember1…`, the API is the
+> REST surface on 8645, and none of it is the integration surface.
+>
+> To exercise the **EVM** side today, use `node tools/rpc-probe/stub.js` (the real
+> `eth_*` method surface over a fake chain) or `hearth devnet`. See
+> [`quickstart.md`](quickstart.md).
+
 ## Option A — Docker Compose (recommended)
 
 ```bash

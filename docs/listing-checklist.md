@@ -4,9 +4,11 @@ This is the gap list, not a marketing document. It exists so that nobody —
 including us — mistakes intent for readiness.
 
 **Summary: EMBER is not ready to apply for a listing, and will not be until the
-chain runs.** The blocking item is not paperwork. It is that the account-model
-chain has no interpreter, no state transition, no `eth_*` RPC and no mainnet.
-Everything below is downstream of that.
+chain runs.** The blocking item is not paperwork, and it is no longer the EVM
+either — the interpreter, the state transition, the receipts, the bloom and the
+`eth_*` surface are all built and gated on published vectors. **It is that
+consensus on the account model has not landed, so no block has ever been
+produced.** Everything below is downstream of that one gap.
 
 **Legend:** ✅ done · 🟡 partial · ⬜ not started · 🚫 blocked on something else
 
@@ -16,13 +18,14 @@ Everything below is downstream of that.
 
 | # | Blocker | Status |
 | --- | --- | --- |
-| B1 | EVM interpreter, state transition, receipts, logs bloom, header v2 | 🟡 in progress ([`evm-spec.md`](evm-spec.md) §8, phases 3–5) |
-| B2 | `eth_*` JSON-RPC surface | ⬜ |
-| B3 | Public account-model testnet with a stable endpoint | ⬜ |
+| B1 | EVM interpreter, state transition, receipts, logs bloom | ✅ **built and vector-gated** — 609/609 VMTests, 20,067/20,077 GeneralStateTests, 188/188 TransactionTests |
+| B2 | `eth_*` JSON-RPC surface | ✅ **built**, 301 checks — but against a chain *interface* and an in-memory fake, and **nothing mounts it** |
+| B2a | **Header v2, and consensus on the account state model** | ⬜ **the blocker.** Being built; no block has ever been produced |
+| B3 | Public account-model testnet with a stable endpoint | ⬜ blocked on B2a |
 | B4 | Mainnet genesis, launch, and demonstrated hashrate | ⬜ |
 | B5 | Independent audit of consensus and the EVM | ⬜ |
 
-Nothing in §1–§8 should be filed before B1–B4. An application submitted against
+Nothing in §1–§8 should be filed before B2a–B4. An application submitted against
 a chain that does not run is a permanent mark against the project.
 
 ---
@@ -119,7 +122,7 @@ minimum set:
 | Total supply | a plain decimal number, no JSON wrapper, no units | ⬜ |
 | Circulating supply | total minus the Commons balance, per [`tokenomics.md`](tokenomics.md) §7 | ⬜ |
 | Rich list / holder count | | ⬜ |
-| Block explorer, `0x`-native | address, tx, block, contract pages with search | 🟡 — `web/index.html` exists but renders the UTXO chain and `ember1…` addresses |
+| Block explorer, `0x`-native | address, tx, block, contract pages with search | 🟡 — **built** (`web/index.html` + `web/assets/explorer/`: decoded logs, revert reasons, contract disassembly, ERC-20s, `eth_getLogs` search, 147 self-test checks). **Not deployed against a chain, because there is none** |
 | Etherscan-compatible `/api` | `module=account&action=balance`, `module=stats&action=…`, `module=logs&action=getLogs` | ⬜ |
 | Verified contract sources | source, ABI, compiler settings, constructor args | ⬜ |
 
@@ -232,16 +235,19 @@ launch and free before it.
 | M1 | **Raise `POW_SCRATCH_KIB` from 64 to the production ~2 GiB** and `POW_WALK_STEPS` from 256 to 2,048+ (`node/src/params.js:51-52`). A 64 KiB pad fits in L2 cache and is not meaningfully memory-hard | ⬜ |
 | M2 | **Raise `COINBASE_MATURITY` from 10 to ~100** (`node/src/params.js:95`) | ⬜ |
 | M3 | **Implement `SPARKS_PER_EMBER` → 18 decimals.** `params.js:6` still defines 1e8 | ⬜ |
-| M4 | **Put chain id 7411 in the code.** It exists only in the spec | ⬜ |
-| M5 | **Choose and fix the mainnet `NETWORK` id.** It defaults to `hearth` (`params.js:9`) | ⬜ |
+| M4 | ~~Put chain id 7411 in the code~~ | ✅ **done** — `node/src/chain/transaction.js:57`. What remains is that it is a **hardcoded constant** and must become per-network configuration, because testnet is 7412 (`evm-spec.md` §1) |
+| M5 | **Choose and fix the mainnet `NETWORK` id.** It defaults to `hearth` (`params.js:9`). Note this is the UTXO-era P2P/tx-binding id; under the account model EIP-155's chain id does that job | ⬜ |
 | M6 | **Write the account-model genesis** and publish its state root as the verifiable no-premine artifact | ⬜ |
 | M7 | **A new Commons address in `0x` form.** The current one is a non-checksummed UTXO sink (`params.js:127`) | ⬜ |
 | M8 | **A governance or spend mechanism for the Commons**, or an explicit written decision that there is none | ⬜ |
-| M9 | **Implement precompiles `0x06`–`0x09`** (bn128, blake2f). They currently revert loudly, which is the correct interim behaviour but breaks any contract needing them | ⬜ |
+| M9 | ~~Implement precompiles `0x06`–`0x09`~~ | ✅ **done** — `node/src/evm/bn128.js`, `node/src/evm/blake2f.js`, wired at `node/src/evm/precompiles.js:368-382`. All nine of Shanghai's set are implemented; EIP-196/197/1108 and EIP-152 vectors pass |
 | M10 | **`feeToSetter` must be a multisig from the moment the factory is deployed**, not moved later — moving it later requires the key you are trying to stop relying on ([`evm-spec.md`](evm-spec.md) §7) | ⬜ |
-| M11 | **Verify the Router init code hash against the live factory** before any liquidity is added ([`evm-spec.md`](evm-spec.md) §7) | ⬜ |
+| M11 | **Verify the Router init code hash against the live factory** before any liquidity is added ([`evm-spec.md`](evm-spec.md) §7) | 🟡 — the check is automated (`contracts/scripts/compile.mjs` refuses to build on mismatch; `node/test/dex.js` verifies it against a factory deployed on our own EVM before liquidity moves) and must still be re-run against the **live** factory at launch |
 | M12 | **Reproducible builds**, claimed in older documents and not implemented | ⬜ |
-| M13 | **Add the EVM conformance suites to the CI workflow.** `npm test` runs them; `.github/workflows/ci.yml` currently runs the legacy suites only, so "conformance-gated" is true of the test script and not yet of CI | ⬜ |
+| M14 | **Decide `nativeCurrency.name` and `shortName`.** SLIP-44 170 is already `MBRS / Ember`, so the *name* collides while the symbol does not (§1.2). It propagates into every registration and form | ⬜ |
+| M15 | **Decide Multicall3**: replay the canonical presigned deployment, or deploy ours at a different address (`evm-spec.md` §3, §7; [`decisions.md`](decisions.md) §2.2) | ⬜ |
+| M16 | **Reconcile the browser miner and the node on the coinbase key.** The miner signs secp256k1; `GET /mining/template` still requires an Ed25519 SPKI DER key and `node/src/block.js:45` still verifies Ed25519 | ⬜ |
+| M13 | ~~Add the EVM conformance suites to the CI workflow~~ | 🟡 — CI now runs `npm test` as a **single command** (`.github/workflows/ci.yml:48-49`), so a new suite is covered the moment it is added. Two things remain: the **full corpus** is gitignored and CI runs only the harness self-test over the committed fixtures, and **the node job is currently failing outright** — `node/test/blake2f.js:304` references an undeclared `skipped` on the corpus-absent path, which is every clean checkout ([`../MAP.md`](../MAP.md) §11) |
 
 ---
 
@@ -265,18 +271,32 @@ Not our decision, but every exchange asks:
 
 Short list, honestly scoped:
 
-- ✅ A running proof-of-work network with tested fork choice and reorg over real
-  sockets, a digest-conformant browser miner, and a deterministic emission
-  schedule.
-- ✅ A verifiable no-premine property on the current chain, checkable in one
-  command.
-- ✅ EVM primitives and state — Keccak, RLP, secp256k1, `uint256`, the Merkle
-  Patricia Trie and StateDB — passing published reference vectors.
+- ✅ **A complete EVM implementation, gated on Ethereum's own vectors** — 609/609
+  VMTests, 20,067/20,077 GeneralStateTests, 188/188 TransactionTests, plus RLP
+  and Trie. Written here rather than imported, which is only defensible *because*
+  those vectors exist.
+- ✅ **Uniswap V2 deploys and swaps on it** — `node/test/dex.js`, 167/167, a real
+  swap at 112,456 gas, with the init code hash verified against the live factory
+  before liquidity moved. This is the single strongest piece of diligence
+  evidence in the repository.
+- ✅ The `eth_*` JSON-RPC surface, an EVM-aware explorer, a secp256k1 browser
+  wallet whose crypto is cross-checked against the node's in CI, and a `hearth`
+  CLI with an opcode-level tracer.
+- ✅ A developer kit that works today: a faucet service, Hardhat and Foundry
+  templates, and an RPC probe that serves the real method surface over a fake
+  chain — so an integrator can prove their wiring before an endpoint exists.
+- ✅ A running proof-of-work network (the UTXO chain) with tested fork choice and
+  reorg over real sockets, a digest-conformant browser miner, and a deterministic
+  emission schedule.
+- ✅ A verifiable no-premine property on that chain, checkable in one command —
+  though the account-model genesis is the artifact that will actually matter and
+  it has not been written ([`tokenomics.md`](tokenomics.md) §9).
 - ✅ A frozen, written specification for the account model
-  ([`evm-spec.md`](evm-spec.md)) that an integrator can build against today.
+  ([`evm-spec.md`](evm-spec.md)), and the reasoning behind its non-obvious choices
+  ([`decisions.md`](decisions.md)).
 - ✅ Complete brand assets.
 - ✅ A repository inventory ([`../MAP.md`](../MAP.md)) that cites source for every
   claim, which is itself worth something to a diligence process.
 
 That is a real foundation and it is not a listing. The distance between them is
-§0.
+B2a: **a chain that produces blocks.**

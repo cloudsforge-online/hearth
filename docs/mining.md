@@ -24,7 +24,8 @@ general-purpose CPU sits close to the optimal machine. Production sizes (~2 GiB,
 more steps) make the pad itself the barrier.
 
 It is **not** a RandomX-class VM: nothing is compiled, and there is no program to
-execute. Growing it into one is on the [roadmap](roadmap.md); until it exists,
+execute. Growing it into one is **not scheduled and is not claimed** — see
+[roadmap.md](roadmap.md), "Dropped, or never real". Until it exists,
 "RandomX-class" is not a description of Homefire.
 
 ### 2. A winning proof cannot be redirected
@@ -37,6 +38,22 @@ solution = { nonce, digest, sig }   where   sig = Sign(coinbase_privkey, digest)
 So a candidate built for your public key is worth nothing to anyone else, and
 work handed to you cannot be taken from you. `node/test/mining-api.js` proves
 exactly this, and no more.
+
+**Under the account model the key changes and the hashing does not.** `coinbasePub`
+becomes a **secp256k1** public key, because the coinbase has to *receive* the block
+reward and the fees and so must be an account this chain can credit
+([`evm-spec.md`](evm-spec.md) §4). Homefire — the pad fill, the walk, the digest —
+is untouched, as is LWMA. The browser miner has already moved
+(`web/assets/mining/miner.js:24-46`) and `node/test/browser-pow.js` still passes
+digest for digest.
+
+**The node has not moved yet.** `GET /mining/template?pub=` still requires an
+88-hex SPKI DER *Ed25519* key (`node/src/rpc.js:130-134`) and
+`node/src/block.js:45` still verifies the proof signature with Ed25519. So the
+browser miner currently cannot mine a block this node will accept. Phase 5 owns
+the node half of that contract; `POW_SIG_FORM`
+(`web/assets/mining/miner.js:46`) names the wire form the browser assumes —
+`r || s`, 64 bytes, low-s, no recovery id.
 
 **This is not non-outsourceability, and this document used to say it was.** The
 private key is used *after* a nonce wins (`node/src/miner.js`), never inside the
@@ -78,6 +95,7 @@ None of the following exists in this repository. Do not describe them as feature
 - **Thermal-aware back-off** — no temperature source is available to either the
   node or the browser.
 - **A non-outsourceable puzzle** — see §2 above.
+- **A RandomX-class VM** — see §1 above. Not scheduled.
 
 ## Mining in a browser
 
@@ -91,6 +109,7 @@ keeps the transactions; you return a nonce, a digest and a signature. Your
 private key never leaves the page.
 
   GET  /mining/template?pub=<spki-der-hex>   → header core, target, PoW params
+                                              (Ed25519 today; secp256k1 after phase 5)
   POST /mining/submit  {templateId, nonce, powDigest, powSig}
 
 The node cannot mine on your behalf and cannot take work built for your key.
@@ -147,5 +166,5 @@ proof signed by anyone but the coinbase key is rejected. Both run in CI.
 `rust/hearthd/src/pow.rs` is **not** a second implementation of consensus: it
 omits the coinbase pubkey from the seed, so it computes a different digest for
 the same header. See [why-two-implementations.md](why-two-implementations.md).
-The hardened, audited RandomX-class VM is a [roadmap](roadmap.md) item, not a
-thing that exists.
+A hardened, audited RandomX-class VM is **not scheduled and is not claimed** — see
+[roadmap.md](roadmap.md), "Dropped, or never real".
