@@ -1,0 +1,13 @@
+{
+  "target": "uint256",
+  "note": "SIGNEXTEND from byte 0 of 0xff is -1; indexes count from the least significant end.",
+  "op": "signextend",
+  "args": [
+    {
+      "$big": "0"
+    },
+    {
+      "$big": "255"
+    }
+  ]
+}

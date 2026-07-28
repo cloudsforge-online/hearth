@@ -1,0 +1,6 @@
+{
+  "target": "rlp",
+  "note": "0xb8 0x37 … : long form naming 55 bytes, which the short form encodes. Two encodings for one string.",
+  "input": "0xb837aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "mustReject": true
+}

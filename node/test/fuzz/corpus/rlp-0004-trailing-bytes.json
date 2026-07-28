@@ -1,0 +1,6 @@
+{
+  "target": "rlp",
+  "note": "A valid item followed by a second one. Accepting this truncates silently.",
+  "input": "0xc0c0",
+  "mustReject": true
+}

@@ -1,0 +1,26 @@
+{
+  "target": "trie",
+  "secure": true,
+  "note": "The secure (keccak-keyed) variant, which is what the state and storage tries are.",
+  "pairs": [
+    [
+      "0x0000000000000000000000000000000000000000",
+      "0x01"
+    ],
+    [
+      "0xffffffffffffffffffffffffffffffffffffffff",
+      "0x02020202020202020202020202020202020202020202020202020202020202020202020202020202"
+    ],
+    [
+      "0x1234",
+      "0x03"
+    ]
+  ],
+  "orders": [
+    [
+      2,
+      1,
+      0
+    ]
+  ]
+}

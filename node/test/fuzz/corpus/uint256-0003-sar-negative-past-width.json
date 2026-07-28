@@ -1,0 +1,13 @@
+{
+  "target": "uint256",
+  "note": "SAR past 256 bits saturates a negative word to all ones, where SHR would give zero.",
+  "op": "sar",
+  "args": [
+    {
+      "$big": "256"
+    },
+    {
+      "$big": "57896044618658097711785492504343953926634992332820282019728792003956564819968"
+    }
+  ]
+}

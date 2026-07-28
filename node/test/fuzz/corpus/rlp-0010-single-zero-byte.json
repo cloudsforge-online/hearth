@@ -1,0 +1,5 @@
+{
+  "target": "rlp",
+  "note": "0x00 is a one-byte string whose value is zero, and IS canonical — unlike 0x8100.",
+  "input": "0x00"
+}

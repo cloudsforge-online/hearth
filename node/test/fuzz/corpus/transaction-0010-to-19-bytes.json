@@ -1,0 +1,6 @@
+{
+  "target": "transaction",
+  "note": "to must be 20 bytes or empty; 19 is neither an address nor a creation.",
+  "raw": "0xf86d098504a817c8008252089311111111111111111111111111111111111111880de0b6b3a764000080823a0aa0450f25cb83e2bf822e5dd3820097d94572884447391aa8fbfb8ae16cb7fe4f8ea02432db8f32ed657806ed6890a99e961b0d48db2bc97d998e673571cc84774062",
+  "mustReject": true
+}

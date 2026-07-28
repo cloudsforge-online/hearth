@@ -1,0 +1,6 @@
+{
+  "target": "rlp",
+  "note": "0xb9 0x00 0x38 …: a leading zero inside a long-form length.",
+  "input": "0xb90038bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "mustReject": true
+}

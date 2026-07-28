@@ -1,0 +1,6 @@
+{
+  "target": "interpreter",
+  "note": "0xfe INVALID: an exceptional halt that consumes every unit of gas.",
+  "code": "0xfe",
+  "gas": 50000
+}

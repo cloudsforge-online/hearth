@@ -1,0 +1,13 @@
+{
+  "target": "uint256",
+  "note": "SMOD takes the sign of the dividend, not of the divisor.",
+  "op": "smod",
+  "args": [
+    {
+      "$big": "115792089237316195423570985008687907853269984665640564039457584007913129639929"
+    },
+    {
+      "$big": "2"
+    }
+  ]
+}

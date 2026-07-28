@@ -1,0 +1,6 @@
+{
+  "target": "interpreter",
+  "note": "MSTORE at offset 2^255. Memory expansion is priced before it is allocated, so this is out of gas, not a 10^76-byte allocation.",
+  "code": "0x60017f800000000000000000000000000000000000000000000000000000000000000052",
+  "gas": 1000000
+}

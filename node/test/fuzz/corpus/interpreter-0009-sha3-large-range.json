@@ -1,0 +1,6 @@
+{
+  "target": "interpreter",
+  "note": "KECCAK256 over a length near 2^64: the word count must be charged before a byte is touched.",
+  "code": "0x68ffffffffffffffffff600020",
+  "gas": 1000000
+}

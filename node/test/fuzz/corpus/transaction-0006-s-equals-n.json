@@ -1,0 +1,6 @@
+{
+  "target": "transaction",
+  "note": "s = n exactly, the off-by-one at the top of the group order.",
+  "raw": "0xf86e098504a817c800825208943535353535353535353535353535353535353535880de0b6b3a764000080823a0aa0450f25cb83e2bf822e5dd3820097d94572884447391aa8fbfb8ae16cb7fe4f8ea0fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141",
+  "mustReject": true
+}

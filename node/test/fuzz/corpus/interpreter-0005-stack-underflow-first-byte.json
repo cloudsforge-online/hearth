@@ -1,0 +1,6 @@
+{
+  "target": "interpreter",
+  "note": "ADD with nothing on the stack. The commonest fate of random bytecode, and it must be a returned exception.",
+  "code": "0x01",
+  "gas": 50000
+}

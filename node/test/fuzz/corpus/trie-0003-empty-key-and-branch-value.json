@@ -1,0 +1,31 @@
+{
+  "target": "trie",
+  "secure": false,
+  "note": "The empty key, which lands in a branch node slot 16 — the value position an insert-only implementation forgets.",
+  "pairs": [
+    [
+      "0x",
+      "0x6e6f7468696e67"
+    ],
+    [
+      "0x00",
+      "0x7a65726f"
+    ],
+    [
+      "0x0000",
+      "0x646f75626c65"
+    ]
+  ],
+  "orders": [
+    [
+      2,
+      1,
+      0
+    ],
+    [
+      1,
+      0,
+      2
+    ]
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "target": "transaction",
+  "note": "A pre-EIP-155 unprotected transaction. Accepted on purpose — keyless presigned deployments depend on it.",
+  "raw": "0xf85f800182520894111111111111111111111111111111111111111180801ca076330c699e243661d84e9dc22b4a0757956325d744a9d0844f17afada5a9a3a9a031281163e5456cd64b1e8c7c6040fe75d9990cc64052f053669ed2e894304413",
+  "mustAccept": true
+}

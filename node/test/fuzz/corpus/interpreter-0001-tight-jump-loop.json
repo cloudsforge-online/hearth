@@ -1,0 +1,6 @@
+{
+  "target": "interpreter",
+  "note": "JUMPDEST; PUSH1 0; JUMP — an unbounded loop that only gas can stop. Bounded gas must mean bounded time.",
+  "code": "0x5b600056",
+  "gas": 1000000
+}
