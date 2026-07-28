@@ -62,7 +62,8 @@ say so, not to skip it.
 
 | Parameter | Value | Note |
 | --- | --- | --- |
-| Chain ID | `7411` | EIP-155 replay protection; verify unclaimed on chainlist before mainnet |
+| Chain ID — mainnet | `7411` | EIP-155 replay protection; verified unclaimed against the live registry (2,664 chains; nearest neighbours 7368 and 7447) |
+| Chain ID — **testnet** | **`7412`** | **a separate id is mandatory, not cosmetic — see below** |
 | Target fork semantics | **Shanghai** | includes PUSH0 (EIP-3855), reduced refunds (EIP-3529), warm coinbase (EIP-3651), initcode cap (EIP-3860). No blobs. |
 | Native asset | EMBER | 18 decimals — changed from 8, because every EVM tool assumes 18 |
 | Block time | 15 s | unchanged |
@@ -74,6 +75,22 @@ say so, not to skip it.
 `decimals: 8 → 18` is deliberate. ERC-20 tooling, wallets and DEX maths all assume 18 for a
 native asset. Keeping 8 would produce subtly wrong displays everywhere and cost more than the
 migration does — and the chain is being reset regardless.
+
+**Why testnet needs its own chain id, and why this was nearly missed.** The retired UTXO scheme
+carried a `net` field *inside the signed transaction body*, so a testnet signature was structurally
+invalid on mainnet. EIP-155 replaces that with the chain id — and if both networks declare `7411`,
+**every testnet transaction is replayable on mainnet and vice versa.** Same key, same nonce, same
+bytes, valid on both.
+
+The blast radius is limited today because ForgeKeyvault mints a separate key per address, so no key
+is used on both networks by accident. It is not limited for a *user*, who will quite reasonably
+import one seed phrase into both, and it is not limited for anyone who funds a testnet address that
+happens to collide with a mainnet one.
+
+This surfaced only because retiring the Ed25519 path deleted the `net` field, and the agent doing
+it noticed the protection had gone rather than assuming EIP-155 covered it. `7412` is adjacent,
+memorable and inside the same verified-free range. **Nothing may hardcode `CHAIN_ID`** — it is
+per-network configuration, and `node/src/chain/transaction.js:57` currently declares one constant.
 
 ---
 
