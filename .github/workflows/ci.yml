@@ -41,8 +41,10 @@ jobs:
       #                                       and Homefire to hash in a Worker; one
       #                                       differing bit and it mines nothing
       #                                       while looking busy
-      #   keystore                            the only thing between someone's coins
-      #                                       and anything reading their browser profile
+      # The browser wallet's key sealing is NOT in this list any more. It used
+      # to be (`keystore`), against the Ed25519 keystore that the account-model
+      # rebuild superseded; that module is deleted and the suite with it. The
+      # current keystore is covered by `wallet-selftest` in the `web` job.
       #   mining-api / p2p-fork               two real nodes on real sockets:
       #                                       partition, compete, reconnect, reorg
       - name: All node suites

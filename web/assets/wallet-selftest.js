@@ -28,8 +28,10 @@
  *
  * The browser-only half — keystore.js under WebCrypto, and the fixture chain —
  * runs here too: WebCrypto is the same implementation in node 18+, and
- * localStorage is shimmed with a Map, exactly as node/test/keystore.js does for
- * the old wallet.
+ * localStorage is shimmed with a Map. That half used to live in
+ * node/test/keystore.js against the Ed25519 keystore; both it and the modules
+ * it covered are gone, so this file is now the ONLY thing testing key sealing
+ * and it is a CI gate in its own right (the `web` job).
  */
 
 import { sha256, hmacSha256, concat } from './wallet/sha256.js';

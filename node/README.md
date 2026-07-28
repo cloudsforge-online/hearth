@@ -131,7 +131,6 @@ node test/unit.js     # primitives: crypto, tx, pow, emission, difficulty
 node test/e2e.js      # mine, pay, verify ledger/burn/persistence end to end
 node test/records.js  # record consensus rules, sealed boxes, a whole conversation
 node test/browser-pow.js # the browser miner's hashing vs the node's, digest for digest
-node test/keystore.js    # the web wallet's key sealing, and the v1 plaintext migration
 node test/mining-api.js  # mine a block over HTTP the way a browser tab does
 node test/p2p-fork.js # partition two nodes and prove the reorg
 ```

@@ -77,10 +77,11 @@ sounds impressive.
   keystore.
 - `contracts/src/` — the AMM sources, even though nothing is deployed.
 
-`web/assets/wallet-core.js`, `web/assets/keystore.js` and
-`web/assets/vendor/noble-ed25519.js` are the **retired pre-EVM** modules. No page
-imports them; they survive only because `node/test/keystore.js` still exercises
-them. Findings there are welcome but are not user-facing.
+The **retired pre-EVM** modules — `web/assets/wallet-core.js`,
+`web/assets/keystore.js` and `web/assets/vendor/noble-ed25519.js` — have been
+deleted. They were imported by no page and survived only because a test still
+exercised them; there is no longer any Ed25519 key handling in `web/`, and a
+report about it is a report about code that is not shipped.
 
 **Out of scope**
 

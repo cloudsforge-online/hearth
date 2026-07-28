@@ -2,7 +2,7 @@
 /* Encrypted secp256k1 keys at rest, for the Node-side wallet.
  *
  * The browser wallet seals its keys under PBKDF2-HMAC-SHA256 then AES-256-GCM
- * (`web/assets/keystore.js`), and this is deliberately the same construction
+ * (`web/assets/wallet/keystore.js`), and this is deliberately the same construction
  * with the same parameters so that one threat model covers both and neither has
  * to be reasoned about separately. Node's `crypto` rather than WebCrypto, and a
  * 32-byte secp256k1 scalar rather than a PKCS#8 PEM — everything else matches,

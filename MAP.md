@@ -840,8 +840,10 @@ it is now secp256k1, `0x…` and `[nonce, gasPrice, gasLimit, to, value, data]` 
 decimals. Nothing carries over and nothing pretends to: there is no migration path
 and deliberately no export machinery for one, because an Ed25519 key names no
 account on an EVM chain and nobody holds EMBER. The pre-EVM modules
-(`web/assets/wallet-core.js`, `keystore.js`, `vendor/noble-ed25519.js`) are imported
-by no page and survive only because `node/test/keystore.js` still exercises them.
+(`web/assets/wallet-core.js`, `keystore.js`, `vendor/noble-ed25519.js`) have been
+deleted, along with the `node/test/keystore.js` that was the last thing importing
+them. `wallet/keystore.js` is the only keystore in `web/`, and
+`web/assets/wallet-selftest.js` is what tests it.
 
 Non-custodial and genuinely so. The key is generated in the tab with
 `crypto.getRandomValues`; the address is `keccak256(uncompressed_pubkey[1:])[12:]`,
