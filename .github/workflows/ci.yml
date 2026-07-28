@@ -22,6 +22,10 @@ jobs:
         run: node test/unit.js
       - name: End-to-end test
         run: node test/e2e.js
+      # Application records are consensus: their shape, size and fee rules decide
+      # whether two nodes accept the same block.
+      - name: Records + chat test
+        run: node test/records.js
       # Two real nodes on real sockets: partition, mine competing branches,
       # reconnect, require a reorg. The in-process e2e test never starts p2p,
       # which is how "fork sync is impossible over the network" shipped.

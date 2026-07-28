@@ -55,6 +55,20 @@ node bin/hearth-cli.js send <toAddress> 5      # send 5 EMBER
 node bin/hearth-cli.js blocks 10
 ```
 
+## Chat CLI
+
+Messaging carried by [records](../docs/records.md). Announce once, then send.
+
+```bash
+node bin/hearth-chat.js announce               # publish your reading key
+node bin/hearth-chat.js whois <address>        # look up someone else's
+node bin/hearth-chat.js send <address> "hi"    # encrypt to them and broadcast
+node bin/hearth-chat.js inbox                  # decrypt what is addressed to you
+node bin/hearth-chat.js watch                  # stream it live
+```
+
+A message confirms when its block does — around 15s, not instantly.
+
 ## HTTP API
 | Method | Path | Returns |
 |---|---|---|
@@ -62,9 +76,11 @@ node bin/hearth-cli.js blocks 10
 | GET | `/supply` | circulating supply, commons treasury, burned total |
 | GET | `/blocks?limit=N` | latest block summaries |
 | GET | `/block/:idOrHeight` | full block |
+| GET | `/tx/:txid` | one transaction, its block and its confirmation depth |
 | GET | `/address/:addr` | balance, spendable/immature split + UTXOs (each tagged `coinbase`, `spendable`, `maturesAtHeight`) |
+| GET | `/records?app=&key=&since=&limit=` | application records on the active chain |
 | GET | `/mempool` | pending transactions |
-| GET | `/events` | SSE stream of new blocks |
+| GET | `/events` | SSE stream of new blocks; `?app=` streams that app's records instead |
 | POST | `/tx` | broadcast a signed transaction |
 | POST | `/rpc` | JSON-RPC (`getinfo`, `getbalance`, `getblockcount`, `sendtx`) |
 
@@ -73,6 +89,8 @@ node bin/hearth-cli.js blocks 10
 ```bash
 node test/unit.js     # primitives: crypto, tx, pow, emission, difficulty
 node test/e2e.js      # mine, pay, verify ledger/burn/persistence end to end
+node test/records.js  # record consensus rules, sealed boxes, a whole conversation
+node test/p2p-fork.js # partition two nodes and prove the reorg
 ```
 
 ## Docker
