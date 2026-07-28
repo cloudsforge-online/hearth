@@ -26,6 +26,9 @@
  */
 
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
+
 const B = require('../src/evm/blake2f');
 const P = require('../src/evm/precompiles');
 
@@ -253,6 +256,86 @@ group('gas and the interpreter contract');
   const first = hex(p.run(b));
   p.run(buf('000000ff' + COMMON + '03000000000000000000000000000000' + '00'));
   eq(hex(p.run(b)), first, 'a second call with the same input gives the same answer');
+}
+
+// ---------------------------------------------------------------------------
+// the ethereum/tests corpus
+// ---------------------------------------------------------------------------
+
+/* stPreCompiledContracts2/CALL{,CODE}Blake2f and stTimeConsuming/CALLBlake2f_MaxRounds
+ * forward their raw calldata straight to 0x09, so the precompile input can be lifted
+ * out of the fixture without executing anything. (stPreCompiledContracts/blake2B
+ * cannot: its inputs are built inside the contract's own bytecode from an index, so
+ * they only exist mid-execution.) Those fixtures publish a post-state ROOT and
+ * nothing else, and Hearth has no state-transition layer yet, so what is checked
+ * here is the accept/reject decision and the gas — plus the exact output for every
+ * input that matches a published vector. */
+
+const CORPUS = path.join(__dirname, 'conformance', 'vectors', 'GeneralStateTests');
+const CORPUS_FILES = [
+  'stPreCompiledContracts2/CALLBlake2f.json',
+  'stPreCompiledContracts2/CALLCODEBlake2f.json',
+  'stTimeConsuming/CALLBlake2f_MaxRounds.json',
+];
+
+/** Every published expected output, keyed by input. The 8,000,000-round one is
+ *  go-ethereum's stand-in for EIP-152 vector 8, whose 0xffffffff rounds nobody
+ *  can execute; at 208ns a round it takes about two seconds here, which is worth
+ *  paying because it is the only vector that runs the schedule 800,000 times round
+ *  its ten-row cycle. */
+const KNOWN = new Map(EIP152.filter((v) => v.expected).map((v) => [v.input, v.expected]));
+KNOWN.set('007a1200' + COMMON + '03000000000000000000000000000000' + '01',
+  '6d2ce9e534d50e18ff866ae92d70cceba79bbcd14c63819fe48752c8aca87a4b' +
+  'b7dcc230d22a4047f0486cfcfb50a17b24b2899eb8fca370f22240adb5170189');
+
+group('ethereum/tests GeneralStateTests — every blake2f input they carry');
+{
+  const inputs = [];
+  let missing = false;
+  for (const rel of CORPUS_FILES) {
+    const file = path.join(CORPUS, rel);
+    if (!fs.existsSync(file)) { missing = true; continue; }
+    const doc = JSON.parse(fs.readFileSync(file, 'utf8'));
+    for (const t of Object.values(doc)) {
+      for (const d of t.transaction.data) inputs.push(d.replace(/^0x/, '').toLowerCase());
+    }
+  }
+  if (missing) {
+    skipped++;
+    console.log('  … SKIPPED: the corpus is not fetched. Run node/scripts/fetch-vectors.sh.');
+  } else {
+    let structural = 0, exact = 0, priced = 0;
+    const wrong = [];
+    for (const h of inputs) {
+      const b = buf(h);
+      // What EIP-152 says the decision must be, read off the bytes alone.
+      const shouldFail = b.length !== 213 || (b[212] !== 0 && b[212] !== 1);
+      const gas = P.PRECOMPILES[9].gas(b);
+      if (gas !== (b.length === 213 ? BigInt(b.readUInt32BE(0)) : 0n)) {
+        wrong.push(`${h.slice(0, 8)}…(${b.length}B): gas ${gas}`);
+      }
+      priced++;
+      // 0xffffffff rounds is 4.29 billion gas — 143 full blocks. Priced, never run.
+      if (!shouldFail && b.readUInt32BE(0) > 8000000) continue;
+      const out = B.blake2f(b);
+      structural++;
+      if ((out === null) !== shouldFail) {
+        wrong.push(`${h.slice(0, 8)}…(${b.length}B, flag ${b.length === 213 ? b[212] : '-'}): ` +
+          `${out === null ? 'rejected' : 'accepted'}, expected the opposite`);
+      }
+      const known = KNOWN.get(h);
+      if (known) { exact++; if (hex(out) !== known) wrong.push(`${h.slice(0, 8)}…: wrong digest`); }
+    }
+    console.log(`  ${inputs.length} inputs lifted from the corpus: ${structural} executed, ` +
+      `${exact} match a published vector exactly, ${priced} priced`);
+    for (const w of wrong.slice(0, 10)) console.log('      ' + w);
+    eq(wrong.length, 0, 'every corpus input is accepted or rejected as EIP-152 requires, ' +
+      'priced by its own round count, and matches its published digest where one exists');
+    ok(inputs.some((h) => h.length !== 426),
+      'the corpus carries wrong-length inputs — the rejection path is exercised upstream too');
+    ok(inputs.some((h) => h.length === 426 && h.slice(0, 8) === 'ffffffff'),
+      'and the 0xffffffff-round input, which is the big-endian read written down');
+  }
 }
 
 group('performance');
