@@ -7,20 +7,39 @@ const path = require('path');
 const C = require('./crypto');
 const P = require('./params');
 const TX = require('./tx');
+const BOX = require('./box');
 
 class Wallet {
   constructor(dataDir) {
     this.file = path.join(dataDir, 'wallet.json');
     this.keys = []; // [{ priv, pub, address }]
+    // A separate X25519 keypair for reading messages. Deliberately not the
+    // spending key: an app that needs to decrypt should never be handed the key
+    // that moves money, and a leaked reading key should not cost anyone a coin.
+    this.identity = null; // { priv, pub } — X25519, PEM + hex
   }
 
   load() {
-    if (fs.existsSync(this.file)) this.keys = JSON.parse(fs.readFileSync(this.file, 'utf8'));
+    if (fs.existsSync(this.file)) {
+      const raw = JSON.parse(fs.readFileSync(this.file, 'utf8'));
+      // Wallets written before identities existed are a bare array of keys.
+      if (Array.isArray(raw)) this.keys = raw;
+      else { this.keys = raw.keys || []; this.identity = raw.identity || null; }
+    }
     if (this.keys.length === 0) this.newAddress();
+    if (!this.identity) this.newIdentity();
     return this;
   }
 
-  save() { fs.writeFileSync(this.file, JSON.stringify(this.keys, null, 2)); }
+  save() {
+    fs.writeFileSync(this.file, JSON.stringify({ keys: this.keys, identity: this.identity }, null, 2));
+  }
+
+  newIdentity() {
+    this.identity = BOX.generateIdentity();
+    this.save();
+    return this.identity.pub;
+  }
 
   newAddress() {
     const { priv, pub } = C.generateKeyPair();
@@ -43,12 +62,15 @@ class Wallet {
     return this.addresses().reduce((s, a) => s + chain.balance(a), 0);
   }
 
-  /** Build & sign a payment. Selects UTXOs across all wallet addresses. */
-  buildTx(chain, toAddress, amountSparks) {
+  /**
+   * Build & sign a payment. Selects UTXOs across all wallet addresses.
+   * `records` rides inside the signed body, so its bytes are paid for here.
+   */
+  buildTx(chain, toAddress, amountSparks, records = []) {
     // checksum guard: never build a payment to a mistyped/invalid address
     if (!C.isValidAddress(toAddress)) throw new Error('invalid destination address (checksum failed)');
     if (!Number.isInteger(amountSparks) || amountSparks <= 0) throw new Error('invalid amount');
-    const fee = P.BASE_FEE_SPARKS;
+    const fee = TX.requiredFee({ records });
     const target = amountSparks + fee;
     // gather spendable utxos
     let pool = [];
@@ -70,6 +92,7 @@ class Wallet {
     if (change > 0) outputs.push({ address: this.primary, amount: change });
 
     const tx = { version: 1, type: 'normal', inputs, outputs };
+    if (records.length) tx.records = records;
     TX.signInputs(tx, (pubHex) => this.keyForPub(pubHex));
     return tx;
   }
