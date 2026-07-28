@@ -22,7 +22,7 @@ tractable because the reference tests exist.
 
 | Component | Conformance source |
 | --- | --- |
-| Keccak-256 | NIST/Keccak team test vectors |
+| Keccak-256 | Keccak team `KeccakF-1600-IntermediateValues.txt`, plus a differential against Node's SHA3/SHAKE at four rates. *The old `ShortMsgKAT_256.txt` KAT file no longer exists — the KeccakCodePackage path 404s.* |
 | RLP | Ethereum RLP test vectors |
 | secp256k1 | RFC 6979 + recovery vectors |
 | Merkle Patricia Trie | `ethereum/tests` TrieTests |
@@ -159,6 +159,17 @@ must be implemented, and its first test is that `keccak256("")` equals
 **The trie is the "secure" variant**: keys are `keccak256(key)` before insertion. Nodes are
 RLP-encoded; any node whose encoding is under 32 bytes is embedded rather than hashed. Getting
 this wrong produces a wrong `stateRoot` and silent consensus failure.
+
+**Scalar canonicality has no home in RLP, and must be enforced by its callers.** RLP is untyped —
+it decodes to byte strings, so it cannot know that a `nonce` or `balance` or `value` is a number
+and must therefore carry no leading zero bytes. The yellow paper requires those scalars to be
+minimal-length, and two encodings of the same number hash differently, which is a chain split.
+
+So the rule lives in the **decoders**, not the codec: the transaction decoder must reject a
+leading-zero `nonce`, `gasPrice`, `gasLimit`, `value`, `v`, `r` or `s`, and the account decoder
+must reject a leading-zero `nonce` or `balance`. Empty (zero-length) is the canonical encoding of
+zero and is valid; `0x00` is not. This applies to phases 2 and 4 and is easy to miss because
+everything appears to work until someone crafts a non-canonical transaction.
 
 **StateDB needs journaling, not just a map.** `REVERT`, failed calls and out-of-gas must roll back
 storage, balance, nonce and code changes to a snapshot, while gas already consumed stays consumed.

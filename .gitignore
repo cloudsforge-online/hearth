@@ -41,3 +41,6 @@ tmp/
 
 # site build output
 dist/
+
+# Agent worktrees, created transiently while building. Never part of the repo.
+.claude/
