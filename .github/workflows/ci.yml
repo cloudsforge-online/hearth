@@ -162,6 +162,21 @@ jobs:
         run: node scripts/compile.mjs
       - name: Build tests
         run: node --test test/build.test.mjs
+      # The phase 7 gate, and it runs HERE rather than in the node job for one
+      # reason: it needs `contracts/out`, and `npm test` is required to run with
+      # zero installed dependencies. This job is the only one that has solc.
+      #
+      # It earns the slot because it is the only suite that runs bytecode nobody
+      # here compiled or reasoned about — a real V2 swap exercises CREATE2, deep
+      # CALL chains, ecrecover, SSTORE refunds, memory expansion,
+      # revert-with-reason and the 63/64 rule *together*, and the conformance
+      # vectors are each small enough to miss what only appears in combination.
+      # It has been passing 167/167 locally while gating nothing.
+      #
+      # This job's working-directory is `contracts`, hence the `../`. The suite
+      # resolves `contracts/out` off __dirname, so cwd does not matter to it.
+      - name: Uniswap V2 on our own EVM (phase 7 gate)
+        run: node ../node/test/dex.js
 
   tools:
     name: Developer kit (faucet, explorer API, verifier)
