@@ -26,6 +26,13 @@ jobs:
       # whether two nodes accept the same block.
       - name: Records + chat test
         run: node test/records.js
+      # The browser miner reimplements SHA-256 and Homefire so it can hash
+      # synchronously in a Worker. One differing bit and it mines nothing while
+      # looking busy, so the two implementations are compared digest-for-digest.
+      - name: Browser PoW conformance
+        run: node test/browser-pow.js
+      - name: Remote mining API
+        run: node test/mining-api.js
       # Two real nodes on real sockets: partition, mine competing branches,
       # reconnect, require a reorg. The in-process e2e test never starts p2p,
       # which is how "fork sync is impossible over the network" shipped.

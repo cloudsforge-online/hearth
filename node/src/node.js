@@ -9,6 +9,7 @@ const { Wallet } = require('./wallet');
 const { Miner } = require('./miner');
 const { P2P } = require('./p2p');
 const { RPC } = require('./rpc');
+const { Templates } = require('./mining');
 const BLOCK = require('./block');
 
 const LEVELS = { trace: 10, debug: 20, info: 30, warn: 40, error: 50, fatal: 60 };
@@ -32,6 +33,7 @@ class Node {
     this.wallet = new Wallet(this.dataDir).load();
     this.minerAddress = opts.minerAddress || this.wallet.primary;
     this.miner = new Miner(this);
+    this.templates = new Templates(this);
     this.p2p = new P2P(this);
     this.rpc = new RPC(this);
     // keep mempool clean as blocks arrive

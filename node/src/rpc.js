@@ -127,13 +127,27 @@ class RPC {
         const records = this.node.chain.getRecords(app, key, { since, limit });
         return json(res, 200, { app, key: key || null, height: this.node.chain.height, records });
       }
+      if (p === '/mining/template') {
+        const pub = (url.searchParams.get('pub') || '').toLowerCase();
+        // An SPKI-DER Ed25519 key is 44 bytes; anything else cannot own a
+        // coinbase, so refuse before building a candidate for it.
+        if (!/^[0-9a-f]{88}$/.test(pub)) return json(res, 400, { err: 'pub must be an 88-char SPKI DER hex Ed25519 key' });
+        return json(res, 200, this.node.templates.issue(pub));
+      }
       if (p === '/events') return this._sse(req, res, url);
 
-      if (req.method === 'POST' && (p === '/tx' || p === '/rpc')) {
+      if (req.method === 'POST' && (p === '/tx' || p === '/rpc' || p === '/mining/submit')) {
         const body = await readBody(req);
         if (p === '/tx') {
           const r = this.node.submitTx(body.tx || body);
           return json(res, r.ok ? 200 : 400, r);
+        }
+        if (p === '/mining/submit') {
+          const r = this.node.templates.submit(body || {});
+          if (r.ok) this.node.log('block from a remote miner', { height: r.height, id: r.id });
+          // Stale work is 409, not 400: the miner did nothing wrong and should
+          // pull a fresh template rather than treat this as a bug in itself.
+          return json(res, r.ok ? 200 : r.stale ? 409 : 400, r);
         }
         return json(res, 200, this._rpc(body));
       }
