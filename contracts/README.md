@@ -234,16 +234,40 @@ live rather than silently falling back; the EIP-2612 and EIP-712 typehashes and 
 hard-coded ERC-20 selectors match their canonical values; the WEMBER, pair, factory,
 router and Multicall3 ABIs contain exactly what a client expects.
 
-**They do not execute the contracts.** There is no interpreter to run them on yet — the
-Hearth EVM is being written in parallel (spec phases 1–6) — and importing a foreign EVM to
-test against would defeat the point of writing our own (spec §0). So the AMM invariants
-are *ported* faithfully and *reviewed*, but not yet *exercised*.
+**They do not execute the contracts.** They are build-level: they read `out/*.json` and
+assert on bytecode and ABIs. Execution is a separate suite.
 
-The gate for phase 7 in the spec is "a swap succeeds end to end", and that is the right
-one. When the interpreter lands, replay `out/*.json` through `node/src/evm` and assert on
-real mints, swaps and burns: first-mint `MINIMUM_LIQUIDITY` burn, the 0.3% fee, `k`
-non-decreasing across a swap, the accumulators advancing once per block, `skim`/`sync`,
-the reentrancy lock, and a `permit` round trip against precompile `0x01`.
+### The execution suite — `node/test/dex.js`
+
+The gate for phase 7 in the spec is "a swap succeeds end to end". **It is met.**
+`node/test/dex.js` replays these artifacts through `node/src/evm` and `node/src/chain`,
+driving real signed legacy transactions against a fresh `StateDB` — no chain, no blocks,
+no RPC, because phase 5 is still being built:
+
+```
+pnpm --dir contracts install && pnpm --dir contracts compile
+node ../node/test/dex.js          # --gas for the gas table, --trace to debug a failure
+```
+
+It deploys WEMBER, the factory, Router02 and Multicall3; checks `pairCodeHash()` against
+the constant above *before* touching liquidity; creates the pair and asserts it lands at
+the address `pairFor` derives; adds liquidity and asserts the first-mint
+`MINIMUM_LIQUIDITY` burn to the zero address; swaps and asserts `k` does not decrease and
+the output equals `getAmountOut` to the wei; swaps back through the native-EMBER path;
+exercises `permit` against precompile `0x01` with a low-s signature, with the high-s form
+EIP-2 would reject, and with a malformed one that must yield `address(0)` rather than
+revert; removes liquidity both plainly and via `removeLiquidityWithPermit`; and asserts
+the logs, their per-receipt bloom and the block bloom, which no state root would catch.
+
+It is **not** in `npm test`. That suite runs with zero installed dependencies and this one
+needs solc's output, so it is a gate run against `contracts/out` — the same place the
+`contracts` CI job already builds.
+
+Two things it does not reach, worth knowing before reading a green run as more than it is:
+**there is no `DELEGATECALL` anywhere in this stack** — every library in `src/libraries/`
+is `internal`, so solc inlines it, and a disassembly of all five deployed contracts finds
+only `CALL`, `STATICCALL` and `CREATE2` — and no test here triggers a flash swap's
+`hearthV2Call` re-entry.
 
 `scripts/keccak.mjs` is a dependency-free Keccak-256 written for the init code hash. It
 self-tests against `keccak256("") == c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470`
