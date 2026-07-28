@@ -194,7 +194,27 @@ Model it as an ordered journal with checkpoint markers.
 
 **Gas is consensus.** A wrong gas cost is a chain split. The Shanghai schedule including EIP-2929
 access lists (cold 2600 / warm 100 for accounts, cold 2100 / warm 100 for storage) is mandatory,
-not an optimisation.
+not an optimisation. Note that EIP-2929 **removed** the old 700 CALL base — from Berlin onward the
+base is the account access cost itself, 100 warm or 2600 cold. Anything still quoting 700 predates
+Berlin.
+
+**Two opcodes have no natural meaning on this chain, and both needed deciding.**
+
+`PREVRANDAO` (0x44) is beacon-chain randomness on Ethereum, and Hearth has no beacon chain.
+Returning the difficulty target — what pre-merge Ethereum did, and what most proof-of-work EVM
+forks still do — would be nearly useless here, because our target moves slowly and is close to
+constant between adjacent blocks. So **`PREVRANDAO` returns the parent block's Homefire PoW
+digest**: a real 256-bit hash, deterministic, and verifiable by anyone.
+
+It is still **miner-influenceable** — a miner who dislikes an outcome can discard the block and
+grind another — which is true of every PoW-derived randomness source. Document it in the developer
+docs in exactly those words. Contracts routinely misuse `block.prevrandao` as a randomness source,
+and the honest thing is to say plainly that it must not be used for anything an adversarial miner
+would profit from biasing.
+
+`BASEFEE` (0x48) exists because Shanghai includes EIP-3198, and removing it would make
+Shanghai-compiled Solidity fail here while working on Ethereum. v1 has no EIP-1559, so **it pushes
+zero** until the fee market lands in v2.
 
 ---
 
