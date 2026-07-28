@@ -30,6 +30,12 @@ function parse(argv) {
       case '--p2p': o.p2pPort = Number(next()); break;
       case '--peer': o.peers.push(next()); break;
       case '--mine': o.mine = true; break;
+      // Accepted, then refused under --evm below. The account-model chain
+      // derives its coinbase from a KEY it holds (src/evmnode.js), because the
+      // block signature is made with it — you cannot mine to an address you do
+      // not hold. Silently ignoring the flag meant a node happily mined to its
+      // own address while the operator believed otherwise, which is how someone
+      // loses a day's rewards to a directory they later delete.
       case '--miner-address': o.minerAddress = next(); break;
       case '--throttle': o.throttle = Number(next()); break;
       case '--evm': o.evm = true; break;
@@ -55,6 +61,14 @@ function parse(argv) {
 }
 
 const opts = parse(process.argv);
+if (opts.evm && opts.minerAddress) {
+  console.error(
+    'hearthd: --miner-address is not supported with --evm.\n'
+    + '  The coinbase must SIGN the block, so the node mines to the key it holds in\n'
+    + '  <data>/coinbase-key.json and mining to a bare address is not possible.\n'
+    + '  To mine to a specific account, put its key there before starting.');
+  process.exit(2);
+}
 const node = opts.evm
   ? new (require('../src/evmnode').EvmNode)(opts)
   : new (require('../src/node').Node)(opts);
