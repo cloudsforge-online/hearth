@@ -441,10 +441,19 @@ group('trace — call frames, depth, and nested reverts');
   const callStep = r.events.find((e) => e.type === 'step' && e.mnemonic === 'CALL');
   eq(callStep.gasCost, 68135n, 'CALL costs 2600 (cold account) + 65535 (gas handed to the child)');
 
-  // Depth filtering hides the child's instructions but keeps the frame markers.
+  /* --depth COLLAPSES a frame rather than erasing it: the instructions go, the
+   * enter/exit summary stays. Erasing it would take the decoded revert reason
+   * with it, which is the one line you actually wanted. */
   const shallow = trace.filterEvents(r.events, { maxDepth: 0 });
   eq(shallow.filter((e) => e.type === 'step' && e.depth > 0).length, 0, '--depth=0 hides the child frame\'s steps');
   ok(shallow.filter((e) => e.type === 'step').length > 0, 'and keeps the parent\'s');
+  eq(shallow.filter((e) => e.type === 'exit' && e.depth === 1).length, 1, 'but keeps the collapsed frame\'s exit line');
+  eq(shallow.find((e) => e.type === 'exit' && e.depth === 1).revert.message, 'nope',
+    'so the revert reason survives the filter that hid the frame it came from');
+  eq(trace.filterEvents(r.events, { maxDepth: 0 }).filter((e) => e.type === 'enter').length, 2, 'and its enter line');
+  // Two levels down is gone entirely — collapsing is one level, not all of them.
+  eq(trace.filterEvents([{ type: 'enter', depth: 2 }, { type: 'step', depth: 1 }], { maxDepth: 0 }).length, 0,
+    'a frame two levels below the cut is hidden outright');
 }
 
 // ===========================================================================

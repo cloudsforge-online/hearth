@@ -222,13 +222,28 @@ function makeOpFilter(spec) {
 }
 
 /**
- * Apply `--depth` and `--op`. `enter`/`exit` survive an `--op` filter because a
- * list of SSTOREs with no indication of which contract ran them is useless, and
- * they are cheap.
+ * Apply `--depth` and `--op`.
+ *
+ * `--depth=N` COLLAPSES deeper frames rather than erasing them: the
+ * instructions inside go, but the frame's own enter and exit lines stay, one
+ * level further down than the deepest instructions shown. That is the "step
+ * over" a debugger gives you, and it is the difference between
+ *
+ *     CALL                       and    → CALL 0x…bb gas 65535
+ *                                       ← execution reverted Error("nope")
+ *
+ * — which is the single most useful line in the trace and the one you would
+ * otherwise have to turn the filter off to see.
+ *
+ * `enter`/`exit` also survive an `--op` filter, because a list of SSTOREs with
+ * no indication of which contract ran them is not worth reading.
  */
 function filterEvents(events, { maxDepth = null, opFilter = null } = {}) {
   return events.filter((e) => {
-    if (maxDepth !== null && e.depth > maxDepth) return false;
+    if (maxDepth !== null) {
+      const limit = e.type === 'step' ? maxDepth : maxDepth + 1;
+      if (e.depth > limit) return false;
+    }
     if (opFilter && e.type === 'step' && !opFilter(e.mnemonic)) return false;
     return true;
   });
