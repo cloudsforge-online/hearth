@@ -10,6 +10,7 @@
 # The corpus is split across two upstream repositories:
 #
 #   ethereum/tests        RLPTests, TrieTests            (branch: develop)
+#   ethereum/tests        RLPTests, TrieTests, TransactionTests
 #   ethereum/legacytests  VMTests, GeneralStateTests     (branch: master)
 #
 # VMTests and GeneralStateTests were moved out of ethereum/tests into the
@@ -179,7 +180,11 @@ do_fetch() {
     clone_sparse "$TESTS_REPO" "$TESTS_REF" "$VECTORS/tests"
     clone_sparse "$LEGACY_REPO" "$LEGACY_REF" "$VECTORS/legacytests"
   else
-    clone_sparse "$TESTS_REPO" "$TESTS_REF" "$VECTORS/tests" RLPTests TrieTests
+    # TransactionTests live in ethereum/tests, NOT legacytests — the opposite
+    # way round from VMTests and GeneralStateTests. Missing it here is silent:
+    # test/transaction.js falls back to its 53 vendored vectors and still
+    # reports PASS, so the other 135 simply never run.
+    clone_sparse "$TESTS_REPO" "$TESTS_REF" "$VECTORS/tests" RLPTests TrieTests TransactionTests
     clone_sparse "$LEGACY_REPO" "$LEGACY_REF" "$VECTORS/legacytests" \
       Constantinople/VMTests Cancun/GeneralStateTests
   fi
@@ -188,6 +193,7 @@ do_fetch() {
   # roots directly under vectors/ with symlinks rather than copying ~200 MB.
   ln -sfn "$VECTORS/tests/RLPTests"                       "$VECTORS/RLPTests"
   ln -sfn "$VECTORS/tests/TrieTests"                      "$VECTORS/TrieTests"
+  ln -sfn "$VECTORS/tests/TransactionTests"               "$VECTORS/TransactionTests"
   ln -sfn "$VECTORS/legacytests/Constantinople/VMTests"   "$VECTORS/VMTests"
   ln -sfn "$VECTORS/legacytests/Cancun/GeneralStateTests" "$VECTORS/GeneralStateTests"
 

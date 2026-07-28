@@ -146,6 +146,24 @@ The existing header is `{version, prevHash, merkleRoot, height, timestamp, targe
 - `logsBloom` — 2048-bit filter over every log address and topic. **Required**: `eth_getLogs` and
   every indexer depend on it.
 
+**The header as specified cannot populate an RPC block response.** Building the JSON-RPC layer
+surfaced six fields clients require that nothing here provides. Phase 5 must add them:
+
+| Field | Source |
+| --- | --- |
+| `difficulty` | derivable from `target` as `2^256 / (target + 1)` |
+| `totalDifficulty` | **cumulative — must be stored**, not recomputed per request |
+| `size` | RLP byte length of the block |
+| `extraData` | free bytes; may be empty, but the field must exist |
+| `nonce` | 8 bytes, from the PoW proof |
+| `mixHash` | the Homefire digest — the same value `PREVRANDAO` returns |
+
+**`timestamp` must be seconds, and the v1 header stores milliseconds.** This is a one-word change
+with a wide blast radius: a millisecond timestamp makes every explorer render dates in the year
+57,000 and breaks every Solidity `deadline` comparison, including Uniswap V2's Router, which
+rejects any swap whose deadline has "passed". Convert at the header, not at the RPC boundary, so
+there is one representation on the chain.
+
 **The proof-of-work algorithm is unchanged — but the key it binds is not.** §2 moves accounts to
 secp256k1, and the coinbase has to *receive* the block reward and the fees, so it must be an
 account this chain can credit. `coinbasePub` therefore becomes a secp256k1 public key and the
