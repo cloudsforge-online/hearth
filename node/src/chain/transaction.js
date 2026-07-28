@@ -154,7 +154,7 @@ function fields(tx) {
 /** Signed RLP. Every scalar goes through RLP's minimal integer encoding, which
  *  is what makes `encode(decode(raw))` byte-identical to `raw`. */
 function encode(tx) {
-  const t = tx.type === TX_TYPE_LEGACY && typeof tx.nonce === 'bigint' ? tx : normalize(tx);
+  const t = tx.type === TX_TYPE_LEGACY && isNormalized(tx) ? tx : normalize(tx);
   if (t.v === null || t.r === null || t.s === null) throw new TxError('UNSIGNED', 'cannot encode an unsigned transaction');
   return RLP.encode(fields(t));
 }
@@ -172,7 +172,7 @@ function hash(tx) {
  * the trailing fields — the list length changes — so they can never collide.
  */
 function signingHash(tx, chainId = CHAIN_ID) {
-  const t = typeof tx.nonce === 'bigint' ? tx : normalize(tx);
+  const t = isNormalized(tx) ? tx : normalize(tx);
   const base = [t.nonce, t.gasPrice, t.gasLimit, t.to || Buffer.alloc(0), t.value, t.data];
   if (chainId === null || chainId === undefined) return keccak256(RLP.encode(base));
   return keccak256(RLP.encode([...base, big(chainId), 0, 0]));
@@ -264,9 +264,27 @@ function decode(raw, { chainId = CHAIN_ID } = {}) {
 
 // ---- gas -------------------------------------------------------------------
 
+/**
+ * Has `normalize` already run? Checking `nonce` alone is not enough, and the
+ * difference is a real overcharge rather than a style point.
+ *
+ * A node reading a decoded transaction has every field normalised together, so
+ * `typeof nonce === 'bigint'` implied the rest. A *wallet* builds a draft, and
+ * naturally writes a BigInt nonce beside a `data` that is still a `0x…` string —
+ * at which point `data.length` counts hex characters, not bytes, and the caller
+ * is charged 16 gas for each of them. A 10-byte payload costs 192 gas too much.
+ *
+ * Found by the browser wallet's cross-check against this module over 120
+ * transactions, which is exactly the kind of bug a second implementation exists
+ * to catch: everything on the node's own path agreed with itself.
+ */
+function isNormalized(tx) {
+  return typeof tx.nonce === 'bigint' && Buffer.isBuffer(tx.data);
+}
+
 /** Intrinsic gas, straight from the Shanghai schedule — see evm/gas.js. */
 function intrinsicGas(tx) {
-  const t = typeof tx.nonce === 'bigint' ? tx : normalize(tx);
+  const t = isNormalized(tx) ? tx : normalize(tx);
   return gas.intrinsicGas({ data: t.data, isCreation: isCreation(t) });
 }
 
@@ -277,7 +295,7 @@ function intrinsicGas(tx) {
  * of the mempool without touching state.
  */
 function checkGas(tx) {
-  const t = typeof tx.nonce === 'bigint' ? tx : normalize(tx);
+  const t = isNormalized(tx) ? tx : normalize(tx);
   if (isCreation(t) && gas.initcodeTooLarge(t.data.length)) {
     throw new TxError('INITCODE_SIZE_EXCEEDED', `initcode is ${t.data.length} bytes, over the EIP-3860 cap of ${gas.G.MAX_INITCODE_SIZE}`);
   }
@@ -318,7 +336,7 @@ function sign(tx, privateKey, { chainId = CHAIN_ID } = {}) {
  * that is fed arbitrary bytes by strangers.
  */
 function recoverSender(tx) {
-  const t = typeof tx.nonce === 'bigint' ? tx : normalize(tx);
+  const t = isNormalized(tx) ? tx : normalize(tx);
   /* `decode` and `sign` both leave these behind; a hand-built object has only
    * v. Deriving them here rather than round-tripping through `decode` means
    * recovery never depends on which chain id the caller happens to be using —
