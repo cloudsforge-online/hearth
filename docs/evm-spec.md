@@ -146,8 +146,17 @@ The existing header is `{version, prevHash, merkleRoot, height, timestamp, targe
 - `logsBloom` — 2048-bit filter over every log address and topic. **Required**: `eth_getLogs` and
   every indexer depend on it.
 
-**Proof-of-work is unchanged.** `coreHash` covers the whole header core, Homefire runs over it
-exactly as today, and `coinbasePub` still binds the miner. Miners receive a template and grind
+**The proof-of-work algorithm is unchanged — but the key it binds is not.** §2 moves accounts to
+secp256k1, and the coinbase has to *receive* the block reward and the fees, so it must be an
+account this chain can credit. `coinbasePub` therefore becomes a secp256k1 public key and the
+block signature becomes a secp256k1 signature. Homefire itself — the pad fill, the walk, the
+digest — is untouched, as is LWMA and everything in `pow.js`.
+
+Stating this because the spec was ambiguous enough that the agent writing the whitepaper
+declined to assert either way, which was the right call. It is one sentence and it is consensus.
+
+`coreHash` covers the whole header core, Homefire runs over it exactly as today, and `coinbasePub`
+still binds the miner. Miners receive a template and grind
 nonces (`/mining/template`), so **the browser miner needs no EVM** and the digest-conformance test
 stays cheap.
 

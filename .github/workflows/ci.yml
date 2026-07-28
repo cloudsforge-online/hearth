@@ -18,30 +18,35 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Unit tests
-        run: node test/unit.js
-      - name: End-to-end test
-        run: node test/e2e.js
-      # Application records are consensus: their shape, size and fee rules decide
-      # whether two nodes accept the same block.
-      - name: Records + chat test
-        run: node test/records.js
-      # The browser miner reimplements SHA-256 and Homefire so it can hash
-      # synchronously in a Worker. One differing bit and it mines nothing while
-      # looking busy, so the two implementations are compared digest-for-digest.
-      - name: Browser PoW conformance
-        run: node test/browser-pow.js
-      # The browser wallet's key sealing is the only thing between someone's
-      # coins and anything that can read their browser profile.
-      - name: Browser keystore (encryption at rest + v1 migration)
-        run: node test/keystore.js
-      - name: Remote mining API
-        run: node test/mining-api.js
-      # Two real nodes on real sockets: partition, mine competing branches,
-      # reconnect, require a reorg. The in-process e2e test never starts p2p,
-      # which is how "fork sync is impossible over the network" shipped.
-      - name: P2P fork-sync test
-        run: node test/p2p-fork.js
+      # ONE command, not a list of them. This job used to name each suite
+      # individually, and package.json named them too — so the moment the EVM
+      # work added keccak, rlp, uint256, secp256k1, opcodes, gas, precompiles,
+      # trie, statedb and the conformance harness, CI silently kept running the
+      # seven it already knew about. Ten suites were green locally and untested
+      # here, while the spec claimed conformance was CI-gating. It was not.
+      #
+      # `npm test` is the single source of truth. A new suite is covered the
+      # moment it is added there, which is the only arrangement that cannot rot.
+      #
+      # What it covers, and why each matters:
+      #   keccak / rlp / uint256 / secp256k1  the primitives the EVM is built on,
+      #                                       each against published vectors
+      #   opcodes / gas / precompiles         gas is consensus; a wrong constant
+      #                                       is a chain split
+      #   trie / statedb                      a wrong state root is a silent split
+      #   conformance --selftest              proves the harness can still FAIL;
+      #                                       a harness that cannot is worse than none
+      #   unit / e2e / records                the UTXO-era chain rules
+      #   browser-pow                         the browser miner reimplements SHA-256
+      #                                       and Homefire to hash in a Worker; one
+      #                                       differing bit and it mines nothing
+      #                                       while looking busy
+      #   keystore                            the only thing between someone's coins
+      #                                       and anything reading their browser profile
+      #   mining-api / p2p-fork               two real nodes on real sockets:
+      #                                       partition, compete, reconnect, reorg
+      - name: All node suites
+        run: npm test
       - name: Coinnomics model sanity
         run: node ../proto/emission.js > /dev/null
 
@@ -111,3 +116,29 @@ jobs:
             exit 1
           fi
           echo "ok: no committed private keys found"
+
+  contracts:
+    name: DeFi contracts (compile + init code hash)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: pnpm/action-setup@v4
+      - run: pnpm install --frozen-lockfile
+      # The Router computes pair addresses from a hard-coded init code hash
+      # rather than asking the factory, so a hash that drifts sends it looking
+      # for pools at addresses where none exist — the most common way a Uniswap
+      # V2 fork fails, and it fails silently with an empty quote rather than an
+      # error. compile.mjs refuses to build on mismatch; these tests assert the
+      # factory embeds that exact init code, that the deliberate-overflow
+      # unchecked blocks survive the 0.8 port, and that no Cancun opcode crept
+      # in past our Shanghai target.
+      - name: Compile and verify
+        run: node scripts/compile.mjs
+      - name: Build tests
+        run: node --test test/build.test.mjs
