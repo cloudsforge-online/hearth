@@ -11,7 +11,13 @@ other work is being built against. Where this file describes what exists and the
 spec describes what is agreed, they are answering different questions — and where
 they conflict about an intention rather than a fact, the spec wins.
 
-**Verified against `db9b2e3`.**
+**Verified against `92cea4e`.** The previous revision of this file was verified
+against `db9b2e3` and had drifted: five suites had grown, the fuzzing suite and
+two `tools/` services did not exist yet, and the `npm test` break it reported had
+been fixed. What was re-run for this pass, on this machine: `npm test` (27 suites,
+also from a fresh clone with no corpus), every unit suite individually,
+`test/dex.js`, `test/fuzz/run.js`, the VMTests and GeneralStateTests conformance
+gates, the TransactionTests corpus group, and the `tools/` suites.
 
 ---
 
@@ -46,13 +52,16 @@ here first.
 | EVM interpreter, gas, opcodes | `node/src/evm/` | ✅ **merged**, **609/609 VMTests** |
 | Precompiles `0x01`–`0x09` — incl. bn128, blake2f | `node/src/evm/precompiles.js`, `bn128.js`, `blake2f.js` | ✅ **merged**, all nine implemented |
 | Transactions, receipts, logs bloom | `node/src/chain/` | ✅ **merged**, **188/188 TransactionTests** *(unverified here — see §4.3)* |
-| State transition | `node/src/chain/statetransition.js` | ✅ **merged**, **20,067/20,077 GeneralStateTests**; ten known failures, all `*Paris` account-collision fixtures |
+| State transition | `node/src/chain/statetransition.js` | ✅ **merged**, **20,077/20,077 GeneralStateTests** — the last ten fixed by EIP-7610 (`c93a524`) |
 | `eth_*` JSON-RPC surface | `node/src/jsonrpc/` | ✅ **merged**, 301 checks — but written against a **fake chain**; nothing mounts it |
 | EVM-aware explorer | `web/index.html`, `web/assets/explorer/` | ✅ **merged**, 147 self-test checks |
 | Browser wallet on secp256k1 | `web/wallet.html`, `web/assets/wallet/` | ✅ **merged**, 141 cross-check assertions |
-| `hearth` CLI + opcode tracer | `node/bin/hearth.js`, `node/src/cli/` | ✅ **merged**, 305 checks |
+| `hearth` CLI + opcode tracer | `node/bin/hearth.js`, `node/src/cli/` | ✅ **merged**, 310 checks |
 | AMM contracts (WEMBER, V2 Factory/Pair/Router, Multicall3) | `contracts/` | ✅ **compile**, and **Uniswap V2 runs on our own EVM** — see §4.4 |
 | Developer kit (faucet, Hardhat/Foundry templates, RPC probe) | `tools/` | ✅ **merged**, faucet 66 checks |
+| Etherscan-compatible `/api` + address index | `tools/explorer-api/` | 🟡 **written, tests failing** — §3.5 |
+| Contract verification (`forge verify-contract`-compatible) | `tools/verify/` | ✅ **merged**, 116 checks |
+| Property fuzzing | `node/test/fuzz/` | ✅ **merged**, 82,481 checks; two open findings — §4.7, §11 |
 | **Consensus on the account model** | — | ⬜ **being built now. No block has ever been produced.** |
 | Public testnet, mainnet, any deployed contract | — | ⬜ does not exist |
 | The UTXO chain (ledger, P2P, REST, reorg) | `node/src/chain.js`, `tx.js`, `p2p.js`, `rpc.js` | ✅ runs, and **is being retired** |
@@ -64,6 +73,12 @@ checks, a swap at **112,456 gas**. §4.4.
 
 **The most important gap:** phase 5. Every "merged" row above is a component
 proved offline against vectors. None of them has ever been driven by a block.
+
+**And a "merged" row is not a "ready" row.** `StateDB` re-roots both tries on
+every mutation, which costs **443 MB and 65 seconds for a single 30M-gas
+transaction against a 15-second block time**
+([`docs/robustness-review.md`](docs/robustness-review.md) §1, measured). Phase 5
+is blocked on that, not merely unstarted. §11.
 
 ---
 
@@ -79,7 +94,7 @@ proved offline against vectors. None of them has ever been driven by a block.
 | `rust/hearthd/` | A self-check binary and a Homefire benchmark over some library modules | **Not a node. Not consensus.** Two known divergences — §3.3 |
 | `proto/` | Two teaching scripts: an emission *model* and a toy PoW miner | Prototype; **the emission model is not the consensus schedule** — §11 |
 | `app-desktop/` | Tauri v2 shell | **Unshipped scaffolding.** Its three native commands have zero callers |
-| `docs/` | Sixteen documents. [`evm-spec.md`](docs/evm-spec.md) is the authoritative one | Prose only |
+| `docs/` | Eighteen documents. [`evm-spec.md`](docs/evm-spec.md) is the authoritative one; [`robustness-review.md`](docs/robustness-review.md) is the measured one; [`testing.md`](docs/testing.md) says what is and is not covered | Prose only |
 | `branding/` | Favicon, mark, wordmark, og, social | Complete |
 
 ### 3.1 `node/` — the node, and the EVM
@@ -111,7 +126,7 @@ be tested in isolation during the transition (`docs/evm-spec.md` §5).
 | `src/chain/bloom.js` | the 2048-bit logs bloom | 148 |
 | `src/chain/statetransition.js` | apply a transaction, produce a receipt; a block's worth in order | 503 |
 | `src/jsonrpc/hex.js` | the QUANTITY/DATA codec, and the RPC error type | 272 |
-| `src/jsonrpc/methods.js` | the `eth_*` method surface | 805 |
+| `src/jsonrpc/methods.js` | the `eth_*` method surface | 823 |
 | `src/jsonrpc/server.js` | JSON-RPC 2.0 dispatch: batches, notifications, error mapping | 212 |
 | `src/cli/trace.js` | the opcode-level tracer — the reason `hearth` exists | 878 |
 | `src/cli/abi.js` | ABI encode/decode, selectors, event and revert decoding | 578 |
@@ -276,7 +291,24 @@ Real, runnable, and the reason a stranger can get to a deploy without asking.
 | `tools/faucet/` | A faucet service whose entire engineering problem is refusing: per-address and per-IP limits, a global payout cap, and an atomic check-and-record. **66 checks**, over real HTTP against a stub node, no dependencies |
 | `tools/hardhat/` | A working Hardhat template — `evmVersion: 'shanghai'` pinned, plus `check-network.js`, `deploy.js`, `deploy-dex.js`, `swap.js`, `interact.js` |
 | `tools/foundry/` | A working Foundry template; `--legacy` is required on every broadcasting command and the README says why |
+| `tools/explorer-api/` | The **Etherscan-compatible `/api`** and the address index behind it — `account`, `contract`, `stats`, `transaction`, `logs` and `proxy`, plus `GET /supply/total`. Zero dependencies. **Its test suite currently fails** — see below |
+| `tools/verify/` | Contract verification, including the API `forge verify-contract` speaks. **116/116 checks**, run |
 | `tools/metamask.md` | The add-network page |
+
+**`tools/explorer-api`'s tests do not pass**, locally or in CI
+(`node test/explorer-api.test.js`, and the *Developer kit* job on run
+[30402531669](https://github.com/cloudsforge-online/hearth/actions/runs/30402531669)):
+
+```
+RpcError: receipt for 0x47d3…aef2: internal error: receipt.logs[0].logIndex is
+missing — the chain must number logs across the block, and this layer cannot
+derive it from one receipt
+```
+
+The shim requires `logIndex` to be numbered across the whole block, and the test's
+fake chain does not supply it. Whether the defect is in the fake or in the shim's
+expectation is **not established here** — this file does not edit source. Read the
+shim as *written and not yet passing*, not as *done*.
 
 CI parses the templates and boots the probe, asserting `eth_chainId` is `0x1cf3`
 and `net_version` is `"7411"` — the same number in two encodings, which is the one
@@ -346,17 +378,18 @@ Every one of these was executed while writing this file
 | `gas` | 205/205 |
 | `precompiles` | 119/119 |
 | `bn128` | 81/81 (1 skipped without the corpus) |
-| `blake2f` | 46/46 **with the corpus fetched** — see §12 |
+| `blake2f` | 43/43 offline; **46/46 with the corpus fetched** — see §12 |
 | `trie` | 302/302 |
-| `statedb` | 151/151 |
-| `transaction` | 165/165 |
+| `statedb` | 166/166 |
+| `transaction` | 167/167 |
 | `receipt` | 62/62 |
 | `bloom` | 61/61 |
-| `interpreter` | 173/173 |
+| `interpreter` | 182/182 |
 | `statetransition` | 133/133 |
-| `cli` | 305/305 |
+| `cli` | 310/310 |
 | `jsonrpc` | **301/301** |
 | `conformance --selftest` | 85/85 |
+| `fuzz --cases=2000` | **82,481/82,481**, with 3 standing observations — §4.7 |
 | `unit` / `e2e` / `records` | 32/32 · 24/24 · 49/49 |
 | `browser-pow` / `keystore` / `mining-api` / `p2p-fork` | 10/10 · 19/19 · 24/24 · 25/25 |
 
@@ -369,30 +402,37 @@ runs offline.
 | Suite | Result | How |
 | --- | --- | --- |
 | **VMTests** | **609/609 vectors, 2121/2121 checks** — verified | `node test/conformance/runner.js --impl=test/interpreter.js --dir=test/conformance/vectors/VMTests --no-gas` |
-| **GeneralStateTests** | **20,067 / 20,077** — verified. The ten failures are listed below | `node test/conformance/runner.js --impl=test/statetransition.js --suite=GeneralStateTests --dir=test/conformance/vectors` |
-| **TransactionTests** | **188/188** — *not independently verified while writing this file*; it is the figure the transaction work recorded | — |
-| RLPTests / TrieTests | pass, inside `test/rlp.js` and `test/trie.js` | |
+| **GeneralStateTests** | **20,077 / 20,077**, 60,231 checks — verified, re-run for this pass (2,002 s) | `node test/conformance/runner.js --impl=test/statetransition.js --suite=GeneralStateTests --dir=test/conformance/vectors` |
+| **TransactionTests** | **188/188** — verified. `188/188 corpus cases, 22 typed (EIP-2718) skipped, 2 with no Shanghai result` | `node test/transaction.js`, group *TransactionTests — full corpus* |
+| RLPTests / TrieTests | pass, inside `test/rlp.js` and `test/trie.js` — 55 and 25 vectors respectively, by the loader's count. Neither suite reports a separate vector total on stdout, so quote the suite's own check count (149/149, 302/302) rather than a vector count | |
 
-**The ten GeneralStateTests failures, named.** Other documents have called these
-"ten failures in one family". That is true of the *semantics* and misleading about
-the *layout* — they sit in four different directories, and a reader looking for one
-directory will not find them:
+**The ten GeneralStateTests failures are fixed.** Earlier revisions of this file
+named them individually, because they sat in four different directories and a
+reader looking for one directory would not find them:
 
 ```
-stCreate2/RevertInCreateInInitCreate2Paris.json    d0g0v0
-stCreate2/create2collisionStorageParis.json        d0g0v0, d1g0v0, d2g0v0
+stCreate2/RevertInCreateInInitCreate2Paris.json        d0g0v0
+stCreate2/create2collisionStorageParis.json            d0g0v0, d1g0v0, d2g0v0
 stExtCodeHash/dynamicAccountOverwriteEmpty_Paris.json  d0g0v0
-stRevertTest/RevertInCreateInInit_Paris.json       d0g0v0
-stSStoreTest/InitCollisionParis.json               d0g0v0, d1g0v0, d2g0v0, d3g0v0
+stRevertTest/RevertInCreateInInit_Paris.json           d0g0v0
+stSStoreTest/InitCollisionParis.json                   d0g0v0, d1g0v0, d2g0v0, d3g0v0
 ```
 
-What makes them one family is that **every one is a `…Paris` fixture and every one
-is an account-collision case** — creating into an address that already carries a
-nonce or storage, and what survives a revert in that situation. They are a single
-semantic disagreement, not ten unrelated bugs, and nothing else in the corpus is
-affected. Reproduce the set with
-`--filter='Paris' --max-failures=0`, or read
-`/tmp/baseline-gst.json` after a `--json=` run.
+They were one family, and the rule was **EIP-7610**. EIP-684 makes an address
+occupied if it carries a nonce *or* code; EIP-7610 adds a third arm — a non-empty
+**storage root** — and geth has applied all three unconditionally since 1.13. So
+`CREATE` onto an address holding storage is a collision that consumes the entire
+gas limit and leaves the storage exactly where it is. We had been treating it as
+the legal reset EIP-684 reads like, wiping the slots and diverging on the state
+root. Balance is deliberately *not* a fourth arm: anyone may send to an address
+before a contract lands there, so making that brick the address would be a
+griefing vector. Fixed in `3cc7e70` / `c93a524` (`node/src/evm/interpreter.js`,
+`node/src/state/statedb.js`).
+
+**Re-run for this pass**, on the full corpus:
+`PASS — 60231/60231 checks (20077 vectors passed, 0 failed, 14510 skipped, 2002137ms)`.
+The 14,510 skips are non-Shanghai fork sections, which is expected — the runner
+scores the Shanghai section of each fixture.
 
 `--no-gas` on VMTests is not a concession. `legacytests/Constantinople/VMTests` is
 Constantinople *semantics* at Frontier *prices*: running the 609 with gas checking
@@ -460,6 +500,31 @@ in-memory fake (test/jsonrpc.js). Phase 5 implements exactly this."*
 So "the `eth_*` surface is built" means: the method table, the QUANTITY/DATA codec,
 the JSON-RPC 2.0 transport, the error mapping and the block/receipt shapes are
 built and tested. What is not built is anything to serve them from.
+
+### 4.7 Property fuzzing, and the two defects it found
+
+`node/test/fuzz/` feeds random bytes to `uint256`, the trie, RLP, transactions and
+the interpreter. Every vector in §4.3 is *well-formed input somebody intended to
+work*; this is the first thing in the tree that is not. It runs inside `npm test`
+as the deterministic pass (fixed seed) and reports **82,481/82,481 checks** at
+`--cases=2000`, with a `--time=N` soak mode for new ground.
+
+**It reports and does not patch** — nothing under `test/fuzz/` modifies `src/`.
+Each finding is printed as a standing `!` observation on every run, and each is
+written so the check goes red the day it is fixed.
+
+Two defects it found in merged code, and their current state:
+
+| Finding | State |
+| --- | --- |
+| **`intrinsicGas` counted hex characters as bytes** — `isNormalized` sniffed only `nonce`, so a wallet draft with a `0x…` string `data` was overcharged 192 gas on a 10-byte payload | **Fixed** (`a670a8a`), found by the browser wallet's cross-check |
+| **`isNormalized` still sniffed two fields of three** — `to: ''` means creation, so a draft using it was under-quoted 32,002 gas and skipped EIP-3860's initcode cap entirely | **Fixed** (`521ecd5`) — `to` is now checked |
+| **`RLP.decode` has no nesting cap** | **Open.** §11 |
+| **`isNormalized` is still not a complete test** | **Open, and narrower than it was.** §11 |
+
+The `--cases=2000` run reports 3 standing observations and 207 hits on pinned
+known bugs; the pin text still describes the pre-`521ecd5` `to` case, so it
+overstates what remains. What actually remains is measured in §11.
 
 ---
 
@@ -812,7 +877,7 @@ is at the keyboard.
 
 ### 9.3 `hearth` — the terminal tool for the EVM chain
 
-`node/bin/hearth.js`, 305 checks in `node/test/cli.js`.
+`node/bin/hearth.js`, 310 checks in `node/test/cli.js`.
 
 ```
 hearth trace <txhash>            replay a transaction opcode by opcode
@@ -892,16 +957,51 @@ only externally reachable caller is the unauthenticated `/mining/template`.
 
 ## 11. What this does NOT do, and non-obvious constraints
 
-**`npm test` does not pass from a clean clone, and CI is red because of it.**
-`node/test/blake2f.js:304` increments a `skipped` variable that is never declared.
-That line is only reached when the reference corpus is absent — which is the state
-of every clean checkout, including CI's. The result is
-`ReferenceError: skipped is not defined`, an exit code of 1, and every suite after
-`blake2f` in the `npm test` chain never running. Confirmed in
-[run 30397854440](https://github.com/cloudsforge-online/hearth/actions/runs/30397854440)
-and reproduced locally. Fetching the corpus makes it pass 46/46. **This file does
-not edit source, so it is reported rather than fixed** — it is a one-line change
-and it is currently hiding the results of ten suites.
+**`npm test` passes from a clean clone — this was broken and is now fixed.**
+`node/test/blake2f.js` used to increment a `skipped` variable that was never
+declared, on the path taken when the reference corpus is absent, which is the
+state of every clean checkout including CI's. That killed the run at suite 9 with
+`ReferenceError: skipped is not defined` and hid the results of ten suites.
+Fixed in `521ecd5` by deleting the counter rather than declaring it — a skipped
+optional corpus is not a check that passed. **Re-verified for this file** by
+cloning the repository into an empty directory and running `npm test`: all 27
+suites pass, exit 0, with no corpus and no install. `blake2f` reports 43/43
+offline and 46/46 once the corpus is fetched.
+
+**The EVM cannot be wired to a block yet, and the number is measured.**
+[`docs/robustness-review.md`](docs/robustness-review.md) §1: `StateDB` re-roots
+*both* tries on every single mutation (`statedb.js:342-352`, `:266-272`,
+`:166-171`, `trie.js:163-170`), so one 30M-gas transaction costs **443 MB of
+permanently retained heap and 65 seconds of single-threaded CPU against a
+15-second block time** — 1.66 KB and 245 µs for 112 gas of `SSTORE`. It is the
+most serious defect in the codebase, it is latent only because nothing calls
+`applyBlock` on a network path, and it becomes live the day phase 5 lands.
+**No statement anywhere in this repository that the EVM is "built" should be read
+as "ready to run" until this is fixed.** That review also records findings **2**,
+**3** and **5** as exploitable against a running `hearthd` *today* — a 39-byte
+message buying a full copy of the UTXO set, an unbudgeted `tx` gossip path, and a
+self-fed side branch that is stored and relayed forever.
+
+**Two defects the fuzzer found are still open** (§4.7):
+
+- **`RLP.decode` has no nesting cap.** `item()`/`items()` recurse once per level,
+  so 7–12 KB of properly-nested input — well inside `MAX_TX_BYTES` (100,000) and
+  the RPC body cap — exhausts the JS stack. Worse than the crash: the threshold
+  moves with remaining stack, so the *same* input decodes from a shallow call site
+  and throws from a deep one, and a `RangeError` carries no `code` for a caller to
+  switch on. `Trie._deref` (`trie.js:159`) and `StateDB` (`statedb.js:117`, `:336`)
+  are on that path. Blast radius is limited today because
+  `transaction.validate()` catches everything and reports `RLP_ERROR`. Also
+  [`docs/robustness-review.md`](docs/robustness-review.md) §4.
+- **`isNormalized` is still not a complete test.** It now checks `nonce`, `data`
+  and `to` (`transaction.js:281-285`), which closed the gas undercharge — verified:
+  `intrinsicGas` returns 856,126 for a `to: ''` draft either way. But six fields
+  are still unchecked, and the divergence is demonstrable: a decimal-string
+  `value` on an otherwise-normalised draft produces a **different `signingHash`**
+  than the same draft normalised, because RLP reads a bare string as UTF-8.
+  `isCreation({to: ''})` also still returns `false` on its own. Nothing on the
+  node's own path reaches this — `decode()` normalises everything it produces — so
+  it is a wallet/caller-facing footgun rather than a consensus bug.
 
 **The `@cloudsforge/hearth-node` version skew.** `node/package.json:3` is at
 **0.2.0**, whose `txBody` emits a `records` key inside the signed body whenever a
@@ -962,8 +1062,9 @@ the consensus numbers and is the file to use.
 
 ```bash
 cd node && node bin/hearthd.js --mine          # one UTXO node, mining
-npm test                                        # see the caveat in §11
+npm test                                        # 27 suites, clean clone, exit 0
 node test/dex.js                                # needs contracts/out — §4.4
+node test/fuzz/run.js                           # property fuzzing — §4.7
 docker compose up --build                       # seed + 2 miners + web on :8080
 ```
 
@@ -978,7 +1079,8 @@ node test/conformance/runner.js --impl=test/statetransition.js \
      --suite=GeneralStateTests --dir=test/conformance/vectors
 ```
 
-Fetching it also turns `blake2f` from a crash into 46/46 (§11).
+Fetching it also takes `blake2f` from 43/43 to 46/46 and runs `bn128`'s one
+skipped case (§11).
 
 **CI** (`.github/workflows/ci.yml`), six jobs:
 
@@ -989,12 +1091,20 @@ Fetching it also turns `blake2f` from a crash into 46/46 (§11).
 | Web assets | `find web/assets -name '*.js'` piped through `node --check` — **`find`, not a glob**, because the old glob was `web/assets/*.js` and silently skipped every module under `web/assets/explorer/` — plus the explorer self-test and the wallet self-test (`ci.yml:85-101`) |
 | Secret hygiene | `.env` untracked; no API tokens; a private-key matcher that requires a PEM header **followed by real base64**, so the legitimate PEM literals in `web/` do not force the check to be muted |
 | DeFi contracts | `pnpm compile` (which refuses on an init-code-hash mismatch) and the build tests |
-| Developer kit | The faucet's 66 checks; the templates and probe parse; the probe boots and answers the chain id in both encodings |
+| Developer kit | The faucet's 66 checks; `tools/verify`'s 116; the templates and probe parse; the probe boots and answers the chain id in both encodings. Also `tools/explorer-api`, which is **why this job is red** |
 
-**Two CI jobs are failing on `main` right now.** The node job for the reason in
-§11, and the contracts job on `pnpm/action-setup@v4` with
-`Error: No pnpm version is specified.` — neither is an implementation failure and
-neither is fixed here.
+**Two CI jobs are failing on `main` right now — and they are not the two this file
+used to name.** The node job now **passes** (run
+[30402531669](https://github.com/cloudsforge-online/hearth/actions/runs/30402531669),
+*Node reference client (tests)*: success), because the blake2f break in §11 is
+fixed. The two that fail are:
+
+| Job | Failure | Is it an implementation failure? |
+| --- | --- | --- |
+| DeFi contracts | `Error: No pnpm version is specified.` from `pnpm/action-setup@v4` — `contracts/package.json` has no `packageManager` field and the step passes no `version` | No. Tooling configuration |
+| Developer kit | `tools/explorer-api`'s suite throws on `receipt.logs[0].logIndex is missing` | **Yes.** §3.5 |
+
+Neither is fixed here.
 
 **Deploys.** `.github/workflows/pages.yml` publishes `web/` to GitHub Pages. The
 marketing site in `site/` builds separately.
@@ -1011,3 +1121,5 @@ marketing site in `site/` builds separately.
 | [`docs/quickstart.md`](docs/quickstart.md) | Deploy a contract, with every step marked RUN / PROBE / WAITING |
 | [`docs/exchange-integration.md`](docs/exchange-integration.md) | Deposits, withdrawals, confirmations |
 | [`docs/listing-checklist.md`](docs/listing-checklist.md) | The gap list |
+| [`docs/robustness-review.md`](docs/robustness-review.md) | Measured resource bounds. Read §1 before believing any "ready" claim |
+| [`docs/testing.md`](docs/testing.md) | What the suites cover, and §4 — what they do not |

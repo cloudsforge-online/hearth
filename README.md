@@ -8,7 +8,7 @@
 
   <a href="https://github.com/cloudsforge-online/hearth/actions/workflows/ci.yml"><img alt="ci" src="https://github.com/cloudsforge-online/hearth/actions/workflows/ci.yml/badge.svg"></a>
   <img alt="vmtests" src="https://img.shields.io/badge/VMTests-609%2F609-brightgreen">
-  <img alt="statetests" src="https://img.shields.io/badge/GeneralStateTests-20%2C067%2F20%2C077-brightgreen">
+  <img alt="statetests" src="https://img.shields.io/badge/GeneralStateTests-20%2C077%2F20%2C077-brightgreen">
   <img alt="dex" src="https://img.shields.io/badge/Uniswap%20V2-swap%20at%20112%2C456%20gas-blue">
   <img alt="license" src="https://img.shields.io/badge/license-MIT-lightgrey">
   <img alt="pow" src="https://img.shields.io/badge/PoW-Homefire%20(CPU%2C%20memory--hard)-ff4d00">
@@ -35,9 +35,10 @@ that has produced blocks is the original UTXO ledger, and it is being retired.
 
 | | |
 | --- | --- |
-| **Built and vector-gated** | keccak/RLP/uint256/secp256k1 · Merkle Patricia Trie + StateDB · the interpreter (**609/609 VMTests**) · transactions, receipts, bloom (**188/188 TransactionTests**) · the state transition (**20,067/20,077 GeneralStateTests**, ten known failures, all `*Paris` account-collision fixtures) · all nine precompiles including bn128 and blake2f · the `eth_*` JSON-RPC surface · an EVM-aware explorer · the `hearth` CLI with an opcode tracer · a browser wallet on secp256k1 |
+| **Built and vector-gated** | keccak/RLP/uint256/secp256k1 · Merkle Patricia Trie + StateDB · the interpreter (**609/609 VMTests**) · transactions, receipts, bloom (**188/188 TransactionTests**) · the state transition (**20,077/20,077 GeneralStateTests**) · all nine precompiles including bn128 and blake2f · the `eth_*` JSON-RPC surface · an EVM-aware explorer · the `hearth` CLI with an opcode tracer · a browser wallet on secp256k1 |
 | **Proved end to end** | **Uniswap V2 runs on our own EVM** — `node/test/dex.js`, 167/167, a real swap at **112,456 gas** |
 | **Not built** | Consensus on the account model. Nothing produces blocks, so there is no endpoint, no testnet and no mainnet |
+| **Measured, and blocking** | `StateDB` re-roots both tries on every mutation — **443 MB and 65 seconds for one 30M-gas transaction**, against a 15-second block time ([`docs/robustness-review.md`](docs/robustness-review.md) §1). The EVM cannot be wired to a block until this is fixed |
 
 [`MAP.md`](MAP.md) is the verified inventory — every claim in it cites `path:line`
 or a command that was run. **Where this README and `MAP.md` disagree, believe
@@ -101,7 +102,7 @@ Everything below **runs**, and every number was produced by running it:
   RLP, secp256k1 recovery, `uint256`, the Merkle Patricia Trie, StateDB, the
   interpreter, the Shanghai gas schedule and all nine precompiles. No
   `@ethereumjs/*`, no `ethers`, no `web3`, no runtime dependency of any kind
-- ✅ **Gated on Ethereum's own vectors** — 609/609 VMTests, 20,067/20,077
+- ✅ **Gated on Ethereum's own vectors** — 609/609 VMTests, 20,077/20,077
   GeneralStateTests, 188/188 TransactionTests, plus RLP and Trie tests. **No
   component is done until its vectors pass**
 - ✅ **Uniswap V2 runs on it** — `node/test/dex.js` deploys the factory, router,
@@ -112,7 +113,7 @@ Everything below **runs**, and every number was produced by running it:
   Written against a chain interface and tested against an in-memory fake
 - ✅ **`hearth`, the terminal tool** — `trace` (an opcode-level debugger with gas,
   stack, memory and storage deltas per step), `watch`, `wallet`, `call`, `send`,
-  `deploy`, `devnet`. 305 checks
+  `deploy`, `devnet`. 310 checks
 - ✅ **an EVM-aware block explorer** (`web/`) — decoded logs, revert reasons,
   EOA-vs-contract with disassembly, ERC-20s, `eth_getLogs` search. Zero
   dependencies, no build step, and it **renders "no node answered" rather than
@@ -122,6 +123,14 @@ Everything below **runs**, and every number was produced by running it:
   cross-check found a real gas bug in the node on its first run
 - ✅ **a developer kit** (`tools/`) — a faucet, working Hardhat and Foundry
   templates, and an RPC probe that serves the real method surface over a fake chain
+- ✅ **contract verification** (`tools/verify/`, 116/116) — including the API
+  `forge verify-contract` speaks — and 🟡 an **Etherscan-compatible `/api`**
+  (`tools/explorer-api/`: `account`, `contract`, `stats`, `transaction`, `logs`,
+  `proxy` over a real address index) whose **test suite currently fails**. Zero
+  dependencies; no chain to serve either of them yet
+- ✅ **property fuzzing** (`node/test/fuzz/`) — random bytes into `uint256`, the
+  trie, RLP, transactions and the interpreter. It found two real defects in merged
+  code and **reports rather than patches**; both are listed in [SECURITY.md](SECURITY.md)
 - ✅ **a real proof-of-work network** (the UTXO chain) — most-work fork choice with
   reorg over real sockets, P2P gossip, LWMA difficulty, disk persistence
 - ✅ **browser mining** — a Web Worker pool running real Homefire, checked
@@ -135,10 +144,18 @@ Everything below **runs**, and every number was produced by running it:
 > a merchant-button *mockup* that simulates settlement on a timer; there is no
 > payment SDK.
 
-**A known break:** `npm test` currently fails from a clean clone at
-`node/test/blake2f.js:304` (`ReferenceError: skipped is not defined`, on the path
-taken when the reference corpus has not been fetched), which is why CI is red.
-Fetching the corpus makes it pass. See [`MAP.md`](MAP.md) §11.
+**`npm test` passes from a clean clone** — 27 suites, no install, no corpus and no
+network. Verified by cloning this repository into an empty directory and running
+it. Fetching the reference corpus completes two of them: `blake2f` goes 43/43 →
+46/46 and `bn128`'s one skipped case runs.
+
+**The caveat that matters most, and it is not in the list above.**
+[`docs/robustness-review.md`](docs/robustness-review.md) measured `StateDB`
+re-rooting both tries on *every single mutation*: a single 30M-gas transaction
+costs **443 MB of retained heap and 65 seconds of CPU, against a 15-second block
+time**. Nothing above is wrong, but the EVM cannot be driven by a block until
+that is fixed. Nothing in this repository should be read as saying the chain is
+ready to run.
 
 ---
 
@@ -148,10 +165,11 @@ Fetching the corpus makes it pass. See [`MAP.md`](MAP.md) §11.
 
 ```bash
 cd node
-node test/interpreter.js      # 173 checks
+node test/interpreter.js      # 182 checks
 node test/statetransition.js  # 133 checks
 node test/jsonrpc.js          # 301 checks
-node test/cli.js              # 305 checks
+node test/cli.js              # 310 checks
+node test/fuzz/run.js         # 82,481 property-fuzz checks
 ```
 
 **2 — Run the real conformance gate** (fetches ~350 MB of Ethereum's corpus):
@@ -161,7 +179,7 @@ cd node && ./scripts/fetch-vectors.sh
 node test/conformance/runner.js --impl=test/interpreter.js \
      --dir=test/conformance/vectors/VMTests --no-gas          # 609/609
 node test/conformance/runner.js --impl=test/statetransition.js \
-     --suite=GeneralStateTests --dir=test/conformance/vectors  # 20,067/20,077
+     --suite=GeneralStateTests --dir=test/conformance/vectors  # 20,077/20,077
 ```
 
 **3 — Watch Uniswap V2 execute on our EVM:**
@@ -200,14 +218,16 @@ hearth/
 ├── README.md · WHITEPAPER.md · MAP.md   the pitch, the argument, and the verified inventory
 ├── docs/                                evm-spec (authoritative) · decisions · quickstart ·
 │                                        network-config · tokenomics · exchange-integration ·
-│                                        listing-checklist · mining · records · architecture
+│                                        listing-checklist · mining · records · architecture ·
+│                                        robustness-review (measured) · testing (coverage)
 ├── node/                                the reference node — AND the EVM implementation
 │   ├── src/crypto  src/state  src/evm  src/chain  src/jsonrpc   the account-model chain
 │   ├── src/*.js                                                 the UTXO chain, being retired
 │   ├── src/cli/  bin/hearth.js                                  the terminal tool + tracer
-│   └── test/  test/conformance/                                 26 suites + the vector harness
+│   └── test/  test/conformance/  test/fuzz/                     27 suites + vectors + fuzzing
 ├── contracts/                           WEMBER, a Uniswap V2 port, Multicall3 (compiled, undeployed)
-├── tools/                               faucet · hardhat · foundry · rpc-probe · metamask.md
+├── tools/                               faucet · hardhat · foundry · rpc-probe · metamask.md ·
+│                                        explorer-api (Etherscan-compatible /api) · verify
 ├── web/                                 EVM explorer + secp256k1 wallet + browser miner
 ├── site/                                the marketing site (React)
 ├── rust/hearthd/                        a self-check and a benchmark — not a node
@@ -219,8 +239,12 @@ hearth/
 
 Hearth is a commons. See **[CONTRIBUTING.md](CONTRIBUTING.md)**. Highest-leverage
 areas right now: **consensus on the account model** (the one thing blocking
-everything else), the Etherscan-compatible `/api` shim, and closing the items in
-**[docs/listing-checklist.md](docs/listing-checklist.md)** §7.
+everything else), the `StateDB` re-rooting fix that blocks it
+([docs/robustness-review.md](docs/robustness-review.md) §1), and closing the items
+in **[docs/listing-checklist.md](docs/listing-checklist.md)** §7. Contract
+verification is **already built** (`tools/verify/`, 116/116) and the
+Etherscan-compatible `/api` shim is written but **its suite does not pass**
+(`tools/explorer-api/`) — both are waiting on a chain to serve.
 
 ## Security
 

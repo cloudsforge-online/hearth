@@ -18,7 +18,7 @@ produced.** Everything below is downstream of that one gap.
 
 | # | Blocker | Status |
 | --- | --- | --- |
-| B1 | EVM interpreter, state transition, receipts, logs bloom | ✅ **built and vector-gated** — 609/609 VMTests, 20,067/20,077 GeneralStateTests, 188/188 TransactionTests |
+| B1 | EVM interpreter, state transition, receipts, logs bloom | ✅ **built and vector-gated** — 609/609 VMTests, 20,077/20,077 GeneralStateTests, 188/188 TransactionTests |
 | B2 | `eth_*` JSON-RPC surface | ✅ **built**, 301 checks — but against a chain *interface* and an in-memory fake, and **nothing mounts it** |
 | B2a | **Header v2, and consensus on the account state model** | ⬜ **the blocker.** Being built; no block has ever been produced |
 | B3 | Public account-model testnet with a stable endpoint | ⬜ blocked on B2a |
@@ -119,7 +119,7 @@ minimum set:
 
 | Endpoint | Returns | Status |
 | --- | --- | --- |
-| Total supply | a plain decimal number, no JSON wrapper, no units | 🟡 — `GET /supply/total` in [`../tools/explorer-api`](../tools/explorer-api). Written and tested; no chain to serve |
+| Total supply | a plain decimal number, no JSON wrapper, no units | 🟡 — `GET /supply/total` in [`../tools/explorer-api`](../tools/explorer-api). Written; **its suite currently fails** (see below); no chain to serve |
 | Circulating supply | total minus the Commons balance, per [`tokenomics.md`](tokenomics.md) §7 | 🟡 — `GET /supply/circulating`, same service. **Refuses rather than serving total** when the Commons address is unset |
 | Rich list / holder count | | ⬜ |
 | Block explorer, `0x`-native | address, tx, block, contract pages with search | 🟡 — **built** (`web/index.html` + `web/assets/explorer/`: decoded logs, revert reasons, contract disassembly, ERC-20s, `eth_getLogs` search, 147 self-test checks). **Not deployed against a chain, because there is none** |
@@ -138,11 +138,20 @@ aggregators, tax tools, portfolio trackers and several exchange back-ends all
 speak it, and implementing the five or six methods they actually call is a small
 job that removes a large amount of downstream integration friction.
 
-**Both are now built** — [`../tools/explorer-api`](../tools/explorer-api) and
+**Both are now written** — [`../tools/explorer-api`](../tools/explorer-api) and
 [`../tools/verify`](../tools/verify), zero-dependency services in the shape of
-`tools/faucet`, tested over real HTTP. Neither has ever run against a node,
+`tools/faucet`, exercised over real HTTP. Neither has ever run against a node,
 because there is not one: they are 🚫 on B2 and B3, not ⬜. Read each README's
 "What is proven, and what is not" before treating any of it as operational.
+
+**They are not in the same state as each other, and this matters.**
+`tools/verify` passes **116/116**. `tools/explorer-api` **does not pass** — its
+suite throws
+`receipt.logs[0].logIndex is missing — the chain must number logs across the
+block, and this layer cannot derive it from one receipt`, both locally and in
+CI's *Developer kit* job. The shim requires `logIndex` numbered across the whole
+block and the test's fake chain does not supply it; which side is wrong has not
+been established. Do not count the `/api` row as done.
 The new supply endpoints serve total and circulating as separate figures and
 **refuse to publish a circulating number they cannot compute**, which is the
 specific defect described above.
@@ -281,7 +290,7 @@ Not our decision, but every exchange asks:
 Short list, honestly scoped:
 
 - ✅ **A complete EVM implementation, gated on Ethereum's own vectors** — 609/609
-  VMTests, 20,067/20,077 GeneralStateTests, 188/188 TransactionTests, plus RLP
+  VMTests, 20,077/20,077 GeneralStateTests, 188/188 TransactionTests, plus RLP
   and Trie. Written here rather than imported, which is only defensible *because*
   those vectors exist.
 - ✅ **Uniswap V2 deploys and swaps on it** — `node/test/dex.js`, 167/167, a real

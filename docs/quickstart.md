@@ -542,7 +542,7 @@ Do not plan around any of these:
 | A public RPC endpoint | ⬜ blocked on phase 5. The port and path **are** settled: 8545, root path ([`evm-spec.md`](evm-spec.md) §6) |
 | A public testnet | ⬜ blocked on phase 5. Its chain id **is** chosen: **7412** |
 | A **deployed** `0x`-native block explorer | 🟡 `web/index.html` is EVM-aware and built — decoded logs, revert reasons, disassembly, `eth_getLogs` search. It has no chain to read |
-| Contract source verification | ⬜ no Etherscan-compatible `/api`, so `forge verify-contract` has nothing to talk to |
+| Contract source verification | 🟡 the services are written — [`../tools/verify`](../tools/verify) (116/116, and it speaks what `forge verify-contract` speaks) and [`../tools/explorer-api`](../tools/explorer-api) (the Etherscan-compatible `/api`, **suite currently failing**). Neither has a chain to talk to |
 | A deployed faucet | ⬜ the service is written and tested; nowhere to run it |
 | Any deployed contract | ⬜ WEMBER, the AMM and Multicall3 have never been deployed anywhere |
 | `eth_subscribe` / WebSockets | ⬜ v2 |

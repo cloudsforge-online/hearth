@@ -94,23 +94,30 @@ fixed-width and zero-padded. Clients enforce this; so does Hearth.
 
 ## 3. Where the RPC is served — settled
 
-**Port 8545, root path `/`.** Owner decision, recorded in
+**The decision is settled: port 8545, root path `/`.** Recorded in
 [`evm-spec.md`](evm-spec.md) §6: use the port the ecosystem already defaults to.
 It is MetaMask's localhost default and what every Hardhat and Foundry tutorial
-assumes, so a developer's first guess is correct. Verified free across the whole
-composed stack — nothing had to be moved to take it.
+assumes, so a developer's first guess is correct.
 
-| | REST + SSE | **Ethereum JSON-RPC** |
+**The allocation below is planned, not built.** Nothing serves 8545 yet, and
+**no compose file, nginx config or Dockerfile in this repository mentions 8545,
+8547 or 8549** — grep for them and you will find nothing. The REST column is
+real and running today; the JSON-RPC column is what phase 5 has to create.
+
+| | REST + SSE (**today**) | **Ethereum JSON-RPC** (planned) |
 | --- | --- | --- |
-| container port | 8645 | **8545** |
-| path | `/info`, `/address/:a`, `/block/:id`, `/tx/:id`, `/supply`, `/events` | **`/`** |
-| host: seed | 8645 | **8545** |
-| host: miner1 | 8647 | 8547 |
-| host: miner2 | 8649 | 8549 |
+| container port | 8645 | 8545 |
+| path | `/info`, `/address/:a`, `/block/:id`, `/tx/:id`, `/supply`, `/events` | `/` |
+| host: seed | 8645 | 8545 |
+| host: miner1 | 8647 (`docker-compose.testnet.yml:41`) | 8547 |
+| host: miner2 | 8649 (`docker-compose.testnet.yml:57`) | 8549 |
 
-Inside its container every node listens on 8545; the host ports differ only so
-three nodes can run side by side. **8546 is reserved** for the v2 WebSocket
-endpoint (`eth_subscribe`), because that is the paired convention.
+The REST host ports come from `docker-compose.testnet.yml`; the plain
+`docker-compose.yml` exposes only the seed's 8645/8646 and gives the miners no
+host ports at all. Under the plan every node would listen on 8545 inside its
+container, with host ports differing only so three can run side by side, and
+**8546 reserved** for the v2 WebSocket endpoint (`eth_subscribe`), because that is
+the paired convention.
 
 Publicly this is one hostname — `rpc.<apex>` → 8545 — and that URL goes into
 `ethereum-lists/chains` and `chainid.network`, where MetaMask caches it, exchanges

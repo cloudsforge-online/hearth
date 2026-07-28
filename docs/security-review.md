@@ -14,7 +14,7 @@
 >
 > The EVM's assurance comes from a different mechanism entirely: Ethereum's
 > published conformance vectors, which are CI-relevant and cover 609/609 VMTests,
-> 20,067/20,077 GeneralStateTests and 188/188 TransactionTests. Vectors make an
+> 20,077/20,077 GeneralStateTests and 188/188 TransactionTests. Vectors make an
 > EVM tractable; they do not make it audited.
 
 An internal adversarial review of Hearth (code correctness, security, and
@@ -84,3 +84,13 @@ repository:** the EVM (`node/src/{crypto,state,evm,chain}/`), the JSON-RPC surfa
 and the secp256k1 browser wallet. For those, see
 [`../MAP.md`](../MAP.md) §4 and the audit scope in
 [`listing-checklist.md`](listing-checklist.md) §4.
+
+**One part of that gap has since been closed, and separately.**
+[`robustness-review.md`](robustness-review.md) is a measured resource-bounds
+review of `node/src/evm`, `node/src/state` and `node/src/chain` — plus a second
+pass over the UTXO files this review covers. It is also **not an audit**, and
+unlike this document **its findings are recorded and not yet fixed**. Two of its
+UTXO-era findings are live against a running `hearthd` today and are not listed
+above, because this review did not look for resource bounds: an anonymous peer
+buying a full copy of the UTXO set with a 39-byte message (§2), and a self-fed
+side branch that is stored, persisted and relayed forever (§3).

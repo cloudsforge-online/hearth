@@ -80,7 +80,7 @@ the exact counts, all of which were produced by running the suites.
 | State | `state/trie.js`, `state/statedb.js` | `ethereum/tests` TrieTests |
 | Execution | `evm/{stack,memory,opcodes,gas,interpreter}.js` | **609/609 VMTests** |
 | Precompiles | `evm/precompiles.js`, `evm/bn128.js`, `evm/blake2f.js` | EIP-196/197/1108, EIP-152, go-ethereum vectors |
-| Transition | `chain/{transaction,receipt,bloom,statetransition}.js` | **188/188 TransactionTests**, **20,067/20,077 GeneralStateTests** |
+| Transition | `chain/{transaction,receipt,bloom,statetransition}.js` | **188/188 TransactionTests**, **20,077/20,077 GeneralStateTests** |
 | RPC | `jsonrpc/{hex,methods,server}.js` | 301 checks against an in-memory fake chain |
 
 **Three design points that are load-bearing rather than stylistic:**
@@ -92,6 +92,11 @@ the exact counts, all of which were produced by running the suites.
 - **StateDB is journaled, not a map.** `REVERT`, failed calls and out-of-gas must
   roll back storage, balance, nonce and code to a snapshot while gas already
   consumed stays consumed. It is an ordered journal with checkpoint markers.
+  **It also re-roots both tries on every single mutation**, which is correct and
+  unusably slow: 1.66 KB retained and 245 µs of CPU for 112 gas, or 443 MB and 65
+  seconds for one 30M-gas transaction against a 15-second block time
+  ([`robustness-review.md`](robustness-review.md) §1). Root computation has to
+  move to the end of a transaction before this layer can be driven by a block.
 - **An EVM failure is a *returned* `{ exception }`, never a throw.** A thrown JS
   error is an internal bug, and if internal bugs could satisfy a vector, the
   vectors that assert *failure* would be the easiest ones to fake.

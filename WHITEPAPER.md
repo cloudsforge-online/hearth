@@ -18,7 +18,7 @@ claim before you read the claim.
 | EVM execution — interpreter, opcode table, gas schedule | **Built. 609/609 VMTests pass** |
 | Precompiles `0x01`–`0x09`, including bn128 and blake2f | **Built.** All nine implemented; EIP-196/197/152 vectors pass |
 | Transactions, receipts, logs bloom | **Built. 188/188 TransactionTests pass** |
-| State transition | **Built. 20,067 of 20,077 GeneralStateTests pass** — ten known failures, all `*Paris` account-collision fixtures — see [`MAP.md`](MAP.md) §4.3 |
+| State transition | **Built. 20,077 of 20,077 GeneralStateTests pass** — the last ten fixed by EIP-7610 — see [`MAP.md`](MAP.md) §4.3 |
 | `eth_*` JSON-RPC surface | **Built**, 301 checks — against a chain *interface* and an in-memory fake. Nothing serves it yet |
 | EVM-aware explorer · secp256k1 browser wallet · `hearth` CLI with an opcode tracer | **Built** |
 | AMM contracts (WEMBER, Factory, Pair, Router, Multicall3) | **Compiled, and executed — on our own EVM.** A full Uniswap V2 deployment and a real swap run in `node/test/dex.js`. **Deployed to no chain, because there is no chain** |
@@ -32,6 +32,14 @@ running today; anything else is marked.
 **The single most important line in that table is the second-to-last one.**
 Everything marked "built" above is a component proved offline against published
 vectors. None of it has ever been driven by a block.
+
+**"Built" is not "ready", and the gap is measured rather than guessed.**
+`StateDB` re-roots both of its tries on every single mutation, so one 30M-gas
+transaction costs **443 MB of retained heap and 65 seconds of single-threaded CPU
+against a 15-second block time** ([`docs/robustness-review.md`](docs/robustness-review.md)
+§1). Consensus on the account model is blocked on fixing that, not merely
+unstarted. Nothing in this paper should be read as saying the chain can run
+today.
 
 **This paper replaces v0.1, which made two claims the code did not support.**
 Both retractions are in §8. v0.3 updates the status table, which v0.2 took as a
@@ -329,16 +337,18 @@ VMTests and GeneralStateTests. A divergence from Ethereum semantics is not a
 cosmetic bug — it means a Solidity contract behaves differently here than where
 it was audited, and somebody loses money.
 
-The harness runs 121 committed vectors offline and 20,935 against the full
-upstream corpus (`node/test/conformance/README.md`). **All of it now passes
-except ten GeneralStateTests**, which are tracked rather than skipped — all ten
-are `*Paris` account-collision fixtures, named individually in
-[`MAP.md`](MAP.md) §4.3:
+The harness runs 121 committed vectors offline and 20,766 against the full
+upstream corpus — 20,077 state, 609 VM, 55 RLP, 25 trie
+(`node/test/conformance/README.md`); the 188 TransactionTests live in a different
+upstream repository and run inside `node/test/transaction.js`. **All of it now passes.** The last ten
+failures — a single family of `*Paris` account-collision fixtures — were closed by
+implementing **EIP-7610**: storage alone makes an address occupied, so `CREATE`
+onto it is a collision rather than a legal reset. See [`MAP.md`](MAP.md) §4.3:
 
 | Suite | Result |
 | --- | --- |
 | VMTests | **609 / 609** |
-| GeneralStateTests | **20,067 / 20,077** |
+| GeneralStateTests | **20,077 / 20,077** |
 | TransactionTests | **188 / 188** |
 | RLPTests, TrieTests | pass |
 
@@ -435,10 +445,18 @@ believe `MAP.md`.
   coinbase maturity (10, against a production ~100 — `params.js:95`) are all set
   for local development. Each is a hard fork to change.
 - **Writing an EVM is a serious undertaking.** Conformance vectors make it
-  tractable, not safe. Ten GeneralStateTests still fail — all of them
-  `*Paris` account-collision cases, creating into an address that already carries
-  a nonce or storage — and no independent audit has run. Treat contract behaviour
-  here as unverified.
+  tractable, not safe. The corpus now passes in full, but **no independent audit
+  has run**, and the vectors only cover what someone thought to write down.
+  Treat contract behaviour here as unverified.
+- **The EVM is correct and, as written, too slow to run a chain.** `StateDB`
+  re-roots both of its tries on every single mutation, which costs 1.66 KB of
+  permanently retained heap and 245 µs of CPU for 112 gas of `SSTORE` — **443 MB
+  and 65 seconds for one 30M-gas transaction, against a 15-second block time**
+  ([`docs/robustness-review.md`](docs/robustness-review.md) §1, measured, with the
+  commands alongside). Root computation has to move to the end of a transaction
+  before consensus can be built on this layer. Correctness against vectors and
+  fitness to run a network are different properties, and only the first is
+  demonstrated.
 - **A green DEX run is narrower than it looks.** `node/test/dex.js` proves a real
   Uniswap V2 swap executes correctly on our EVM, and it proves nothing about
   `DELEGATECALL`: V2 contains none, because every library is `internal` and solc

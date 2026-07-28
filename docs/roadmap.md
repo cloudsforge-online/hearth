@@ -18,11 +18,11 @@ the plan the work is being executed against. Everything else is downstream of it
 | **1. Primitives** | keccak, RLP, secp256k1, `uint256` | published vectors pass | ✅ |
 | **2. State** | trie, statedb | TrieTests pass | ✅ |
 | **3. Execution** | interpreter, gas, opcodes, precompiles | VMTests pass | ✅ **609/609** |
-| **4. Transition** | tx application, receipts, bloom, header v2 | GeneralStateTests pass | ✅ **20,067/20,077** — ten known failures, all `*Paris` account-collision fixtures — see [`MAP.md`](../MAP.md) §4.3. *Header v2 belongs to phase 5* |
-| **5. Consensus** | block production and validation on the new state model | testnet produces and reorgs | 🟡 **being built. No block has ever been produced** |
+| **4. Transition** | tx application, receipts, bloom, header v2 | GeneralStateTests pass | ✅ **20,077/20,077** — the last ten fixed by EIP-7610 (`c93a524`) — see [`MAP.md`](../MAP.md) §4.3. *Header v2 belongs to phase 5* |
+| **5. Consensus** | block production and validation on the new state model | testnet produces and reorgs | 🟡 **being built. No block has ever been produced** — and **blocked** on `StateDB` re-rooting both tries per mutation: 443 MB and 65 s for one 30M-gas transaction against a 15 s block time ([`robustness-review.md`](robustness-review.md) §1) |
 | **6. RPC** | `eth_*` surface | MetaMask connects; Hardhat deploys | 🟡 the surface is built and passes 301 checks, but against an in-memory fake — **nothing mounts it**, and the gate needs phase 5 |
 | **7. DeFi** | WEMBER, Factory, Pair, Router, Multicall3 | a swap succeeds end to end | ✅ **met** — `node/test/dex.js`, 167/167, a swap at 112,456 gas *on our own EVM*. Deployed to no chain |
-| **8. Ecosystem** | EVM-aware explorer, faucet, verified sources, docs | a stranger can deploy unaided | 🟡 explorer ✅, faucet ✅ (undeployed), CLI + tracer ✅, templates ✅. **Verified contract sources ⬜** |
+| **8. Ecosystem** | EVM-aware explorer, faucet, verified sources, docs | a stranger can deploy unaided | 🟡 explorer ✅, faucet ✅ (undeployed), CLI + tracer ✅, templates ✅, **verified contract sources ✅** (`tools/verify`, 116/116). Etherscan-compatible `/api` 🟡 written, **suite failing** (`tools/explorer-api`). All undeployed |
 
 Phases 1–4 were testable entirely offline against vectors, with no chain running.
 That was deliberate: the risky part is provably correct before it touches
@@ -76,11 +76,11 @@ status is [`listing-checklist.md`](listing-checklist.md) §7.
 | ⬜ | Deploy the faucet (the service is written and tested; there is nowhere to run it) |
 | ⬜ | Point the explorer at a real chain |
 | ⬜ | Deploy WEMBER, the AMM and Multicall3 — **and seed liquidity.** A DEX with empty pools attracts nobody |
-| ⬜ | An **Etherscan-compatible `/api` shim** — worth more than a prettier explorer: aggregators, tax tools, portfolio trackers and several exchange back-ends all speak it |
-| ⬜ | Plain-decimal total and circulating supply endpoints; aggregators poll exactly these |
+| ⬜ | Deploy the **Etherscan-compatible `/api` shim** — worth more than a prettier explorer: aggregators, tax tools, portfolio trackers and several exchange back-ends all speak it. The service is written (`tools/explorer-api`) but **its suite does not currently pass**, and there is nowhere to run it |
+| ⬜ | Deploy the plain-decimal total and circulating supply endpoints; aggregators poll exactly these. Written, in the same service |
 | ⬜ | Register chain id 7411 in `ethereum-lists/chains`; register a SLIP-44 coin type |
 | ⬜ | Seed nodes, DNS seeds, a status page, a second independent RPC provider |
-| ⬜ | Contract source verification |
+| ⬜ | Deploy contract source verification (`tools/verify`, 116/116 — written, undeployed) |
 
 ---
 

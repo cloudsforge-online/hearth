@@ -27,7 +27,7 @@ honest account of what is not built yet.
 | EVM interpreter, opcode table, gas schedule | **Built. 609/609 VMTests pass** |
 | Precompiles `0x01`–`0x09` — including bn128 and blake2f | **Built.** All nine of Shanghai's set |
 | Transactions, receipts, logs bloom | **Built. 188/188 TransactionTests pass** |
-| State transition | **Built. 20,067/20,077 GeneralStateTests pass** — ten known failures, all `*Paris` account-collision fixtures — see [`MAP.md`](../MAP.md) §4.3 |
+| State transition | **Built. 20,077/20,077 GeneralStateTests pass** — the last ten fixed by EIP-7610 — see [`MAP.md`](../MAP.md) §4.3 |
 | `eth_*` JSON-RPC surface | **Built**, 301 checks — see the caveat below |
 | AMM contracts | **Compiled, and executed on our own EVM** — a full Uniswap V2 deployment and a real swap, `node/test/dex.js`, 167/167 |
 | **Header v2 and consensus on the account model** | **Not built.** This is the blocker |

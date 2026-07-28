@@ -150,6 +150,30 @@ without new impact will be closed with a pointer here.
   Shanghai includes EIP-3198.
 - **The browser wallet has no recovery** — one key per browser, no seed phrase,
   no HD derivation.
+- **`StateDB` re-roots both tries on every mutation.** One 30M-gas transaction
+  retains 443 MB and burns 65 seconds of CPU against a 15-second block time
+  ([`docs/robustness-review.md`](docs/robustness-review.md) §1). Measured, known,
+  and the reason the EVM is not wired to a block. Not reachable from the network
+  today; it becomes reachable the day it is.
+- **`RLP.decode` has no nesting cap.** Roughly 7–12 KB of nested input — inside
+  `MAX_TX_BYTES` — exhausts the JS stack with an untyped `RangeError`, and the
+  threshold moves with remaining stack, so the same bytes can decode from one call
+  site and throw from another ([`docs/robustness-review.md`](docs/robustness-review.md)
+  §4, `node/test/fuzz/` finding 1). `transaction.validate()` catches it and reports
+  `RLP_ERROR`, so it is latent. **A reachable path that turns this into a consensus
+  disagreement is very much wanted.**
+- **`isNormalized(tx)` is not a complete test.** It checks `nonce`, `data` and `to`
+  (`node/src/chain/transaction.js:281-285`); the remaining fields are read in
+  whatever representation the caller left them in. A decimal-string `value` on an
+  otherwise-normalised draft yields a different `signingHash` than the same draft
+  normalised. Nothing on the node's own path reaches it — `decode()` normalises —
+  so it is a **wallet/caller-facing footgun**, and reports that reach it *through
+  the node* are in scope.
+- **Three findings are live against a running `hearthd` today** — a 39-byte
+  message that buys a full copy of the UTXO set, `tx` gossip with no verification
+  budget, and a self-fed side branch stored and relayed forever
+  ([`docs/robustness-review.md`](docs/robustness-review.md) §2, §3, §5). Documented
+  and not yet fixed; re-reporting them adds nothing, but a *cheaper* variant does.
 - **The browser miner and the node currently disagree about the coinbase key.**
   The miner signs secp256k1; `GET /mining/template` still requires an 88-hex
   Ed25519 SPKI DER key (`node/src/rpc.js:130-134`) and `node/src/block.js:45`
@@ -166,8 +190,8 @@ exists.**
 The account-model EVM chain is under construction. What is built and gated on
 published reference vectors: the primitives, the Merkle Patricia Trie and
 StateDB, the interpreter (**609/609 VMTests**), transactions/receipts/bloom
-(**188/188 TransactionTests**), the state transition (**20,067/20,077
-GeneralStateTests** — ten known failures, all `*Paris` account-collision fixtures), all nine precompiles,
+(**188/188 TransactionTests**), the state transition (**20,077/20,077
+GeneralStateTests**), all nine precompiles,
 and the `eth_*` JSON-RPC surface. Uniswap V2 deploys and swaps on it
 (`node/test/dex.js`).
 
@@ -181,9 +205,12 @@ has had no opportunity to show itself.
 [`docs/decisions.md`](docs/decisions.md) records why the non-obvious choices were
 made, and [`MAP.md`](MAP.md) is the verified inventory.
 
-An internal review exists at [`docs/security-review.md`](docs/security-review.md)
-and its findings are implemented. **It is not an audit and must not be cited as
-one.** The intended audit scope is in
+Two internal reviews exist, and **neither is an audit or may be cited as one.**
+[`docs/security-review.md`](docs/security-review.md) covers the **UTXO-era** code
+and its findings are implemented. [`docs/robustness-review.md`](docs/robustness-review.md)
+is a measured resource-bounds review of the EVM, state and chain layers; its
+findings are **recorded and not yet fixed**, and finding 1 is why nothing produces
+an account-model block. The intended audit scope is in
 [`docs/listing-checklist.md`](docs/listing-checklist.md) §4.
 
 Do not put value on this network. There is nothing of value on it, and until

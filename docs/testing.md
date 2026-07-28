@@ -23,7 +23,7 @@ is the full conformance corpus and takes about thirty-five.
 | 7 | `precompiles` | 119 | `0x01`–`0x05`, incl. ecrecover **not** enforcing low-s |
 | 8 | `bn128` | 86 | ecAdd/ecMul/pairing against go-ethereum's vectors, gas included |
 | 9 | `blake2f` | 46 | EIP-152, four of which assert failure |
-| 10 | `trie` | 302 | all 97 TrieTests, anyorder files run at *every* permutation |
+| 10 | `trie` | 302 | all 25 TrieTests vectors (26 published cases across 6 files), anyorder files run at *every* permutation — which is what takes 252 of the 302 |
 | 11 | `statedb` | 166 | 8 published state roots, journal and revert |
 | 12 | `transaction` | 167 | 188 TransactionTests; mainnet block 4,400,116 end to end |
 | 13 | `receipt` | 62 | encoding and the receipts trie |
@@ -39,6 +39,12 @@ is the full conformance corpus and takes about thirty-five.
 `node test/dex.js` (167 checks) is separate because it needs `contracts/out`; it
 runs in the `contracts` CI job.
 
+**85,512 is the total with the reference corpus fetched.** `npm test` passes
+without it — verified from a fresh clone into an empty directory, 27 suites,
+exit 0 — and two suites are then smaller: `bn128` 86 → 81 (one case skipped) and
+`blake2f` 46 → 43. The gate is **85,504** offline. A skipped optional corpus is
+deliberately not counted as a check that passed.
+
 ---
 
 ## 2. Conformance — the corpus
@@ -52,7 +58,7 @@ pass**.
 | **GeneralStateTests** | **20,077 / 20,077** — 60,231 checks |
 | **VMTests** | **609 / 609**, zero errors |
 | **TransactionTests** | **188 / 188** legacy |
-| **TrieTests** | **97 / 97** |
+| **TrieTests** | **25 / 25** vectors — `node/test/conformance/README.md` counts the corpus as 20,766 = 20,077 state + 609 VM + 55 RLP + 25 trie. An earlier revision said 97/97; that figure is not reproducible from this tree and has been corrected |
 | RLPTests | all valid and all invalid cases |
 | bn128 | 49/49 go-ethereum vectors, output *and* gas |
 | blake2f | 8/8 EIP-152, plus BLAKE2b differentiated against OpenSSL at all 411 lengths |
