@@ -228,6 +228,17 @@ a genuine head start over a new chain with no price feed.
 Phases 1–4 are testable entirely offline against vectors, with no chain running. That is
 deliberate: the risky part is provably correct before it touches consensus.
 
+### The tracer is not a phase-8 nicety
+
+`hearth trace <txhash>` — an opcode-level debugger showing gas, stack, memory and storage deltas
+per step, with call depth and decoded revert reasons — gets built **during phase 3**, alongside the
+interpreter.
+
+The reason is selfish rather than generous. When a `GeneralStateTests` vector fails, the difference
+between a good afternoon and a lost week is whether you can see the exact opcode where our stack
+diverged from the reference. Every client team builds this eventually; building it late is how the
+hard bugs stay hidden. It happens to also be the tool contract developers want most.
+
 ---
 
 ## 9. What is explicitly out of scope for v1
