@@ -11,13 +11,27 @@ one chance to extend the ledger. In practice, economies of scale turned mining
 into an industrial activity dominated by ASIC farms and a handful of pools, and
 fixed-supply designs turned coins into speculative stores of value that people
 hoard rather than spend. Hearth is a proof-of-work currency engineered against
-both outcomes. It uses a memory-hard, **non-outsourceable** puzzle so that a
-laptop is competitive and mining pools cannot form; and a **money-first**
-monetary policy — disinflationary emission into a perpetual tail, offset by a
-base-fee burn — so the coin behaves like circulating cash rather than digital
-gold. Around this, Hearth ships the things ordinary people actually need: a
-one-click app that is simultaneously a node, wallet and polite miner; a web
-wallet and block explorer; and a two-line merchant SDK for accepting payments.
+both outcomes. It uses a memory-hard puzzle so that a laptop is competitive, a
+proof that must be signed by the key its reward pays so work cannot be
+redirected, and a **money-first** monetary policy — disinflationary emission into
+a perpetual tail, offset by a base-fee burn — so the coin behaves like
+circulating cash rather than digital gold. Around this, Hearth ships the things
+ordinary people actually need: a reference node that is simultaneously node,
+wallet and polite miner; a browser wallet and browser miner; and a block
+explorer.
+
+> **What is a design and what is running.** This is a working paper. Where a
+> section describes something that does not exist yet, it says so inline. The
+> two that matter most, because earlier drafts stated them as fact:
+>
+> * **Homefire is not a RandomX-class VM.** It compiles nothing. It is chained
+>   SHA-256 over a scratchpad plus a pseudo-random walk (§2.1).
+> * **Homefire is not non-outsourceable.** Only the coinbase *public* key is
+>   bound into the seed, so a pool can be built on top of it (§2.2).
+>
+> `node/` is the running network; `rust/hearthd` is a benchmark and a set of
+> libraries, and is not consensus-compatible. See
+> [`docs/why-two-implementations.md`](docs/why-two-implementations.md).
 
 ---
 
@@ -59,9 +73,15 @@ around the mechanisms.
 Homefire combines three ideas.
 
 ### 2.1 CPU-optimized, memory-hard hashing
-The puzzle is a **RandomX-class virtual machine**: each nonce compiles a
-pseudo-random program that executes against a large (≈2 GiB) dataset that must
-live in RAM. This does two things:
+**Shipped.** Each nonce fills a scratchpad by chaining SHA-256, takes a
+pseudo-random walk that reads and rewrites it, and derives the digest from the
+whole pad — ~8,450 sequential rounds with a data dependency at every step
+(`node/src/pow.js`). Memory latency, not gate count, sets the pace.
+
+**Designed, not built.** The intended production puzzle is a **RandomX-class
+virtual machine**: each nonce compiles a pseudo-random program that executes
+against a large (≈2 GiB) dataset that must live in RAM. Nothing in this
+repository compiles a program. When it exists it does two things:
 
 - It makes custom silicon nearly pointless — a general-purpose CPU with a cache
   hierarchy *is* close to the optimal machine, so the ASIC premium collapses.
@@ -72,27 +92,37 @@ The reference proof-of-concept in [`proto/pow.js`](proto/pow.js) models the
 memory-hard core: fill a scratchpad, take a pseudo-random walk that reads *and
 mutates* it, and derive the digest from the whole pad so it can't be shortcut.
 
-### 2.2 Non-outsourceable puzzles (the anti-pool)
-Even with CPU-fair hashing, pools recentralize PoW by aggregating many small
-miners under one operator. Hearth removes the *incentive* to pool: a valid
-solution must be **signed by the same key that receives the block reward**
-(see `attempt()`/`verify()` in the PoC). To let someone else mine for you, you'd
-have to hand them the private key that controls the reward — i.e. the power to
-steal it. Rational miners therefore mine **solo**, and there is no central pool
-to censor around. This is the mechanism from the "non-outsourceable puzzles"
-literature, adapted as Hearth's consensus rule rather than an add-on.
+### 2.2 Signed proofs, and the pool problem that is still open
+**Shipped.** A valid solution must be **signed by the same key that receives the
+block reward** (`node/src/block.js`). So a candidate built for your public key is
+worthless to anybody else, and work handed to you cannot be taken from you.
+
+**Not shipped: non-outsourceability.** The consensus seed binds only the coinbase
+*public* key (`node/src/pow.js`); the private key is used once, after a nonce has
+already won. A pool operator can therefore distribute the header core together
+with its **own** public key, collect `(nonce, digest)` pairs from hashers who
+genuinely cannot steal the reward, and sign the blocks itself. Consensus does not
+notice, and cannot.
+
+The mechanism from the "non-outsourceable puzzles" literature requires the
+private key **inside the hash loop**. Adopting it is a consensus change that
+forks the chain and invalidates every existing miner, so it is an open design
+decision rather than a property Hearth currently has. Until it is made, "pools
+cannot form" is not a claim this paper is entitled to.
 
 ### 2.3 Polite, low-variance home mining
 Solo mining is high-variance, so:
 
 - **15-second blocks** and a smooth per-block difficulty retarget (LWMA) mean
   even small miners win regularly.
-- **Warmshares**: near-miss solutions (uncles) are referenced by later blocks and
-  earn a fraction of the reward, smoothing income without a pool.
-- **Optional trustless co-ops**: peers can share variance via a P2P protocol that
-  never takes custody of anyone's key — the opposite of a pool.
-- **Polite mining** in the app: mine only on AC power / when idle, throttled to
-  spare cycles, thermally aware. Mining should be invisible, not a space heater.
+- **Warmshares** *(designed, not built)*: near-miss solutions (uncles) referenced
+  by later blocks for a fraction of the reward, smoothing income without a pool.
+- **Optional trustless co-ops** *(designed, not built)*: peers sharing variance
+  via a P2P protocol that never takes custody of anyone's key.
+- **Polite mining** *(shipped in the browser miner)*: a real duty cycle the
+  workers sleep through, a trickle in a background tab, and a pause on battery
+  where the browser reports power state. Idle detection and thermal awareness are
+  not implementable from a web page and are not present in the node either.
 
 The net effect: a warehouse of CPUs earns roughly *proportional* to its share of
 honest commodity hardware, with no structural advantage and nobody to centralize
@@ -178,14 +208,18 @@ goal — discouraging idle hoarding — without punishing savers.
 Decentralization that only experts can use recentralizes onto custodians. So
 Hearth treats UX as consensus-critical:
 
-- **One binary, one click.** The Hearth app is a full node, wallet and miner.
-  Install, press *Start your hearth*, done. Light-client mode for phones.
-- **Web everything.** A browser **web wallet** (keys stay client-side), a
-  **WASM light-miner** so you can mine in a tab, and a public **block explorer**
-  (`web/index.html`).
-- **Hearth Pay.** Merchants accept EMBER with two lines of HTML
-  (`web/assets/hearth-pay.js`): a payment button that opens the shopper's wallet
-  and fires a callback on settlement. No custodian, no chargebacks, no card fees.
+- **One process.** `hearthd` is a full node, wallet and miner at once. The Tauri
+  desktop shell around it is scaffolding today, not a shipped app; light-client
+  mode for phones is a design.
+- **Web everything.** A browser **web wallet** (keys stay client-side, sealed at
+  rest with AES-256-GCM), a **browser miner** running the same Homefire the node
+  does and conformance-tested against it in CI, and a public **block explorer**
+  with transaction search and block detail.
+- **Hearth Pay** *(mockup)*. `web/assets/hearth-pay-demo.js` renders the merchant
+  button a real SDK would render and **simulates** its settlement locally. There
+  is no SDK yet: no wallet handoff, no node subscription, no payment. The design
+  is a payment button that opens the shopper's wallet and fires a callback on
+  settlement — no custodian, no chargebacks, no card fees.
 - **Great graphics.** The interface is built around a warm, living *hearth* that
   grows as you mine — a deliberately human, anti-industrial identity (see
   [`branding/brand.md`](branding/brand.md)).
@@ -196,13 +230,13 @@ Hearth treats UX as consensus-critical:
 
 | Layer | Choice | Rationale |
 |---|---|---|
-| Node (`hearthd`) | Rust | memory-safety & performance for consensus |
-| PoW | Homefire (RandomX-class + non-outsourceable) | CPU-fair, pool-resistant |
+| Node (`hearthd`) | JS today, Rust intended | JS runs the network; the Rust crate is not yet a node |
+| PoW | Homefire (memory-hard; RandomX-class VM designed) | CPU-fair |
 | Ledger | UTXO + stealth addresses | privacy, parallel validation |
 | Retail | Tab payment channels | instant, sub-cent payments |
 | Governance | on-chain Commons treasury | capture-resistant funding |
 | Desktop app | Tauri (Rust + web UI) | small, cross-platform, great graphics |
-| Web | web wallet · explorer · Hearth Pay SDK | zero-install access & merchant reach |
+| Web | web wallet · browser miner · explorer | zero-install access |
 
 Full detail: [`docs/architecture.md`](docs/architecture.md).
 
@@ -210,10 +244,11 @@ Full detail: [`docs/architecture.md`](docs/architecture.md).
 
 ## 8. Threat model & honest limitations
 
-- **You can't fully stop someone buying many CPUs.** Non-outsourceability +
-  memory-hardness removes the *super-linear* farm advantage and the pool
-  coordination point; it does not make Hearth Sybil-proof. The goal is
+- **You can't fully stop someone buying many CPUs.** Memory-hardness removes the
+  *super-linear* farm advantage; it does not make Hearth Sybil-proof. The goal is
   *proportional, decentralized* mining, not literal one-person-one-vote.
+- **Pools are currently possible.** See §2.2. This is the largest gap between
+  what this paper argues for and what the chain enforces.
 - **RandomX-class VMs are complex** and a real attack surface; the production
   algorithm needs audits and a spec freeze before mainnet.
 - **Privacy has trade-offs** with scalability and regulatory acceptance; Hearth

@@ -56,6 +56,15 @@ services:
       # The config proxies /rpc/ to the node; here that node is `seed`, not the
       # testnet name baked into the image.
       HEARTH_RPC_UPSTREAM: seed:8645
+      # The CSP connect-src allowlist. REQUIRED: this service runs stock
+      # nginx:alpine, NOT web/Dockerfile, so it does not inherit that image's
+      # default. envsubst leaves an unset variable in place rather than blanking
+      # it, so nginx then reads `$HEARTH_CSP_CONNECT` as one of its own runtime
+      # variables and refuses to start — `unknown "hearth_csp_connect" variable`,
+      # and no web container at all. Same-origin covers the proxied node at /rpc;
+      # loopback covers assets/obs.js reporting to a local Lantern and the
+      # documented `?rpc=http://localhost:8645` override.
+      HEARTH_CSP_CONNECT: "'self' http://localhost:* http://127.0.0.1:*"
       NGINX_ENVSUBST_FILTER: HEARTH_
     volumes:
       - ./web:/usr/share/nginx/html:ro

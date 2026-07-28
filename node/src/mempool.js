@@ -10,6 +10,12 @@ class Mempool {
     this.chain = chain;
     this.txs = new Map(); // txid -> { tx, fee, size }
     this.bytes = 0;
+    // Bumped on every mutation. A block-template builder can cache its selection
+    // against (chain tip, this number) instead of redoing it — and redoing it
+    // means copying the whole UTXO set, which an anonymous caller must not be
+    // able to buy per request. `size` is not a substitute: an eviction plus an
+    // admission leaves it unchanged while the selection differs.
+    this.version = 0;
   }
 
   add(tx) {
@@ -27,6 +33,7 @@ class Mempool {
     if (!r.ok) return r;
     this.txs.set(tx.id, { tx, fee: r.fee, size });
     this.bytes += size;
+    this.version++;
     return { ok: true };
   }
 
@@ -53,7 +60,7 @@ class Mempool {
   removeIncluded(txs) {
     for (const t of txs) {
       const e = this.txs.get(t.id);
-      if (e) { this.bytes -= e.size; this.txs.delete(t.id); }
+      if (e) { this.bytes -= e.size; this.txs.delete(t.id); this.version++; }
     }
   }
 

@@ -1,6 +1,6 @@
 {
   "name": "@cloudsforge/hearth-node",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Hearth reference node — a runnable full node, wallet and miner for the Ember (EMBER) currency",
   "license": "MIT",
   "repository": {
@@ -34,7 +34,7 @@
     "start": "node bin/hearthd.js --mine",
     "node": "node bin/hearthd.js",
     "cli": "node bin/hearth-cli.js",
-    "test": "node test/unit.js && node test/e2e.js && node test/records.js && node test/browser-pow.js && node test/mining-api.js && node test/p2p-fork.js",
+    "test": "node test/unit.js && node test/e2e.js && node test/records.js && node test/browser-pow.js && node test/keystore.js && node test/mining-api.js && node test/p2p-fork.js",
     "test:p2p": "node test/p2p-fork.js"
   },
   "engines": { "node": ">=18" }

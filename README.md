@@ -11,7 +11,7 @@
   <img alt="rust" src="https://img.shields.io/badge/rust%20core-29%20tests%20%C2%B7%20clippy%20clean-orange">
   <img alt="deps" src="https://img.shields.io/badge/rust%20deps-2%20(ed25519%2C%20getrandom)-blue">
   <img alt="license" src="https://img.shields.io/badge/license-MIT-lightgrey">
-  <img alt="pow" src="https://img.shields.io/badge/PoW-Homefire%20(CPU%2C%20non--outsourceable)-ff4d00">
+  <img alt="pow" src="https://img.shields.io/badge/PoW-Homefire%20(CPU%2C%20memory--hard)-ff4d00">
 
   <br/><br/>
   🌐 <b><a href="https://hearth.cloudsforge.online/">hearth.cloudsforge.online</a></b>
@@ -36,12 +36,12 @@ specific things that pushed them out:
 
 | Big crypto problem | What Hearth does |
 |---|---|
-| Mining centralized into ASIC farms & pools | **Homefire PoW**: RandomX-class, memory-hard, *non-outsourceable*. A farm earns no more per dollar than your laptop, and pools can't form. |
+| Mining centralized into ASIC farms | **Homefire PoW**: memory-hard and CPU-friendly, so a farm earns little more per dollar than your laptop. A winning proof must be signed by the key its coinbase pays, so work handed to you cannot be redirected — see [docs/mining.md](docs/mining.md) for what that does and does not buy. |
 | Coins behave like "gold" you hoard | **Money-first coinnomics**: disinflationary emission → perpetual tail, offset by a fee burn. Net inflation trends toward ~0%. Built for velocity. |
-| Slow & expensive to pay with | **15s blocks**, sub-cent fees, instant retail settlement over **Tab** channels. |
+| Slow & expensive to pay with | **15s blocks** and a sub-cent fee that is *burned*, not auctioned. **Tab** channels for instant retail settlement are a signed state machine in the Rust core, not yet on the network. |
 | The "fee cliff" (security dies when rewards end) | **Perpetual tail emission** funds security forever. |
 | Development captured by VCs / premines | **Fair launch** + on-chain **Commons treasury** (10% of each block), community-governed. |
-| Too hard for normal humans | **One app** (node + wallet + miner), **polite mining**, a **web wallet**, a **block explorer**, and a two-line **"Accept EMBER"** SDK. |
+| Too hard for normal humans | A **web wallet** and a **browser miner** that need nothing installed, a live **block explorer**, and a reference node that is a full node, a wallet and a miner in one process. |
 
 Full argument: **[WHITEPAPER.md](WHITEPAPER.md)**.
 
@@ -51,7 +51,7 @@ Full argument: **[WHITEPAPER.md](WHITEPAPER.md)**.
 
 - **Network:** Hearth · **Coin:** Ember · **Ticker:** `EMBER`
 - **Smallest unit:** 1 EMBER = 100,000,000 *sparks*
-- **Block time:** 15 seconds · **PoW:** Homefire (CPU-only, non-outsourceable)
+- **Block time:** 15 seconds · **PoW:** Homefire (memory-hard, CPU-friendly, ASIC-resistant)
 - **Emission:** smooth halving-free decay → perpetual tail; 10% to the Commons; base fee burned
 - **Supply:** uncapped but *disinflationary* — modeled net inflation ~0.37% at year 30
 
@@ -75,11 +75,11 @@ Everything below **runs**:
 - ✅ **most-work fork choice with chain reorganization** — not a toy single-chain accept
 - ✅ **P2P networking** — nodes gossip and sync over TCP (network-id handshake, DoS caps)
 - ✅ **wallet + CLI** — keys, checksummed addresses, balances, signed payments
-- ✅ **HTTP/JSON-RPC/SSE API** + a live **block explorer**, **web wallet**, and **Hearth Pay** merchant SDK
+- ✅ **HTTP/JSON-RPC/SSE API** + a live **block explorer** (tx search, block detail) and **web wallet** (keys encrypted at rest). `web/pay-demo.html` is a merchant-button *mockup* that simulates settlement — not an SDK
 - ✅ **application records** — consensus-committed, namespaced, byte-metered data inside the signed transaction body, with a tx index and per-app subscriptions (**[docs/records.md](docs/records.md)**)
 - ✅ **encrypted on-chain chat** built on them — X25519 reading keys, sealed boxes, `hearth-chat announce · send · inbox · watch`
 - ✅ **browser mining** (`web/mine.html`) — a Web Worker pool running real Homefire against `/mining/template`, ~225 H/s per thread, checked digest-for-digest against the node in CI
-- ✅ a **Rust production core** (`rust/hearthd`) — Homefire PoW, **Ed25519-signed ledger, mempool, and Tab payment channels**; `fmt`/`clippy`/`29 tests` clean
+- 🟡 a **Rust crate** (`rust/hearthd`) — a self-check, a PoW benchmark and libraries for ledger/mempool/Tab; `fmt`/`clippy`/`29 tests` clean. **Not a node and not consensus-compatible** — see [docs/why-two-implementations.md](docs/why-two-implementations.md)
 - ✅ **Docker Compose** to boot a multi-node network on your Mac
 - ✅ **CI** running Node tests + Rust build on every push
 
@@ -91,9 +91,12 @@ Verified locally: **158 node checks + 29 Rust tests pass**, two nodes sync over
 P2P, a reorg replaces the active chain, and the Rust core mines ~8× faster than
 the JS prototype on the same machine.
 
-> **One implementation is the goal.** The Rust node is the target; the JS node is
-> a transitional reference we're porting away from (emission is already
-> byte-identical across both). See **[docs/why-two-implementations.md](docs/why-two-implementations.md)**.
+> **One implementation is the goal.** Rust is the target; the JS node is the only
+> thing that runs the network today, and `rust/hearthd` is a long way from taking
+> over — it has no block, chain, RPC or P2P layer, and its PoW and difficulty
+> rules do not match consensus. Emission is byte-identical across both, and that
+> is the extent of the parity so far. See
+> **[docs/why-two-implementations.md](docs/why-two-implementations.md)**.
 
 ---
 
@@ -132,9 +135,11 @@ data only when none answers):
 ```bash
 npx serve web        # or: open web/index.html
 ```
-`index.html` (live block explorer) · `wallet.html` (non-custodial web wallet —
-needs a reachable node) · `mine.html` (mine EMBER in the tab) ·
-`pay-demo.html` (Accept EMBER checkout).
+`index.html` (live block explorer, with tx search and block detail) ·
+`wallet.html` (non-custodial web wallet, key encrypted at rest — needs a
+reachable node) · `mine.html` (mine EMBER in the tab) · `pay-demo.html` (a
+*mockup* of an Accept EMBER checkout — it simulates settlement and takes no
+payment).
 
 The Hearth **marketing site** is a separate React app in [`site/`](site) — one
 front door, not two:
@@ -166,15 +171,16 @@ hearth/
 ## Status
 
 A complete design with a **working reference network, a compiling Rust core, a
-full web layer, tests and CI** — but **pre-mainnet**: the production Homefire VM,
-Tab channels, and consensus still need audits and a public testnet before launch.
+full web layer, tests and CI** — but **pre-mainnet**: consensus, the Rust core and
+the Tab channel layer still need audits and a public testnet before launch.
 See **[docs/roadmap.md](docs/roadmap.md)**.
 
 ## Contributing
 
 Hearth is a commons. See **[CONTRIBUTING.md](CONTRIBUTING.md)** and
 **[docs/why-two-implementations.md](docs/why-two-implementations.md)**. Highest-leverage
-areas: the Rust Homefire VM, the Tab payment layer, and the Tauri desktop app.
+areas: the Rust core (today a benchmark, not a node), the Tab payment layer, and
+the Tauri desktop app (today unshipped scaffolding — see `app-desktop/README.md`).
 
 ## Security
 
@@ -187,5 +193,5 @@ Please report vulnerabilities privately — see **[SECURITY.md](SECURITY.md)**.
 ---
 
 <sub><b>Keywords:</b> Hearth, EMBER, cryptocurrency, proof of work, CPU mining, ASIC resistant,
-RandomX, non-outsourceable puzzle, decentralized digital cash, mine crypto at home, no premine,
+memory-hard proof of work, decentralized digital cash, mine crypto at home, no premine,
 fair launch, crypto wallet, block explorer, blockchain node, Rust blockchain, tail emission, fee burn.</sub>

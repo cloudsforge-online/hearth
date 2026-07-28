@@ -1,11 +1,23 @@
-//! hearthd — Hearth production node core (CLI / benchmark).
+//! hearthd — Hearth core crate: self-check and proof-of-work benchmark.
 //!
-//! Thin binary over the `hearthd` library. Runs a self-check that exercises
-//! every module (crypto, ledger, mempool, difficulty, P2P framing, Tab channels)
-//! then benchmarks the Homefire proof-of-work.
+//! # THIS BINARY IS NOT A NODE, AND THIS CRATE IS NOT CONSENSUS
 //!
-//! The JS `node/` client is the runnable reference for the full networked node
-//! while this core grows to parity — see docs/why-two-implementations.md.
+//! It runs a self-check over the library modules (crypto, ledger, mempool,
+//! difficulty, P2P framing, Tab channels) and then benchmarks Homefire. There is
+//! no block type, no chain, no fork choice, no storage, no RPC and no P2P
+//! server. Nothing below ever accepts a block, because there is nothing here to
+//! accept one into.
+//!
+//! Two modules would also produce the WRONG ANSWER if they were wired up:
+//!
+//! * `pow` omits the coinbase public key from the seed, so it computes a
+//!   different digest from `node/src/pow.js` for the same header.
+//! * `difficulty` moves ±1 leading-zero bit per retarget; consensus is a 256-bit
+//!   LWMA over the last 60 targets.
+//!
+//! The JS `node/` client is the network. Treat anything here as a library under
+//! construction, never as a second opinion about what a valid block is.
+//! See docs/why-two-implementations.md.
 
 use hearthd::sha256::hex;
 use hearthd::{crypto, difficulty, ledger, mempool, netmsg, pow, tab};

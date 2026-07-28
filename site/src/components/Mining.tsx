@@ -29,7 +29,7 @@ export default function Mining() {
               <span className="text-ember-wash">computer you already own.</span>
             </>
           }
-          lead="Homefire is a RandomX-class, memory-hard, CPU-only proof of work — non-outsourceable, so pools can’t form and a farm earns no more per dollar than your laptop."
+          lead="Homefire is a memory-hard, CPU-friendly proof of work: every nonce fills and walks a scratchpad, so memory latency sets the pace and a farm earns little more per dollar than your laptop."
         />
 
         <div className="mt-14 grid gap-6 lg:grid-cols-[0.95fr_1.05fr] lg:items-stretch">
@@ -52,9 +52,9 @@ export default function Mining() {
               }}
             />
             <div className="absolute bottom-0 left-0 right-0 flex flex-wrap items-center gap-2 p-5">
-              <span className="chip">RandomX-class</span>
               <span className="chip">Memory-hard</span>
-              <span className="chip">CPU-only</span>
+              <span className="chip">CPU-friendly</span>
+              <span className="chip">ASIC-resistant</span>
               <span className="chip">Polite mining</span>
             </div>
           </Reveal>

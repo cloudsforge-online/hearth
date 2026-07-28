@@ -46,6 +46,28 @@ A **production mainnet** would require swapping those dev PoW params for the
 hardened values noted alongside them in `params.js`, **plus** setting a distinct
 `HEARTH_NETWORK`. Do not run mainnet with the dev-tuned params.
 
+> ### ⚠ `MIN_TARGET` changed — wipe your volumes
+>
+> The difficulty **ceiling** was raised from ~2⁻²⁰ to ~2⁻⁶⁴. The old value capped
+> a block at ~1.1M attempts, which pins difficulty at roughly 300–500 CPU cores;
+> past that the retarget clamps, blocks arrive faster than the 15s target, and
+> emission permanently accelerates because the schedule is indexed by height, not
+> by time. For a coin whose thesis is mass CPU mining, that is a launch blocker.
+>
+> **This is a hard consensus break with no migration.** `_validate` recomputes the
+> expected target for every block, and disk replay runs the same validation — so
+> a volume holding any block whose target was clamped at the old ceiling will now
+> fail to load, and nodes on either side of the change reject each other with
+> `wrong difficulty target`. Existing testnet chains are gone:
+>
+> ```bash
+> docker compose -f docker-compose.testnet.yml down -v   # drop the chain volumes
+> docker compose -f docker-compose.testnet.yml up --build
+> ```
+>
+> Deliberate, and free to do now — nothing but throwaway testnets has ever run.
+> After launch the same change would be a fork.
+
 ## Run the 3-container testnet
 
 ```bash

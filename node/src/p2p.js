@@ -83,6 +83,11 @@ class P2P {
       return;
     }
     this.peers.add(sock);
+    // Per-connection budget for proof-of-work verification. See the note on
+    // P2P_BLOCK_VERIFY_* in params.js: one verification is a full Homefire
+    // evaluation, so an unmetered peer buys a core with a stream of junk.
+    sock.cfVerify = { tokens: P.P2P_BLOCK_VERIFY_BURST, at: Date.now() };
+    sock.cfInvalid = 0;
     // a misbehaving peer must not be able to write the log as fast as it can
     // write the socket, so each fault is reported once per connection
     const said = new Set();
@@ -206,6 +211,66 @@ class P2P {
     return r;
   }
 
+  /**
+   * Accept a block a specific peer sent us, charging that peer for the work.
+   *
+   * Returns null when the peer is over budget, which the callers read as "stop
+   * reading this frame".
+   *
+   * The budget meters WASTED verification, not verification. A token is taken
+   * before the work and given back when the outcome shows the peer did not cost
+   * us a proof, or cost us one worth paying:
+   *
+   *   ok              — the block extended or forked our chain. Producing it
+   *                     cost the sender a real proof; we are the beneficiary.
+   *   known           — `_ingest` returns this from its first line, before any
+   *                     hashing, so nothing was spent.
+   *   unknown parent  — likewise, and it is ordinary out-of-order sync traffic.
+   *
+   * Everything else is a block that made us run Homefire (~8,450 sequential
+   * SHA-256, ~5ms of a core) for nothing, and keeps its token.
+   *
+   * This distinction is the whole point. A flat limit bounds the attack but also
+   * throttles initial sync, which is the one time an honest peer legitimately
+   * pushes thousands of blocks at us as fast as the wire allows — capping that
+   * at P2P_BLOCK_VERIFY_PER_S would turn a long chain into an hours-long sync.
+   * Refunding useful work means honest sync never touches the limiter, while a
+   * peer sending junk still runs out and is disconnected by the invalid-block
+   * budget long before the bucket matters.
+   */
+  _acceptFrom(sock, b) {
+    const v = sock.cfVerify;
+    if (v) {
+      const now = Date.now();
+      v.tokens = Math.min(P.P2P_BLOCK_VERIFY_BURST,
+        v.tokens + ((now - v.at) / 1000) * P.P2P_BLOCK_VERIFY_PER_S);
+      v.at = now;
+      if (v.tokens < 1) {
+        if (!v.said) {
+          v.said = true;
+          this.node.warn('p2p peer throttled: block verification budget exhausted',
+            { peer: peerName(sock), invalid: sock.cfInvalid });
+        }
+        return null;
+      }
+      v.tokens -= 1;
+    }
+    const r = this._accept(b);
+    const wasted = !r.ok && r.err !== 'known' && r.err !== 'unknown parent';
+    if (!wasted) {
+      if (v) v.tokens = Math.min(P.P2P_BLOCK_VERIFY_BURST, v.tokens + 1);
+      return r;
+    }
+    if (++sock.cfInvalid >= P.P2P_MAX_INVALID_BLOCKS) {
+      this.node.warn('p2p peer dropped: too many invalid blocks',
+        { peer: peerName(sock), invalid: sock.cfInvalid });
+      this.peers.delete(sock);
+      sock.destroy();
+      return null;
+    }
+    return r;
+  }
+
   _onMsg(sock, msg) {
     if (!msg || typeof msg !== 'object') return;
     const chain = this.node.chain;
@@ -251,7 +316,9 @@ class P2P {
         let progress = false;
         for (const b of blocks) {
           if (!isBlock(b)) continue;
-          if (this._accept(b).ok) progress = true;
+          const r = this._acceptFrom(sock, b);
+          if (!r) break;               // over budget, or the peer just got dropped
+          if (r.ok) progress = true;
         }
         if (progress) {
           // let the rest of the network pull from us; one tiny message per peer
@@ -265,7 +332,8 @@ class P2P {
       case 'block': {
         const b = msg.block;
         if (!isBlock(b)) break;
-        const r = this._accept(b);
+        const r = this._acceptFrom(sock, b);
+        if (!r) break;
         if (r.ok) this.broadcast({ t: 'block', block: b }, sock);
         else if (r.err === 'unknown parent') {
           this._send(sock, { t: 'getblock', id: b.header.prevHash });

@@ -5,11 +5,44 @@ and you're mining" experience for non-technical users. Built with
 [Tauri](https://tauri.app) v2 (Rust shell + web UI), so it's small and native and
 reuses the exact web wallet/explorer in [`../web`](../web).
 
-> **Status: scaffold.** The project structure, config, and native commands are in
-> place, but it has **not been compiled in this repo's CI** (Tauri needs the
-> platform webview toolchain + `npm install`). Build it locally with the steps
-> below. Bundling an embedded Rust node is tracked in
+> ## Status: UNSHIPPED SCAFFOLDING. "Start your hearth" does not work.
+>
+> Be specific about what that means, because the rest of this README reads like a
+> product:
+>
+> 1. **The three native commands have zero callers.** `start_node`, `stop_node`
+>    and `node_running` are registered in `src/main.rs` and nothing invokes them.
+>    `frontendDist` is `../../web` — plain static pages that know nothing about
+>    Tauri — so opening this app gives you the web wallet in a native window and
+>    no way to start a node from it. The snippet at the bottom of this file is
+>    what you would have to write, not what exists.
+> 2. **`node_entry()` cannot resolve in a bundle.** It defaults to
+>    `../../node/bin/hearthd.js`, relative to the *current working directory*. In
+>    a `.app` or `.msi` launched from a desktop, that path does not exist. It
+>    happens to work from a dev checkout, which is why it looks fine.
+> 3. **It also assumes Node.js is installed and on PATH**, and nothing bundles it
+>    or the `node/` sources as a Tauri resource.
+> 4. **No CI job builds it.** Tauri needs the platform webview toolchain, so this
+>    has never been compiled by anything but a human.
+>
+> Making it real means: bundling `node/` (or an embedded Rust node) as a Tauri
+> resource, resolving the entrypoint from the app's own resource directory rather
+> than the CWD, and adding a Tauri-aware control surface to the web pages that
+> no-ops in a normal browser. None of that is done. Tracked in
 > [../docs/roadmap.md](../docs/roadmap.md), Phase 2.
+
+## Security note — the CSP
+
+`tauri.conf.json` used to set `"csp": null`, which disables Content-Security-Policy
+in a window that renders a non-custodial wallet. It now ships a policy that
+refuses every external script, plugin, frame and form target, and restricts
+`connect-src` to Tauri's own protocols plus loopback.
+
+`script-src` still needs `'unsafe-inline'`: the bundled pages are hand-written
+multi-page HTML whose logic lives in inline `<script>` blocks, and Tauri's nonce
+rewriting only applies to its dev server, not to static `frontendDist` files.
+Removing it means moving every inline block into a file — worth doing, and not
+worth blocking a CSP on.
 
 ## What it does
 - Loads the bundled Hearth web UI from `../web` — the wallet on open, plus the
@@ -49,8 +82,9 @@ app-desktop/
     └── src/main.rs             native node-launch commands
 ```
 
-## From the web UI
-The desktop build can call the native commands via Tauri's JS API, e.g.:
+## From the web UI — what would have to be written
+
+Nothing in `../web` calls these. This is the code that does not exist yet:
 
 ```js
 import { invoke } from '@tauri-apps/api/core';
@@ -58,5 +92,6 @@ await invoke('start_node', { mine: true });   // start mining
 const up = await invoke('node_running');
 ```
 
-The web pages already talk to the node over its HTTP API (`:8645`), so once the
-node is running the wallet and explorer light up automatically.
+The web pages already talk to the node over its HTTP API (`:8645`), so once a
+node is running the wallet and explorer light up — but starting one is still
+`node bin/hearthd.js --mine` in a terminal, in this app exactly as outside it.

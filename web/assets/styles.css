@@ -18,14 +18,19 @@
   --ink-600: var(--cf-ash-700);
   --line:    var(--cf-line-strong);
 
-  /* ember — the registry accent, then the two ends of Hearth's flame ramp,
-     which are the same literals the React site uses and exist only to give
-     the accent somewhere to burn to. */
+  /* ember — the registry accent, then Hearth's flame tints. These two literals
+     are the ONLY colours declared in this file; everything else resolves to a
+     --cf-* token. They are not in the CloudsForge ramp because no other product
+     has a flame, and they exist only to give the accent somewhere to burn to.
+     --flame-mid is the React site's --color-flame (site/src/index.css); keep
+     them equal. --flame-hi is a lighter tint used only here. */
+  --flame-hi:  #ffd98a;
+  --flame-mid: #ffb648;
   --ember-500: var(--cf-accent);
   --ember-400: var(--cf-accent-hover);
-  --ember-300: #ffb648;
-  --gold-300:  #ffb648;
-  --gold-200:  #ffd98a;
+  --ember-300: var(--flame-mid);
+  --gold-300:  var(--flame-mid);
+  --gold-200:  var(--flame-hi);
   --ember-ink: var(--cf-accent-ink);
 
   /* cream text */
@@ -34,7 +39,11 @@
   --cream-faint: var(--cf-fg-mute);
 
   --ok: var(--cf-success);
-  --radius: 16px;
+  /* was a hardcoded 16px, which is a corner radius no other CloudsForge
+     surface uses — cards here read visibly rounder than the same card next
+     door. The system's large radius is the whole point of having one. */
+  --radius: var(--cf-radius-lg);
+  --radius-sm: var(--cf-radius);
   --maxw: var(--cf-max-w);
   --font: var(--cf-font-sans);
   --mono: var(--cf-font-mono);
@@ -168,6 +177,28 @@ table.blocks td { padding: 12px; border-bottom: 1px solid var(--ink-600); }
 table.blocks tr:hover td { background: var(--ink-700); }
 .tag-new { color: var(--gold-200); animation: pop .6s ease; }
 @keyframes pop { from { background: color-mix(in srgb, var(--ember-300) 18%, transparent); } to { background: transparent; } }
+
+/* ---- forms, logs, utilities ----
+   Shared by the wallet and the miner. These lived in wallet.html's <style>
+   block, so mine.html used .lbl, .log and .row-btns and got none of them. */
+.field {
+  width: 100%; padding: 12px; border-radius: var(--radius-sm);
+  border: 1px solid var(--line); background: var(--ink-900); color: var(--cream);
+  font-family: var(--mono); font-size: .9rem;
+}
+.field:focus { outline: none; border-color: var(--ember-300); }
+.lbl {
+  display: block; margin: 12px 0 6px; color: var(--cream-faint);
+  font-family: var(--mono); font-size: .8rem; text-transform: uppercase; letter-spacing: .08em;
+}
+.log { font-family: var(--mono); font-size: .82rem; line-height: 1.7; margin-top: 14px; }
+.log div { color: var(--cream-dim); }
+.log .good { color: var(--ok); }
+.log .bad { color: var(--ember-400); }
+.row-btns { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+.btn[disabled] { opacity: .45; pointer-events: none; }
+.brk { word-break: break-all; }
+.hide { display: none !important; }
 
 /* ---- section spacing ---- */
 section { padding: 56px 0; }

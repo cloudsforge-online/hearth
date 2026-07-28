@@ -6,7 +6,7 @@
  * Demonstrates the home-mining loop end to end:
  *   - generates a coinbase key (your wallet)
  *   - mines a toy block with the Homefire PoW
- *   - proves the solution is non-outsourceable (signed by the coinbase key)
+ *   - shows the solution can only be redeemed by the coinbase key that signed it
  *   - verifies it the way any node would
  *
  * Run:  node proto/mine.js [difficultyBits]
@@ -18,8 +18,9 @@ const pow = require('./pow');
 const bits = parseInt(process.argv[2] || '18', 10);
 const target = pow.bitsToTarget(bits);
 
-// Your wallet = an Ed25519 keypair. The miner and the reward recipient are
-// the same key on purpose (that is what kills pools).
+// Your wallet = an Ed25519 keypair. The miner and the reward recipient are the
+// same key on purpose: that is what makes a winning digest unredeemable by
+// anyone else.
 const coinbaseKey = {
   ...(() => {
     const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519');
@@ -68,7 +69,9 @@ console.log('   • digest ............ %s…', sol.digest.toString('hex').slice
 console.log('   • coinbase (you) .... %s…', sol.pub.toString('hex').slice(0, 24));
 console.log('   • signed by coinbase  %s', sol.sig.toString('hex').slice(0, 24) + '…');
 console.log('   • node verifies ..... %s', ok ? 'VALID ✓' : 'INVALID ✗');
-console.log('\n  A pool operator can not mine this for you without your private');
-console.log('  key — so there is nobody to centralize around. That is the point.\n');
+console.log('\n  Nobody can redeem this block but you: the reward pays the key that');
+console.log('  signed the proof. Note what that does NOT prevent — an operator can');
+console.log('  still hand out work under its OWN key and pay hashers off chain,');
+console.log('  because the private key never enters the hash. See docs/mining.md.\n');
 
 process.exit(ok ? 0 : 1);

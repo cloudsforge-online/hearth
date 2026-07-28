@@ -47,6 +47,10 @@ self.onmessage = (e) => {
 
 function tick() {
   if (!running || !job) { running = false; return; }
+  // duty 0 is a real pause, not a slow trickle — it is what an unplugged laptop
+  // gets. Keep the loop alive so a later `tune` resumes without a fresh job,
+  // but do not hash a single nonce while it is set.
+  if (duty <= 0) { setTimeout(tick, 500); return; }
   const started = performance.now();
   const { coreHash, coinbasePub, targetBytes, templateId } = job;
 

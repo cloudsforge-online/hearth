@@ -75,9 +75,11 @@ export default function Testnet() {
             <Reveal delay={120} className="panel p-6">
               <p className="font-display text-lg font-bold text-ash">Then open the web experience</p>
               <p className="mt-1 text-sm leading-relaxed text-ash-dim">
-                The bundle ships a <span className="text-ash">web wallet</span> (with in-browser mining) and a live{' '}
-                <span className="text-ash">block explorer</span> that reads the running chain — plus a two-line
-                “Accept EMBER” merchant SDK.
+                The bundle ships a <span className="text-ash">web wallet</span>, a{' '}
+                <span className="text-ash">browser miner</span> and a live{' '}
+                <span className="text-ash">block explorer</span>, all reading the running chain — plus a
+                mockup of an “Accept EMBER” merchant button, which simulates its settlement and is not
+                yet an SDK you can take a payment with.
               </p>
               <div className="mt-5 flex flex-wrap gap-3">
                 <a className="btn btn-ember" href={HEARTH.explorer} target="_blank" rel="noreferrer">
@@ -88,8 +90,9 @@ export default function Testnet() {
                 </a>
               </div>
               <p className="mono mt-5 text-xs text-soot">
-                Pre-mainnet: the production Homefire VM, Tab channels and consensus still need audits and a public
-                testnet before launch.
+                Pre-mainnet: consensus, the Rust core and the Tab channel layer all still need audits and a
+                public testnet before launch. The Rust core is a benchmark and a set of libraries today, not a
+                second node.
               </p>
             </Reveal>
           </div>

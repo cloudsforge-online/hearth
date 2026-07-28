@@ -2,82 +2,100 @@
 
 How Hearth keeps mining in the hands of people instead of farms and pools.
 
-## The three mechanisms
+> **Shipped vs designed.** Everything under "What the chain does today" is
+> implemented in `node/src/` and covered by `npm test`. Everything under "What is
+> still design" is not — it is written down so it can be built and argued with,
+> not because it is running. This page previously mixed the two, and the mixing
+> is what produced the claim that Homefire is non-outsourceable.
 
-### 1. CPU-optimized & memory-hard (kills the ASIC advantage)
-Homefire is a **RandomX-class** proof-of-work. For each nonce the miner:
+## What the chain does today
 
-1. derives a seed from the block header + coinbase key,
-2. compiles a **pseudo-random program** from that seed,
-3. executes it against a large (~2 GiB) **dataset that must reside in RAM**,
-4. hashes the result and checks it against the target.
+### 1. Memory-hard (blunts the ASIC advantage)
+For each nonce, `node/src/pow.js` does exactly this:
 
-Because the program is random and memory-bound, a general-purpose CPU is close to
-the optimal machine. Custom silicon can't meaningfully beat commodity hardware,
-so there's little reason to build farms. The bottleneck is **memory bandwidth**,
-which your laptop already has.
+1. derives a seed from the header core, the nonce and the **coinbase public key**,
+2. fills a scratchpad by chaining SHA-256 — 8,192 words at the dev size,
+3. takes a 256-step pseudo-random walk that reads *and rewrites* the pad,
+4. hashes the accumulator plus the tail of the pad, and checks it against the target.
 
-The proof-of-concept ([`../proto/pow.js`](../proto/pow.js)) models the memory-hard
-core at toy scale: fill a scratchpad, take a pseudo-random walk that reads *and
-writes* it, then derive the digest from the whole pad.
+That is ~8,450 sequential SHA-256 rounds per attempt with a data dependency at
+every step, so the bottleneck is memory latency rather than gate count and a
+general-purpose CPU sits close to the optimal machine. Production sizes (~2 GiB,
+more steps) make the pad itself the barrier.
 
-### 2. Non-outsourceable (kills the pool)
-CPU-fairness isn't enough: pools recentralize by coordinating many miners. Hearth
-removes the incentive. A valid block must be **signed by the private key that
-receives the reward**:
+It is **not** a RandomX-class VM: nothing is compiled, and there is no program to
+execute. Growing it into one is on the [roadmap](roadmap.md); until it exists,
+"RandomX-class" is not a description of Homefire.
+
+### 2. A winning proof cannot be redirected
+A valid block must be **signed by the private key its coinbase pays**:
 
 ```
 solution = { nonce, digest, sig }   where   sig = Sign(coinbase_privkey, digest)
 ```
 
-To mine "for" someone through a pool, that pool would need the key that controls
-the reward — i.e. the power to steal it. So rational miners mine **solo**, and
-there's no central operator to censor or reorganize around.
+So a candidate built for your public key is worth nothing to anyone else, and
+work handed to you cannot be taken from you. `node/test/mining-api.js` proves
+exactly this, and no more.
 
-See `attempt()` and `verify()` in the PoC; run it to watch the signature check:
+**This is not non-outsourceability, and this document used to say it was.** The
+private key is used *after* a nonce wins (`node/src/miner.js`), never inside the
+hash loop, and only the public key is bound into the seed. A pool operator can
+therefore hand out `coreHash` plus its **own** pubkey, collect `(nonce, digest)`
+pairs from hashers who genuinely cannot steal the reward, and sign the blocks
+itself. Nothing in consensus notices.
 
-```bash
-node proto/mine.js 16
-```
+Closing that means committing to the private key inside the loop — a consensus
+change that forks the chain and invalidates the CI-conformance-tested browser
+miner. It is deliberately open, not overlooked.
 
-### 3. Low variance without a pool
-Solo mining is bursty, so Hearth smooths income *without* reintroducing pools:
-
+### 3. Low variance, so far
 - **15-second blocks** → frequent wins even for small miners.
 - **Per-block LWMA difficulty** → smooth, no wild swings.
-- **Warmshares (uncles)** → near-miss blocks are referenced by later blocks and
-  earn a fraction of the reward, paying you for honest work that just missed.
-- **Trustless co-ops (optional)** → peers share variance over a P2P protocol that
-  *never* takes custody of a key. It's the benefit of a pool with none of the
-  centralization.
 
-## Polite mining (why it won't wreck your machine)
-The Hearth app mines as a good houseguest:
+### 4. Polite mining, in the browser miner
+`web/assets/mining/` implements, and `web/mine.html` exposes:
 
-- default to **AC power only** and **idle CPU**, so laptops on battery are left alone;
-- **throttle** to a user-set share of cores (e.g. 35%);
-- **thermal-aware** back-off;
-- one toggle: *Start your hearth* / *Pause*.
+- an **effort slider** that is a real duty cycle — workers sleep proportionally
+  between batches rather than pinning a core;
+- a **background-tab trickle**: a hidden tab is clamped to 15% effort;
+- **pause on battery**, where the browser reports power state. The Battery Status
+  API is Chromium-only (Firefox and Safari removed it), so the page says which of
+  the two it got rather than promising power-awareness everywhere.
 
-Mining should be invisible — spare cycles turned into money, not a space heater.
+## What is still design
+
+None of the following exists in this repository. Do not describe them as features.
+
+- **Warmshares (uncles)** — near-miss blocks referenced by later blocks for a
+  fraction of the reward, to pay for honest work that just missed.
+- **Trustless co-ops** — peers sharing variance over a P2P protocol that never
+  takes custody of a key.
+- **Idle detection** — "mine only when the machine is idle" is not implementable
+  from a web page: `requestIdleCallback` means "this tab's event loop is quiet",
+  which is always true for a page that only mines, and the Idle Detection API is
+  permission-gated and Chromium-only.
+- **Thermal-aware back-off** — no temperature source is available to either the
+  node or the browser.
+- **A non-outsourceable puzzle** — see §2 above.
 
 ## Mining in a browser
 
 `web/mine.html` is a real miner, not a demo: the same Homefire the node runs,
 hashing in a pool of Web Workers, submitting blocks to a live chain.
 
-**Why a browser can do this at all.** Non-outsourceability means the winner must
-sign the digest with the key the coinbase pays, so a browser has to hold its own
-key — which it already does, in the wallet. The node hands out a candidate built
-for *your* public key and keeps the transactions; you return a nonce, a digest
-and a signature. Your private key never leaves the page.
+**Why a browser can do this at all.** The winner must sign the digest with the key
+the coinbase pays, so a browser has to hold its own key — which it already does,
+in the wallet. The node hands out a candidate built for *your* public key and
+keeps the transactions; you return a nonce, a digest and a signature. Your
+private key never leaves the page.
 
   GET  /mining/template?pub=<spki-der-hex>   → header core, target, PoW params
   POST /mining/submit  {templateId, nonce, powDigest, powSig}
 
-The node cannot mine on your behalf and no operator can take your work, because
-work built for your key is worthless to anyone else. That is the same property
-that kills pools, applied to a browser tab.
+The node cannot mine on your behalf and cannot take work built for your key.
+That is a real guarantee about *this* endpoint; it is not a guarantee that no
+pool can exist (§2).
 
 **Why it is not slow.** One attempt is ~8,450 SHA-256 rounds — 8,192 to fill the
 scratchpad, 256 to walk it. `crypto.subtle.digest` is async, so WebCrypto would
@@ -90,8 +108,9 @@ dominates when you need thousands of calls.
 
 **Politeness, concretely.** An effort slider sets a duty cycle; workers sleep
 proportionally between batches rather than pinning a core. A hidden tab drops to
-a trickle. The loop yields for a second reason too: a Worker that never yields
-cannot receive `postMessage`, so it could not be stopped or handed new work.
+a trickle, and an unplugged laptop stops entirely where the browser will say so.
+The loop yields for a second reason too: a Worker that never yields cannot
+receive `postMessage`, so it could not be stopped or handed new work.
 
 **Correctness.** A digest that differs from the node's in one bit would mine
 nothing while looking busy for hours. `node/test/browser-pow.js` compares the two
@@ -109,16 +128,24 @@ proof signed by anyone but the coinbase key is rejected. Both run in CI.
 ## FAQ for miners
 - **Do I need a GPU or ASIC?** No. A normal CPU is the intended machine. GPUs and
   ASICs gain little to nothing.
-- **Can I join a pool for steadier payouts?** There are no custodial pools by
-  design. Use warmshares + an optional trustless co-op instead.
-- **Will it drain my battery?** Not by default — polite mining runs on AC/idle and
-  throttles.
+- **Can I join a pool for steadier payouts?** None exists today, and nothing in
+  the protocol prevents one from being built — a pool would hand out work under
+  its own key and pay hashers off chain. What consensus *does* guarantee is that
+  work handed to you under your own key cannot be taken from you.
+- **Will it drain my battery?** The browser miner pauses on battery where the
+  browser reports power state, and throttles to your effort setting otherwise.
+  `hearthd --mine` has a duty-cycle throttle and no power awareness at all.
 - **How do I start?** Open `web/mine.html`, create or load a key, press *Start
   mining*. Or run a node with `hearthd --mine`. There is no WASM light-miner and
   never was — this line used to promise one in `web/wallet.html`.
 
 ## Production vs. proof-of-concept
-The JS in `proto/` demonstrates memory-hardness and non-outsourceability so the
-ideas are executable and testable. The production algorithm is a hardened,
-audited RandomX-class VM implemented in Rust inside `hearthd` — see the
-[roadmap](roadmap.md).
+`node/src/pow.js` is the algorithm the chain actually runs, and
+`web/assets/mining/homefire.js` is its conformance-tested browser twin. The JS in
+`proto/` is an earlier sketch of the same memory-hard core.
+
+`rust/hearthd/src/pow.rs` is **not** a second implementation of consensus: it
+omits the coinbase pubkey from the seed, so it computes a different digest for
+the same header. See [why-two-implementations.md](why-two-implementations.md).
+The hardened, audited RandomX-class VM is a [roadmap](roadmap.md) item, not a
+thing that exists.

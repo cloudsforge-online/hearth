@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------ *
- * VENDORED — @cloudsforge/ui@0.3.0 dist/ui.css, copied verbatim.
+ * VENDORED — @cloudsforge/ui@0.4.0 dist/ui.css, copied verbatim.
  * See cf-tokens.css for why, and for how to re-sync.
  * ------------------------------------------------------------------ */
 /* ------------------------------------------------------------------ *
@@ -9,6 +9,13 @@
  * tokens (see tokens.css). No Tailwind, no utility classes — these drop
  * into any app regardless of its CSS framework. All selectors are prefixed
  * `cf-` to avoid collisions with the host app.
+ *
+ * Colour comes from the SEMANTIC layer (--cf-bg/--cf-fg/--cf-line), never
+ * from the raw ash/bone ramps, so a product that retints the substrate
+ * retints this chrome with it and the bar never seams against its page.
+ * The exception is --cf-ember: the mark, the sign-in call to action and the
+ * seam of forge light along the top edge are the COMPANY's colour on every
+ * product, and are deliberately not the product accent.
  * ------------------------------------------------------------------ */
 
 /* ============================ the bar ============================= */
@@ -19,13 +26,13 @@
   width: 100%;
   background: linear-gradient(
     180deg,
-    color-mix(in srgb, var(--cf-ash-950) 92%, transparent),
-    color-mix(in srgb, var(--cf-ash-900) 86%, transparent)
+    color-mix(in srgb, var(--cf-bg-sunken) 92%, transparent),
+    color-mix(in srgb, var(--cf-bg) 86%, transparent)
   );
   border-bottom: 1px solid var(--cf-line);
   backdrop-filter: blur(10px) saturate(1.1);
   -webkit-backdrop-filter: blur(10px) saturate(1.1);
-  color: var(--cf-bone);
+  color: var(--cf-fg);
   font-family: var(--cf-font-sans);
   /* A faint ember seam along the very top edge — the forge light. */
   box-shadow: 0 -1px 0 0 var(--cf-ember-glow) inset;
@@ -34,12 +41,12 @@
 .cf-bar__inner {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--cf-space-sm);
   width: 100%;
   max-width: var(--cf-max-w);
   min-height: var(--cf-bar-h);
   margin-inline: auto;
-  padding-inline: 1rem;
+  padding-inline: var(--cf-space-xl);
   box-sizing: border-box;
 }
 
@@ -50,25 +57,25 @@
 .cf-bar__right {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--cf-space-sm);
 }
 
 .cf-bar__sep {
   width: 1px;
   height: 18px;
   background: var(--cf-line-strong);
-  margin-inline: 0.15rem;
+  margin-inline: var(--cf-space-3xs);
 }
 
 /* ============================ the logo ============================ */
 .cf-logo {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--cf-space-sm);
   text-decoration: none;
-  color: var(--cf-bone);
+  color: var(--cf-fg);
   border-radius: var(--cf-radius-sm);
-  padding: 2px 4px;
+  padding: var(--cf-space-3xs) var(--cf-space-2xs);
   transition: opacity var(--cf-speed) var(--cf-ease);
 }
 .cf-logo:hover {
@@ -84,8 +91,8 @@
   font-weight: 800;
   letter-spacing: -0.01em;
   line-height: 1;
-  font-size: 0.92rem;
-  color: var(--cf-bone);
+  font-size: var(--cf-text-lg);
+  color: var(--cf-fg);
   white-space: nowrap;
 }
 .cf-logo__word b {
@@ -97,17 +104,17 @@
 .cf-btn {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: var(--cf-space-xs);
   box-sizing: border-box;
   min-height: 30px;
-  padding: 0.28rem 0.6rem;
+  padding: var(--cf-space-2xs) var(--cf-space-md);
   margin: 0;
   border: 1px solid transparent;
   border-radius: var(--cf-radius-sm);
   background: transparent;
-  color: var(--cf-bone-dim);
+  color: var(--cf-fg-dim);
   font-family: var(--cf-font-mono);
-  font-size: 0.74rem;
+  font-size: var(--cf-text-sm);
   font-weight: 600;
   letter-spacing: 0.04em;
   line-height: 1;
@@ -118,11 +125,11 @@
     border-color var(--cf-speed) var(--cf-ease);
 }
 .cf-btn:hover {
-  color: var(--cf-bone);
+  color: var(--cf-fg);
   background: var(--cf-surface-hover);
 }
 .cf-btn[aria-expanded='true'] {
-  color: var(--cf-bone);
+  color: var(--cf-fg);
   background: var(--cf-surface-hover);
   border-color: var(--cf-line-strong);
 }
@@ -168,9 +175,9 @@
 
 .cf-menu {
   position: absolute;
-  top: calc(100% + 6px);
+  top: calc(100% + var(--cf-space-xs));
   min-width: 220px;
-  padding: 6px;
+  padding: var(--cf-space-xs);
   margin: 0;
   list-style: none;
   background: var(--cf-surface-solid);
@@ -199,18 +206,18 @@
 }
 
 .cf-menu__label {
-  padding: 6px 10px 4px;
+  padding: var(--cf-space-xs) var(--cf-space-md) var(--cf-space-2xs);
   font-family: var(--cf-font-mono);
-  font-size: 0.6rem;
+  font-size: var(--cf-text-2xs);
   font-weight: 600;
   letter-spacing: 0.22em;
   text-transform: uppercase;
-  color: var(--cf-khaki);
+  color: var(--cf-fg-mute);
 }
 
 .cf-menu__sep {
   height: 1px;
-  margin: 5px 4px;
+  margin: var(--cf-space-xs) var(--cf-space-2xs);
   background: var(--cf-line);
   border: 0;
 }
@@ -218,16 +225,16 @@
 .cf-menu__item {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
+  gap: var(--cf-space-md);
   width: 100%;
   box-sizing: border-box;
-  padding: 7px 10px;
+  padding: var(--cf-space-xs) var(--cf-space-md);
   border: 0;
   border-radius: var(--cf-radius-sm);
   background: transparent;
-  color: var(--cf-bone);
+  color: var(--cf-fg);
   font-family: var(--cf-font-sans);
-  font-size: 0.82rem;
+  font-size: var(--cf-text-md);
   font-weight: 500;
   text-align: left;
   text-decoration: none;
@@ -256,26 +263,26 @@
 .cf-menu__name {
   font-weight: 600;
   line-height: 1.15;
-  color: var(--cf-bone);
+  color: var(--cf-fg);
 }
 .cf-menu__blurb {
-  font-size: 0.68rem;
+  font-size: var(--cf-text-xs);
   line-height: 1.25;
-  color: var(--cf-bone-dim);
+  color: var(--cf-fg-dim);
 }
 .cf-menu__check {
   margin-left: auto;
   color: var(--cf-ember);
-  font-size: 0.72rem;
+  font-size: var(--cf-text-sm);
   flex: 0 0 auto;
 }
 
 /* ========================= account menu ========================= */
 .cf-account__handle {
   font-family: var(--cf-font-mono);
-  font-size: 0.74rem;
+  font-size: var(--cf-text-sm);
   font-weight: 600;
-  color: var(--cf-bone);
+  color: var(--cf-fg);
   max-width: 12ch;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -290,7 +297,7 @@
   background: linear-gradient(135deg, var(--cf-ember), color-mix(in srgb, var(--cf-ember) 55%, #7a2a10));
   color: var(--cf-ember-ink);
   font-family: var(--cf-font-mono);
-  font-size: 0.62rem;
+  font-size: var(--cf-text-2xs);
   font-weight: 800;
   text-transform: uppercase;
   flex: 0 0 auto;

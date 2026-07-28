@@ -1,16 +1,20 @@
 'use strict';
 /* Work for miners that are not this process — a browser tab, mostly.
  *
- * Homefire is non-outsourceable: the winning digest must be Ed25519-signed by
- * the coinbase key, and the coinbase must pay that key (block.js:43-49). Two
- * things follow, and they shape this whole file:
+ * The winning digest must be Ed25519-signed by the coinbase key, and the
+ * coinbase must pay that key (block.js). Two things follow, and they shape this
+ * whole file:
  *
  *   1. A remote miner keeps its own private key. The node never sees it, and
  *      could not mine on that miner's behalf if it wanted to. There is no
  *      custody question here to get wrong.
- *   2. A pool is impossible by construction. Work handed to you pays you, or it
- *      is worthless. So this is not a stratum server; it is one endpoint that
- *      hands out a candidate and one that takes the proof back.
+ *   2. Work handed out here pays the asker, or it is worthless to them. So this
+ *      is not a stratum server; it is one endpoint that hands out a candidate
+ *      and one that takes the proof back.
+ *
+ * What that does NOT give us is non-outsourceability. Nothing stops a third
+ * party running this exact protocol under its own key and paying hashers off
+ * chain — the private key never enters the hash loop. See pow.js.
  *
  * The node keeps the transactions, not the miner. A template is ~a block of
  * JSON, and sending it twice per attempt would cost far more than the header

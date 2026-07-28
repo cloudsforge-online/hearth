@@ -31,6 +31,10 @@ jobs:
       # looking busy, so the two implementations are compared digest-for-digest.
       - name: Browser PoW conformance
         run: node test/browser-pow.js
+      # The browser wallet's key sealing is the only thing between someone's
+      # coins and anything that can read their browser profile.
+      - name: Browser keystore (encryption at rest + v1 migration)
+        run: node test/keystore.js
       - name: Remote mining API
         run: node test/mining-api.js
       # Two real nodes on real sockets: partition, mine competing branches,

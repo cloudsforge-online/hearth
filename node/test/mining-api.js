@@ -150,7 +150,18 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hearth-mining-'));
   }
 
   // -------------------------------------------------------------- the point
-  section('non-outsourceability holds');
+  //
+  // What this proves is that a proof cannot be REDIRECTED: whoever the template
+  // was issued to is the only party who can turn a winning digest into a block,
+  // because the coinbase pays that key and the digest must be signed by it.
+  //
+  // It does NOT prove non-outsourceability, and the label used to claim it did.
+  // The private key never enters the hash loop (pow.js binds only the coinbase
+  // PUBLIC key into the seed; miner.js signs after the digest wins), so a pool
+  // operator can hand out coreHash plus its OWN pubkey, take (nonce, digest)
+  // back from hashers who cannot steal the reward, and sign the block itself.
+  // Making that impossible is a consensus change; see docs/mining.md.
+  section('a winning proof can only be redeemed by the key it was issued to');
   {
     const attacker = crypto.generateKeyPairSync('ed25519');
     const attackerPub = attacker.publicKey.export({ type: 'spki', format: 'der' }).toString('hex');
@@ -171,7 +182,7 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hearth-mining-'));
       powSig: C.sign(attackerPriv, Buffer.from(digestHex, 'hex')),
     });
     ok(!r.body.ok && /signature/.test(r.body.err || ''),
-      'a proof signed by anyone but the coinbase key is rejected — work cannot be stolen or pooled');
+      'a proof signed by anyone but the coinbase key is rejected — work handed to you cannot be stolen');
     void attackerPub;
   }
 
@@ -180,6 +191,21 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hearth-mining-'));
     for (let i = 0; i < MAX_TEMPLATES + 40; i++) await get(`/mining/template?pub=${miner.pub}`);
     ok(node.templates.byId.size <= MAX_TEMPLATES,
       `an unauthenticated caller cannot grow it without limit (${node.templates.byId.size} <= ${MAX_TEMPLATES})`);
+  }
+
+  section('the request body is bounded');
+  {
+    // The largest legitimate body is one transaction. This endpoint answers
+    // every origin, so an unbounded reader is a heap anyone can fill.
+    const huge = 'x'.repeat(P.MAX_TX_BYTES + 64 * 1024);
+    const r = await fetch(`${base}/tx`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ tx: { pad: huge } }),
+    }).then(async res => ({ status: res.status, body: await res.json() })).catch(e => ({ err: e }));
+    ok(r.status === 413, `an oversized body is refused with 413, not buffered (got ${r.status || r.err})`);
+
+    const still = await get('/info');
+    ok(Number.isInteger(still.height), 'the node is still answering afterwards');
   }
 
   node.rpc.server.close();

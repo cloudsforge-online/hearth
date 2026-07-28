@@ -8,9 +8,12 @@ full web layer on demo data**. This is the path from here to a live network.
 
 ## Phase 0 — Concept & proof-of-concept *(this repo)*
 - ✅ Whitepaper, coinnomics, architecture, mining specs
-- ✅ Homefire PoW proof-of-concept (memory-hard + non-outsourceable) — `proto/`
+- ✅ Homefire PoW proof-of-concept (memory-hard) — `proto/`
+- ⬜ Non-outsourceable puzzle (private key inside the hash loop) — an open
+  consensus decision, not implemented; see [mining.md](mining.md)
 - ✅ Runnable emission/coinnomics simulator
-- ✅ Web layer: marketing site, web wallet, block explorer, Hearth Pay SDK (demo data)
+- ✅ Web layer: marketing site, web wallet, browser miner, block explorer
+- ⬜ Hearth Pay merchant SDK — `web/pay-demo.html` is a mockup that settles nothing
 - ✅ Brand & visual identity
 
 ## Phase 1 — Node core (`hearthd`, Rust)
@@ -19,8 +22,10 @@ full web layer on demo data**. This is the path from here to a live network.
 - ✅ Deterministic integer emission (byte-identical to the JS reference, parity-tested)
 - ✅ Mempool (fee-ordered, double-spend safe)
 - ✅ Tab payment channels (signed off-chain state machine)
-- 🟡 Homefire PoW (memory-hard core done; grow toward full RandomX-class VM)
-- 🟡 Difficulty retargeting (LWMA in JS; freeze a byte-exact spec, then port)
+- 🟡 Homefire PoW (memory-hard core done, but the Rust seed omits the coinbase
+  pubkey — reconcile with consensus first, then grow toward a RandomX-class VM)
+- 🟡 Difficulty retargeting (256-bit LWMA in JS; the Rust ±1-bit sketch is not it —
+  freeze a byte-exact spec, then port)
 - 🟡 P2P (wire framing + TCP handshake done; port gossip/sync)
 - ⬜ Fork choice / reorg, block storage, JSON-RPC/WebSocket/REST
 - ⬜ Stealth addresses + view keys; warmshare/uncle rules

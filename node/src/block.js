@@ -2,7 +2,9 @@
 /* Block structure + PoW binding.
  * A block = { header, txs }. The header's "core" is what PoW commits to; the
  * nonce/digest/signature are the proof. The first tx must be the coinbase whose
- * reward address matches the coinbase pubkey (non-outsourceability). */
+ * reward address matches the coinbase pubkey, so a winning proof can only be
+ * redeemed by the key it was issued to. (That is not non-outsourceability —
+ * see the note at the top of pow.js.) */
 
 const C = require('./crypto');
 const POW = require('./pow');
@@ -33,7 +35,7 @@ function blockId(block) {
   });
 }
 
-/** Fully verify a block's proof-of-work and non-outsourceable signature. */
+/** Fully verify a block's proof-of-work and its coinbase-key signature. */
 function verifyPow(block) {
   const hdr = block.header;
   const seed = POW.powSeed(coreHash(hdr), hdr.nonce, hdr.coinbasePub);
@@ -42,7 +44,8 @@ function verifyPow(block) {
   if (!POW.meetsTarget(digest, hdr.target)) return { ok: false, err: 'pow does not meet target' };
   if (!C.verify(hdr.coinbasePub, Buffer.from(digest, 'hex'), hdr.powSig))
     return { ok: false, err: 'pow signature invalid' };
-  // non-outsourceable: coinbase reward must pay the signer
+  // the coinbase reward must pay the signer, so nobody can redeem someone
+  // else's winning digest
   const cb = block.txs[0];
   if (!cb || cb.type !== 'coinbase') return { ok: false, err: 'missing coinbase' };
   if (cb.outputs[0].address !== C.addressFromPub(hdr.coinbasePub))

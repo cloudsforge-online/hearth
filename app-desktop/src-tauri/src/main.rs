@@ -1,15 +1,21 @@
 // Prevent an extra console window on Windows in release.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-//! Hearth desktop app (Tauri v2).
+//! Hearth desktop app (Tauri v2) — UNSHIPPED SCAFFOLDING.
 //!
-//! A native shell around the Hearth web wallet + explorer (bundled from `web/`)
-//! that can launch a local `hearthd` node so the whole thing is one click:
-//! *node + wallet + miner* in a single window.
+//! A native shell around the Hearth web wallet + explorer (bundled from `web/`).
+//! The intent is one click: *node + wallet + miner* in a single window.
 //!
-//! Until the Rust node reaches parity, "Start your hearth" launches the JS
-//! reference node (`node/bin/hearthd.js`) as a child process; the migration to
-//! an embedded Rust node is tracked in docs/roadmap.md.
+//! # None of the commands below are reachable
+//!
+//! `start_node`, `stop_node` and `node_running` are registered and have **zero
+//! callers**. `frontendDist` is `../../web`: plain static pages that know
+//! nothing about Tauri and never call `invoke`. Opening this app gives you the
+//! web wallet in a native window and no way to start a node from it.
+//!
+//! `node_entry()` also cannot resolve in a bundle — see its own note. Do not
+//! read this file as a working feature; see `app-desktop/README.md` for exactly
+//! what would have to be built.
 
 use std::process::{Child, Command};
 use std::sync::Mutex;
@@ -19,6 +25,15 @@ use tauri::State;
 struct NodeProc(Mutex<Option<Child>>);
 
 /// Path to the reference node entrypoint. Override with HEARTH_NODE_JS.
+///
+/// BROKEN IN A BUNDLE: this default is relative to the process's *current
+/// working directory*, which for an app launched from Finder or a Start menu is
+/// `/` or the user's home — never a checkout. It resolves only when the binary
+/// is run by `tauri dev` from `app-desktop/`, which is why it has never looked
+/// wrong. A real fix resolves from the app's resource directory
+/// (`tauri::path::BaseDirectory::Resource`) and bundles `node/` alongside it,
+/// which also means shipping or locating a Node.js runtime. Left as-is
+/// deliberately: a half-fix here would hide the fact that nothing calls it.
 fn node_entry() -> String {
     std::env::var("HEARTH_NODE_JS").unwrap_or_else(|_| "../../node/bin/hearthd.js".to_string())
 }

@@ -7,6 +7,7 @@ const P = require('../src/params');
 const TX = require('../src/tx');
 const POW = require('../src/pow');
 const { Chain } = require('../src/chain');
+const { Wallet } = require('../src/wallet');
 const fs = require('fs'); const os = require('os'); const path = require('path');
 
 let pass = 0, fail = 0;
@@ -98,6 +99,32 @@ group('chain');
   const t = BigInt('0x' + chain.nextTarget());
   ok(t >= BigInt('0x' + P.MIN_TARGET) && t <= BigInt('0x' + P.MAX_TARGET), 'nextTarget within bounds');
   ok(chain.supply() === 0, 'genesis creates no spendable supply');
+  fs.rmSync(dir, { recursive: true, force: true });
+}
+
+// The difficulty CEILING has to sit far above any plausible network, or the
+// chain silently stops being able to get harder, block time falls below target
+// and emission accelerates. Stated as work-per-block so the number means
+// something: 2^40 attempts is already ~7e10 H/s sustained at 15s blocks.
+{
+  const work = (1n << 256n) / (BigInt('0x' + P.MIN_TARGET) + 1n);
+  ok(work > (1n << 40n), 'difficulty ceiling leaves headroom well past a planet of CPUs');
+  ok(BigInt('0x' + P.MAX_TARGET) > BigInt('0x' + P.GENESIS_TARGET), 'easiest target is easier than genesis');
+}
+
+group('wallet');
+{
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hearth-unit-w-'));
+  const w = new Wallet(dir).load();
+  const dest = C.addressFromPub(C.generateKeyPair().pub);
+  const coin = { txid: 'a'.repeat(64), vout: 0, amount: 10 * P.SPARKS_PER_EMBER, coinbase: true, height: 5 };
+  const shim = { height: 5, utxosFor: a => (a === w.primary ? [coin] : []) };
+  let refused = false;
+  try { w.buildTx(shim, dest, P.SPARKS_PER_EMBER); } catch { refused = true; }
+  ok(refused, 'wallet refuses to spend an immature coinbase rather than build a tx the chain rejects');
+  shim.height = coin.height + P.COINBASE_MATURITY - 1;   // spendHeight - height === MATURITY
+  const tx = w.buildTx(shim, dest, P.SPARKS_PER_EMBER);
+  ok(tx.inputs.length === 1, 'wallet spends the same coinbase once it has matured');
   fs.rmSync(dir, { recursive: true, force: true });
 }
 

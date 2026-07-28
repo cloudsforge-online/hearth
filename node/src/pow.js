@@ -1,8 +1,18 @@
 'use strict';
 /* Homefire proof-of-work for hearthd.
  *  - memory-hard: fill & random-walk a scratchpad (ASIC-hostile, CPU-fair)
- *  - non-outsourceable: the winning digest must be signed by the coinbase key
- * Sizes come from params (dev-tuned for a lively local chain). */
+ *  - the winning digest must be signed by the coinbase key, so work handed to a
+ *    hasher cannot be redirected: the block pays whoever signed the proof
+ * Sizes come from params (dev-tuned for a lively local chain).
+ *
+ * This is NOT a non-outsourceable puzzle, and the file used to say it was.
+ * `powSeed` binds only the coinbase PUBLIC key; the private half is used once,
+ * after a nonce has already won (miner.js). So a pool operator can distribute
+ * coreHash together with its OWN pubkey, collect (nonce, digest) pairs from
+ * hashers who genuinely cannot steal the reward, and sign the blocks itself.
+ * Making that impossible means putting the private key inside the hash loop —
+ * a consensus change that forks the chain and breaks the browser miner, so it
+ * is a deliberate open item rather than an oversight. See docs/mining.md. */
 
 const crypto = require('crypto');
 const P = require('./params');

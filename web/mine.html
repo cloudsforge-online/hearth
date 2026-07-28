@@ -5,13 +5,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Mine EMBER in your browser — Hearth</title>
-<meta name="description" content="Mine EMBER in a browser tab on the computer you already own. Homefire is CPU-only and non-outsourceable, so the block you find pays your key and nobody else's. No pool, no operator, no account.">
+<meta name="description" content="Mine EMBER in a browser tab on the computer you already own. Homefire is memory-hard and CPU-friendly, and the block you find pays your key and nobody else's. No pool, no operator, no account.">
 <meta name="robots" content="index, follow">
 <meta name="theme-color" content="#0e0c0a">
 <link rel="canonical" href="https://explorer.cloudsforge.online/mine.html">
 <meta property="og:title" content="Mine EMBER in your browser">
 <meta property="og:site_name" content="Hearth · CloudsForge">
-<meta property="og:description" content="Homefire is CPU-only and non-outsourceable. Open a tab, mine EMBER, keep every block you find.">
+<meta property="og:description" content="Homefire is memory-hard and CPU-friendly. Open a tab, mine EMBER, keep every block you find.">
 <meta property="og:image" content="https://hearth.cloudsforge.online/og-hearth.png">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://hearth.cloudsforge.online/og-hearth.png">
@@ -23,13 +23,16 @@
 <!-- first, so it catches failures in everything below it -->
 <script src="assets/obs.js"></script>
 <style>
-  .hide { display:none !important; }
+  /* Page-specific only — .lbl, .log, .row-btns, .field and .hide are in
+     assets/styles.css, shared with the wallet. */
   .hero-art { width:100%; height:auto; max-height:300px; object-fit:cover;
-              border-radius:.6rem; display:block; margin:18px 0 }
+              border-radius:var(--radius); display:block; margin:18px 0 }
   .duty { width:100%; accent-color: var(--cf-accent) }
   .found { border-left:3px solid var(--ok); padding-left:.7rem; margin:.5rem 0 }
-  .warn-box { padding:.7rem .9rem; border-radius:.45rem; background:rgba(255,90,30,.08);
-              border:1px solid rgba(255,90,30,.35); color:var(--gold-300); font-size:.88rem }
+  .warn-box { padding:.7rem .9rem; border-radius:var(--radius-sm);
+              background:color-mix(in srgb, var(--ember-500) 8%, transparent);
+              border:1px solid color-mix(in srgb, var(--ember-500) 35%, transparent);
+              color:var(--gold-300); font-size:.88rem }
 </style>
 </head>
 <body>
@@ -50,10 +53,13 @@
   <div class="wrap">
     <span class="pill" id="mode">● checking for a node…</span>
     <h2>Mine EMBER in this tab</h2>
-    <p>Homefire is CPU-only and <b>non-outsourceable</b>: the winning hash has to be
-      signed by the key the reward pays. There is no pool to join, because work
-      handed to you is worth nothing to anyone else. Your key stays in this
-      browser — only the signature ever leaves it.</p>
+    <p>Homefire is memory-hard and CPU-friendly, and the winning hash has to be
+      signed by the key the reward pays — so work handed to you cannot be
+      redirected to anyone else. Your key stays in this browser, sealed with a
+      passphrase; only the signature ever leaves it.</p>
+    <p class="muted">Politeness is real, not a slogan: the effort slider below is a duty
+      cycle the workers actually sleep through, a background tab drops to a trickle, and
+      where the browser reports it, mining pauses the moment you unplug.</p>
 
     <!-- webp first: the same picture is 75 KB as webp against 239 KB as jpeg.
          The 2 MB master lives in web/art and is never served. -->
@@ -70,11 +76,32 @@
       <div id="noKey">
         <p class="muted">Mining needs a key to pay. This page uses the same one as the
           <a href="wallet.html">wallet</a>, stored in this browser under
-          <span class="mono">hearth.wallet.v1</span>.</p>
+          <span class="mono">hearth.wallet.v2</span> and sealed with AES-256-GCM under a
+          passphrase you choose. The passphrase is never stored and cannot be recovered.</p>
+        <label class="lbl" for="newPass">passphrase (8 characters or more)</label>
+        <input id="newPass" class="field" type="password" autocomplete="new-password">
+        <label class="lbl" for="newPass2">repeat it</label>
+        <input id="newPass2" class="field" type="password" autocomplete="new-password">
         <div class="row-btns">
           <button class="btn btn-primary" id="createKey">Create a key</button>
-          <a class="btn" href="wallet.html">Open the wallet</a>
+          <a class="btn btn-ghost" href="wallet.html">Open the wallet</a>
         </div>
+        <div class="log" id="keyMsg"></div>
+      </div>
+      <div id="lockedKey" class="hide">
+        <p class="muted">This browser holds the sealed key for
+          <span class="mono" id="lockedAddr" style="word-break:break-all"></span>.
+          Mining signs every winning digest with it, so it has to be unlocked first.</p>
+        <label class="lbl" for="unlockPass">passphrase</label>
+        <input id="unlockPass" class="field" type="password" autocomplete="current-password">
+        <div class="row-btns"><button class="btn btn-primary" id="unlockBtn">Unlock</button></div>
+        <div class="log" id="unlockMsg"></div>
+      </div>
+      <div id="legacyKey" class="hide">
+        <p class="muted">The key in this browser is still stored in <strong>plaintext</strong>, from
+          before this wallet encrypted anything. <a href="wallet.html">Open the wallet</a> to seal it
+          under a passphrase — it takes one step, your address does not change, and no coins move.
+          Mining will work again straight afterwards.</p>
       </div>
       <div id="haveKey" class="hide">
         <p class="muted" style="margin:0 0 .3rem">Rewards are paid to</p>
@@ -102,6 +129,11 @@
         <span class="muted">(of <span id="cores">?</span> cores)</span>
       </label>
       <input class="duty" type="range" id="threads" min="1" max="16" step="1" value="1">
+      <label class="lbl" style="margin-top:14px; text-transform:none; letter-spacing:0; font-size:.88rem">
+        <input type="checkbox" id="acOnly" checked>
+        Pause when this machine is running on battery
+      </label>
+      <p class="muted" id="powerNote" style="font-size:.82rem; margin:.3rem 0 0"></p>
     </div>
 
     <div class="grid g4" style="margin:24px 0">
@@ -138,10 +170,10 @@
 <script>CloudsForge.mountBar(document.getElementById('cf-bar'), { current: 'crypto' });</script>
 <script src="assets/api.js"></script>
 <script type="module">
-import { generateKey, importKey, emberStr } from './assets/wallet-core.js';
+import { emberStr } from './assets/wallet-core.js';
+import * as KS from './assets/keystore.js';       // shared with wallet.html, deliberately
 import { Miner } from './assets/mining/miner.js';
 
-const STORE = 'hearth.wallet.v1';          // shared with wallet.html, deliberately
 const $ = id => document.getElementById(id);
 const mode = $('mode');
 let key = null, miner = null;
@@ -156,20 +188,27 @@ function log(msg, cls) {
   while (box.childElementCount > 80) box.lastElementChild.remove();
 }
 
-async function loadKey() {
-  const raw = localStorage.getItem(STORE);
-  if (!raw) return null;
-  try { return await importKey(JSON.parse(raw).priv); }
-  catch { return null; }
+// Only one of these is on screen at a time; `haveKey` needs an opened key.
+const KEY_PANELS = ['noKey', 'lockedKey', 'legacyKey', 'haveKey'];
+function keyPanel(name) {
+  for (const p of KEY_PANELS) $(p).classList.toggle('hide', p !== name);
 }
 
 async function showKey(k) {
   key = k;
-  $('noKey').classList.add('hide');
-  $('haveKey').classList.remove('hide');
+  keyPanel('haveKey');
   $('controls').classList.remove('hide');
   $('addr').textContent = k.address;
   refreshBalance();
+}
+
+/** PBKDF2 takes a moment; say so rather than looking frozen. */
+async function working(btn, label, fn) {
+  const old = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = label;
+  try { return await fn(); }
+  finally { btn.disabled = false; btn.textContent = old; }
 }
 
 async function refreshBalance() {
@@ -183,11 +222,33 @@ async function refreshBalance() {
 }
 
 $('createKey').addEventListener('click', async () => {
-  const k = await generateKey();
-  localStorage.setItem(STORE, JSON.stringify({ priv: k.priv, address: k.address, created: Date.now() }));
-  log('Created a new key. Back it up from the wallet page.');
-  showKey(k);
+  const box = $('keyMsg');
+  box.textContent = '';
+  const p1 = $('newPass').value, p2 = $('newPass2').value;
+  if (p1.length < 8) { box.textContent = 'Passphrase must be at least 8 characters.'; return; }
+  if (p1 !== p2) { box.textContent = 'The two passphrases do not match.'; return; }
+  try {
+    const k = await working($('createKey'), 'Sealing…', () => KS.create(p1));
+    $('newPass').value = $('newPass2').value = '';
+    log('Created a new key, sealed under your passphrase. Back it up from the wallet page.');
+    showKey(k);
+  } catch (e) {
+    box.textContent = String(e && e.message || e);
+  }
 });
+
+$('unlockBtn').addEventListener('click', async () => {
+  const box = $('unlockMsg');
+  box.textContent = '';
+  try {
+    const k = await working($('unlockBtn'), 'Unlocking…', () => KS.unlock($('unlockPass').value));
+    $('unlockPass').value = '';
+    showKey(k);
+  } catch (e) {
+    box.textContent = String(e && e.message || e);
+  }
+});
+$('unlockPass').addEventListener('keydown', e => { if (e.key === 'Enter') $('unlockBtn').click(); });
 
 // ---- controls ----
 const cores = navigator.hardwareConcurrency || 4;
@@ -200,6 +261,9 @@ $('duty').addEventListener('input', e => {
   $('dutyLabel').textContent = e.target.value + '%';
   if (miner) miner.setDuty(e.target.value / 100);
 });
+$('acOnly').addEventListener('change', e => {
+  if (miner) miner.setPauseOnBattery(e.target.checked);
+});
 
 $('startBtn').addEventListener('click', async () => {
   if (!key) return;
@@ -208,6 +272,7 @@ $('startBtn').addEventListener('click', async () => {
     key,
     workers: Number($('threads').value),
     duty: Number($('duty').value) / 100,
+    pauseOnBattery: $('acOnly').checked,
   });
   miner.addEventListener('template', e => {
     $('s-height').textContent = '#' + (e.detail.height - 1);
@@ -226,7 +291,16 @@ $('startBtn').addEventListener('click', async () => {
   miner.addEventListener('rejected', e => log('Share rejected: ' + e.detail.err));
   miner.addEventListener('error', e => log('Error: ' + e.detail.message));
   miner.addEventListener('duty', e => {
-    if (e.detail.effective < e.detail.duty) log('Tab is in the background — mining at a trickle.');
+    const d = e.detail;
+    if (d.effective === 0) log('Running on battery — paused.');
+    else if (d.hidden) log('Tab is in the background — mining at a trickle.');
+  });
+  miner.addEventListener('power', e => {
+    const d = e.detail;
+    $('powerNote').textContent = !d.known
+      ? 'This browser does not report power state, so the pause above cannot take effect here. '
+        + 'Firefox and Safari removed the Battery Status API; Chrome and Edge have it.'
+      : d.onPower ? 'On mains power.' : 'On battery.';
   });
 
   $('startBtn').classList.add('hide');
@@ -269,8 +343,15 @@ $('stopBtn').addEventListener('click', stop);
     $('controls').classList.add('hide');
     return;
   }
-  const k = await loadKey();
-  if (k) showKey(k);
+  const stored = KS.peek();
+  if (stored.kind === 'locked') {
+    $('lockedAddr').textContent = stored.address || 'this browser';
+    keyPanel('lockedKey');
+  } else if (stored.kind === 'legacy') {
+    keyPanel('legacyKey');
+  } else {
+    keyPanel('noKey');
+  }
 })();
 </script>
 </body>

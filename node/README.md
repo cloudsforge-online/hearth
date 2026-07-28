@@ -1,15 +1,53 @@
 # hearthd — reference node (JavaScript)
 
 A **runnable full node, wallet and miner** for the Hearth network. This is the
-correctness-first *reference implementation* (see
-[why two implementations](../docs/why-two-implementations.md)); the fast
-production core lives in [`../rust/hearthd`](../rust/hearthd).
+correctness-first *reference implementation* and the only node that runs the
+network today (see [why two implementations](../docs/why-two-implementations.md));
+[`../rust/hearthd`](../rust/hearthd) is a benchmark and a set of libraries, not a
+second node.
 
 Zero third-party dependencies — Node's built-in `crypto`, `http`, and `net` only.
 Ed25519/SHA-256 run in OpenSSL under the hood.
 
+## ⚠ If you depend on `@cloudsforge/hearth-node` from npm, read this
+
+This directory is published as **`@cloudsforge/hearth-node`**, and for a while the
+registry and this source tree disagreed about consensus while both called
+themselves `0.1.0`. That is not a packaging annoyance; it silently produces
+signatures that verify on one build and not the other.
+
+**What diverged.** Published `0.1.0` predates [application
+records](../docs/records.md). Its `txBody()` — the object that is hashed to make
+a txid and signed to authorise a spend — emits six fields and never a `records`
+key, and it has no `MAX_TX_BYTES`, no `txRecords` and no `validateRecords`. This
+tree's `txBody()` (`src/tx.js`) appends `records` whenever a transaction carries
+any. So a record-carrying transaction **hashes to a different txid on the two
+builds**, and a signature over one body is invalid under the other. Nothing
+errors; the transaction is simply rejected by whichever side did not build it.
+
+`0.1.0` also carries the old `MIN_TARGET` (~2⁻²⁰), which is the difficulty
+ceiling this tree raised — see the note in `src/params.js`.
+
+**Who this hits.** ForgeKeyvault signs EMBER spends against the pinned registry
+build (`forge-keyvault/services/forge-keyvault/src/signing.ts`) while
+`docker-compose` runs the testnet from *this* directory. It currently refuses
+transactions carrying `records` outright, which is the correct fail-closed
+response to the skew, and means the skew is contained rather than live.
+
+**Where it stands.** This tree is now `0.2.0` and published as such, so the
+registry no longer serves pre-records code as `latest` and the version number
+means something again. It is a deliberate *minor* bump rather than a patch:
+`records` in the signed body is a consensus change, so it must not be picked up
+silently by a range like `^0.1.0`. Consumers therefore keep resolving `0.1.0`
+until someone widens the range on purpose — and doing so requires re-checking
+every place that builds or verifies a transaction body.
+
+**Rule for anyone changing `src/`:** the published package is consensus. Bump the
+version in the same commit as any change to `tx.js`, `crypto.js`, `chain.js` or
+`params.js`, and never reuse one.
+
 ## What it does
-- Homefire proof-of-work (memory-hard + non-outsourceable)
+- Homefire proof-of-work (memory-hard; the proof must be signed by the key its coinbase pays)
 - UTXO ledger with Ed25519-signed transactions and stealth-ready addresses
 - Emission with the Commons split, EIP-1559-style base-fee **burn**, LWMA difficulty
 - P2P block/tx gossip and headers-behind sync (TCP)
@@ -93,6 +131,7 @@ node test/unit.js     # primitives: crypto, tx, pow, emission, difficulty
 node test/e2e.js      # mine, pay, verify ledger/burn/persistence end to end
 node test/records.js  # record consensus rules, sealed boxes, a whole conversation
 node test/browser-pow.js # the browser miner's hashing vs the node's, digest for digest
+node test/keystore.js    # the web wallet's key sealing, and the v1 plaintext migration
 node test/mining-api.js  # mine a block over HTTP the way a browser tab does
 node test/p2p-fork.js # partition two nodes and prove the reorg
 ```

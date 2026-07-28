@@ -150,11 +150,15 @@ class Chain extends EventEmitter {
     return bal;
   }
 
+  /** Every unspent output an address controls, with what a spender needs to
+   *  know about it. `coinbase`/`height` used to be dropped here, so the only
+   *  caller — the CLI wallet — could not tell a spendable coin from a maturing
+   *  one and built transactions the chain then rejected at tx.js. */
   utxosFor(address) {
     const out = [];
     for (const [k, o] of this.utxo) if (o.address === address) {
       const [txid, vout] = k.split(':');
-      out.push({ txid, vout: Number(vout), amount: o.amount });
+      out.push({ txid, vout: Number(vout), amount: o.amount, coinbase: !!o.coinbase, height: o.height });
     }
     return out;
   }
@@ -231,15 +235,27 @@ class Chain extends EventEmitter {
   }
 
   // ---- validation ---------------------------------------------------------
-  _validate(block, parent, utxo) {
+  /**
+   * Validate a block against `parent` and a UTXO snapshot.
+   *
+   * The order of the checks below is a DoS property, not a style choice. Cost
+   * per check, in round numbers: the header rules are a handful of comparisons
+   * and a walk of at most 60 stored headers; `verifyPow` is a full Homefire
+   * evaluation (~8,450 sequential SHA-256 rounds, ~5ms of a core); the canonical
+   * serialization is up to MAX_BLOCK_BYTES of JSON; the transaction loop is up
+   * to MAX_BLOCK_TXS signature verifications. So everything an anonymous peer
+   * can make us do is gated behind the proof, and the proof itself is gated
+   * behind the checks that cost nothing.
+   *
+   * `pow` lets a caller that has ALREADY verified the proof hand the result in.
+   * The fork path in _ingest does exactly that, and used to pay for a second
+   * full Homefire evaluation of the same header for no reason.
+   */
+  _validate(block, parent, utxo, pow = null) {
     const hdr = block.header;
     if (hdr.height !== parent.height + 1) return { ok: false, err: 'bad height' };
     if (!Array.isArray(block.txs) || block.txs.length === 0) return { ok: false, err: 'no txs' };
     if (block.txs.length > P.MAX_BLOCK_TXS) return { ok: false, err: 'block too large' };
-    // A count limit is not a size limit. Checked before the signature work below,
-    // so an oversized block costs a serialization and not 5,000 verifications.
-    if (Buffer.byteLength(C.canonical(block)) > P.MAX_BLOCK_BYTES)
-      return { ok: false, err: 'block exceeds max bytes' };
 
     // timestamp bounds (H2)
     const now = Math.floor(Date.now() / 1000);
@@ -248,8 +264,14 @@ class Chain extends EventEmitter {
 
     if (hdr.target !== this._nextTarget(parent.id)) return { ok: false, err: 'wrong difficulty target' };
 
-    const pow = BLOCK.verifyPow(block);
+    if (!pow) pow = BLOCK.verifyPow(block);
     if (!pow.ok) return pow;
+
+    // A count limit is not a size limit. Checked after the proof and before the
+    // signature work below, so an oversized block costs one serialization and
+    // not 5,000 verifications — and costs an unproven peer nothing at all.
+    if (Buffer.byteLength(C.canonical(block)) > P.MAX_BLOCK_BYTES)
+      return { ok: false, err: 'block exceeds max bytes' };
 
     // transactions
     const scratch = new Map(utxo);
@@ -328,9 +350,10 @@ class Chain extends EventEmitter {
     const pw = BLOCK.verifyPow(block);
     if (!pw.ok) return pw;
 
-    // fork: validate against the state at the block's parent
+    // fork: validate against the state at the block's parent. The proof is
+    // already verified above; hand it in rather than paying for it twice.
     const parentState = this._stateAt(hdr.prevHash);
-    const r = this._validate(block, parent, parentState.utxo);
+    const r = this._validate(block, parent, parentState.utxo, pw);
     if (!r.ok) return r;
     const work = parent.work + this._blockWork(hdr.target);
     this.store.set(id, { block, height: hdr.height, work, id });

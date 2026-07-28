@@ -1,12 +1,12 @@
 /* The browser miner: a pool of workers, a template, and the one signature that
  * makes the reward yours.
  *
- * Homefire is non-outsourceable — the winning digest has to be Ed25519-signed by
- * the key the coinbase pays. So this file, and not the node, holds the key. The
- * node hands out a candidate that pays whoever asked for it; if you asked with
- * someone else's public key you have just mined them a block. There is no pool
- * to join and no operator to trust, because there is nothing an operator could
- * do with your work.
+ * The winning digest has to be Ed25519-signed by the key the coinbase pays. So
+ * this file, and not the node, holds the key: the node hands out a candidate
+ * that pays whoever asked for it, and if you ask with someone else's public key
+ * you have just mined them a block. Work handed to you cannot be redirected —
+ * which is a different and weaker property than non-outsourceability, because
+ * the private key never enters the hash loop. See docs/mining.md.
  *
  * The private key never leaves this page. It is not sent on submit — only the
  * signature over the digest is.
@@ -19,13 +19,17 @@ const DEFAULT_WORKERS = () => Math.max(1, (navigator.hardwareConcurrency || 4) -
 
 export class Miner extends EventTarget {
   /** @param {{rpc: string, key: {priv: string, pub: string, address: string}}} opts */
-  constructor({ rpc, key, workers, duty = 0.6 }) {
+  constructor({ rpc, key, workers, duty = 0.6, pauseOnBattery = true }) {
     super();
     this.rpc = rpc.replace(/\/$/, '');
     this.key = key;
     this.seed = seedFromPem(key.priv);       // 32-byte hex, for signing
     this.workerCount = workers || DEFAULT_WORKERS();
     this.duty = duty;
+    this.pauseOnBattery = pauseOnBattery;
+    this.onPower = true;                     // assume mains until told otherwise
+    this.powerKnown = false;                 // …and say so, rather than implying we checked
+    this._battery = null;
     this.workers = [];
     this.running = false;
     this.template = null;
@@ -47,6 +51,7 @@ export class Miner extends EventTarget {
     this.running = true;
     this.emit('state', { running: true });
     document.addEventListener('visibilitychange', this._visibility);
+    await this._watchPower();
     await this._refresh();
     // The tip moving invalidates every in-flight nonce, so follow new blocks
     // rather than polling on a timer we would have to keep short to be useful.
@@ -62,6 +67,7 @@ export class Miner extends EventTarget {
     this.workers = [];
     if (this._sse) { this._sse.close(); this._sse = null; }
     if (this._refreshTimer) { clearInterval(this._refreshTimer); this._refreshTimer = null; }
+    if (this._battery && this._onCharging) this._battery.removeEventListener('chargingchange', this._onCharging);
     document.removeEventListener('visibilitychange', this._visibility);
     this.hashrate = 0;
     this.emit('state', { running: false });
@@ -69,12 +75,63 @@ export class Miner extends EventTarget {
 
   setDuty(d) { this.duty = d; this._applyDuty(); }
 
-  /** Background tabs are throttled by the browser anyway; drop to a trickle so
-   *  we are not fighting it, and so a forgotten tab is not eating a battery. */
+  setPauseOnBattery(on) { this.pauseOnBattery = !!on; this._applyDuty(); }
+
+  /**
+   * Watch mains power, where the browser will tell us.
+   *
+   * The Battery Status API is Chromium-only — Firefox and Safari removed it as a
+   * fingerprinting surface. Where it is missing this stays `powerKnown: false`
+   * and mining runs normally, which is why the UI has to say which of the two it
+   * got rather than promising power-awareness everywhere.
+   *
+   * A machine with no battery reports `charging: true`, which is the answer we
+   * want for a desktop.
+   */
+  async _watchPower() {
+    if (typeof navigator.getBattery !== 'function') {
+      this.emit('power', { onPower: true, known: false });
+      return;
+    }
+    try { this._battery = await navigator.getBattery(); }
+    catch { this.emit('power', { onPower: true, known: false }); return; }
+    this._onCharging = () => {
+      this.onPower = this._battery.charging;
+      this._applyDuty();
+      this.emit('power', { onPower: this.onPower, known: true, level: this._battery.level });
+    };
+    this._battery.addEventListener('chargingchange', this._onCharging);
+    this.powerKnown = true;
+    this._onCharging();
+  }
+
+  /**
+   * Politeness, decided in one place.
+   *
+   *   - Unplugged: stop. A miner that quietly drains someone's laptop is the
+   *     behaviour that makes browser mining a dirty word, and the reward from a
+   *     few minutes on battery is not worth the trade.
+   *   - Background tab: a trickle. The browser throttles timers there anyway,
+   *     so fighting it just burns power for very little hashing.
+   *
+   * There is deliberately no "machine is idle" term. A web page cannot see
+   * whether someone is at the keyboard — `requestIdleCallback` means "this tab's
+   * event loop is quiet", which is always true for a page that is only mining,
+   * and the Idle Detection API is permission-gated and Chromium-only.
+   * `document.hidden` is the strongest honest signal available here.
+   */
+  effectiveDuty() {
+    if (this.pauseOnBattery && this.powerKnown && !this.onPower) return 0;
+    return document.hidden ? Math.min(this.duty, 0.15) : this.duty;
+  }
+
   _applyDuty() {
-    const effective = document.hidden ? Math.min(this.duty, 0.15) : this.duty;
+    const effective = this.effectiveDuty();
     for (const w of this.workers) w.postMessage({ type: 'tune', duty: effective });
-    this.emit('duty', { duty: this.duty, effective });
+    this.emit('duty', {
+      duty: this.duty, effective, hidden: document.hidden,
+      onPower: this.onPower, powerKnown: this.powerKnown,
+    });
   }
 
   async _refresh() {
@@ -92,7 +149,7 @@ export class Miner extends EventTarget {
   _dispatch() {
     if (!this.workers.length) this._spawn();
     const t = this.template;
-    const effective = document.hidden ? Math.min(this.duty, 0.15) : this.duty;
+    const effective = this.effectiveDuty();
     this.workers.forEach((w, i) => {
       w.postMessage({ type: 'tune', duty: effective });
       w.postMessage({

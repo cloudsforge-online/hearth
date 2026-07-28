@@ -20,4 +20,11 @@ COPY . /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/templates/default.conf.template
 ENV NGINX_ENVSUBST_FILTER=HEARTH_
 ENV HEARTH_RPC_UPSTREAM=hearth-testnet-seed:8645
+# The CSP connect-src allowlist. Same-origin covers the proxied node at /rpc;
+# the Lantern host is where assets/obs.js reports client errors, and loopback
+# keeps the documented `?rpc=http://localhost:8645` override usable. Override
+# this when deploying under a different apex, or obs.js reports go nowhere.
+# Do not simply unset it: envsubst leaves an unset variable in the config
+# verbatim, so nginx reads it as one of its own and refuses to start.
+ENV HEARTH_CSP_CONNECT="'self' https://lantern.cloudsforge.online http://localhost:* http://127.0.0.1:*"
 EXPOSE 80

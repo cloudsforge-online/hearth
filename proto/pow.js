@@ -11,10 +11,19 @@
  *      scratchpad in RAM. Compute-only ASICs gain little; the bottleneck is
  *      commodity memory bandwidth, which your laptop already has.
  *
- *   2. NON-OUTSOURCEABILITY — a valid solution must be SIGNED by the same key
- *      that receives the block reward. You cannot hand raw hashing to a pool
- *      operator without also handing them the power to steal your reward, so
- *      centralized pools (the thing that recentralizes PoW) don't form.
+ *   2. A PROOF THAT CANNOT BE REDIRECTED — a valid solution must be SIGNED by
+ *      the same key that receives the block reward, so a candidate built for
+ *      your public key is worthless to anyone else and work handed to you
+ *      cannot be taken from you.
+ *
+ * This file used to call (2) NON-OUTSOURCEABILITY and claim it stops pools
+ * forming. It does not, and neither does the production algorithm this models.
+ * Only the coinbase PUBLIC key is committed into the seed; the private key
+ * signs afterwards, once a nonce has already won. So a pool operator can hand
+ * out the header pre-image together with its OWN public key, take (nonce,
+ * digest) pairs back from hashers who genuinely cannot steal the reward, and
+ * sign the blocks itself. A real non-outsourceable puzzle needs the private key
+ * inside the hash loop. See docs/mining.md.
  */
 
 const crypto = require('crypto');
@@ -69,9 +78,10 @@ function bitsToTarget(bits) {
 }
 
 /**
- * Attempt one nonce. `coinbaseKey` is an Ed25519 KeyObject pair. A solution
- * is only valid if it is signed by the coinbase key — this is the
- * non-outsourceable check.
+ * Attempt one nonce. `coinbaseKey` is an Ed25519 KeyObject pair. A solution is
+ * only valid if it is signed by the coinbase key — that is what stops a winning
+ * digest being redeemed by anyone else. Note where the private key is used:
+ * after the digest, never inside the hash. See the header note.
  */
 function attempt(headerBytes, nonce, coinbaseKey, target) {
   const nb = Buffer.alloc(8);

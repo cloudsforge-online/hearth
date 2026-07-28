@@ -76,10 +76,24 @@ class Wallet {
     if (!Number.isInteger(amountSparks) || amountSparks <= 0) throw new Error('invalid amount');
     const fee = TX.requiredFee({ records });
     const target = amountSparks + fee;
-    // gather spendable utxos
+    // Gather SPENDABLE utxos. An immature coinbase is rejected by
+    // TX.validateNormal, so selecting one builds a transaction that is signed,
+    // broadcast and refused — the wallet said "insufficient funds" only when it
+    // had genuinely nothing, and otherwise produced a payment that could not
+    // land. Two shapes arrive here: the local Chain tags outputs `coinbase` and
+    // `height`, while hearth-cli passes a shim over `GET /address/:addr`, which
+    // has already worked the maturity out and reports `spendable`. Prefer the
+    // node's own answer; otherwise compute it, since an output that is not a
+    // coinbase has nothing to mature.
+    const spendHeight = (chain.height != null ? chain.height : 0) + 1;
+    const isSpendable = (u) => {
+      if (u.spendable != null) return u.spendable;
+      if (!u.coinbase) return true;
+      return u.height != null && (spendHeight - u.height) >= P.COINBASE_MATURITY;
+    };
     let pool = [];
     for (const k of this.keys) {
-      for (const u of chain.utxosFor(k.address)) pool.push({ ...u, key: k });
+      for (const u of chain.utxosFor(k.address)) if (isSpendable(u)) pool.push({ ...u, key: k });
     }
     pool.sort((a, b) => b.amount - a.amount);
     const inputs = [];
@@ -89,7 +103,7 @@ class Wallet {
       sum += u.amount;
       if (sum >= target) break;
     }
-    if (sum < target) throw new Error(`insufficient funds: have ${sum}, need ${target}`);
+    if (sum < target) throw new Error(`insufficient spendable funds: have ${sum}, need ${target} (freshly mined coins are locked for ${P.COINBASE_MATURITY} blocks)`);
 
     const outputs = [{ address: toAddress, amount: amountSparks }];
     const change = sum - target;

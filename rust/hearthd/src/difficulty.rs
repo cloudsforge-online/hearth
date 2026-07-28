@@ -1,9 +1,20 @@
-//! Difficulty retargeting for the production core.
+//! Difficulty retargeting — a sketch, not the consensus rule.
 //!
-//! Difficulty is expressed as "leading zero bits" a Homefire digest must have
-//! (see `pow::meets`). A linearly-weighted moving average (LWMA) of recent solve
-//! times nudges the bits up when blocks come too fast and down when too slow,
-//! keeping the network near its target block time.
+//! Difficulty here is "leading zero bits" a Homefire digest must have (see
+//! `pow::meets`). A linearly-weighted average of recent solve times nudges the
+//! bits up when blocks come too fast and down when too slow.
+//!
+//! # NOT CONSENSUS-COMPATIBLE
+//!
+//! Consensus (`node/src/chain.js::_nextTarget`) retargets a full 256-bit target:
+//! it averages the last 60 block targets, scales by the weighted average solve
+//! time over the target block time, and clamps to [MIN_TARGET, MAX_TARGET]. That
+//! is a continuous adjustment. This function moves by exactly **one bit** in
+//! either direction, which is a factor of two per block and cannot track a
+//! target block time at all. It also ignores the magnitude of the miss.
+//!
+//! Freezing this to match is a prerequisite for the Rust core touching a chain.
+//! See docs/why-two-implementations.md.
 
 /// Compute the next difficulty (in leading zero bits) from recent solve times.
 ///

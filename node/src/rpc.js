@@ -153,6 +153,12 @@ class RPC {
       }
       return json(res, 404, { err: 'no route' });
     } catch (e) {
+      if (e && e.tooLarge) {
+        this.node.warn('rpc body too large', { method: req.method, path: p, limit: MAX_BODY_BYTES });
+        json(res, 413, { err: 'request body too large', maxBytes: MAX_BODY_BYTES });
+        req.destroy();
+        return;
+      }
       // this used to be the whole story of a failing RPC: a 500 to the caller
       // and nothing at all on the node
       this.node.error('rpc request failed', {
@@ -248,10 +254,36 @@ class RPC {
   }
 }
 
+/**
+ * The largest POST body this API can legitimately receive is one transaction at
+ * MAX_TX_BYTES, wrapped in a `{tx: …}` envelope or a `{method,params}` one. This
+ * had no ceiling at all: under `access-control-allow-origin: *`, any page in any
+ * browser could stream gigabytes into a node's heap, and so could anyone with
+ * curl. Headroom over MAX_TX_BYTES, and nothing more.
+ */
+const MAX_BODY_BYTES = P.MAX_TX_BYTES + 8_192;
+
+class BodyTooLarge extends Error {
+  constructor() { super('request body too large'); this.tooLarge = true; }
+}
+
 function readBody(req) {
   return new Promise((resolve, reject) => {
-    let b = '';
-    req.on('data', d => (b += d));
+    let b = '', bytes = 0, over = false;
+    req.on('data', d => {
+      if (over) return;
+      bytes += d.length;
+      if (bytes > MAX_BODY_BYTES) {
+        // Stop accumulating immediately, but leave the socket alive long enough
+        // to answer 413 — a caller that is merely wrong deserves to be told so.
+        // The handler destroys it once the response is out.
+        over = true;
+        req.pause();
+        reject(new BodyTooLarge());
+        return;
+      }
+      b += d;
+    });
     req.on('end', () => { try { resolve(b ? JSON.parse(b) : {}); } catch (e) { reject(e); } });
     req.on('error', reject);
   });

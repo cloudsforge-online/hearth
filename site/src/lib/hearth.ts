@@ -21,7 +21,9 @@ export const HEARTH = {
   ticker: 'EMBER',
   tagline: 'Money Mined at Home',
   pitch: 'A people-mined, ASIC-resistant proof-of-work cryptocurrency built to spend, not hoard.',
-  sub: 'Mine EMBER on the computer you already own — no farms, no pools, no premine.',
+  // Not "no pools": nothing in consensus prevents one (see MINING_POINTS below).
+  // What is true is that there is no pool to sign up to and none is needed.
+  sub: 'Mine EMBER on the computer you already own — no rig, no pool signup, no premine.',
   github: REPO,
   whitepaper: `${REPO}/blob/main/WHITEPAPER.md`,
   // The explorer is the root of the `explorer.` bundle now that the second,
@@ -44,7 +46,7 @@ export const NAV_LINKS = [
 /** Hero stat strip — all directly from the whitepaper / coinnomics constants. */
 export const HERO_STATS = [
   { k: '15s', l: 'block time' },
-  { k: 'CPU', l: 'only · non-outsourceable' },
+  { k: 'CPU', l: 'memory-hard · ASIC-resistant' },
   { k: '0%', l: 'premine · fair launch' },
   { k: '10%', l: 'per block to the Commons' },
 ] as const
@@ -55,9 +57,9 @@ export const HERO_STATS = [
  */
 export const WHY_ROWS = [
   {
-    problem: 'Mining centralized into ASIC farms & pools',
+    problem: 'Mining centralized into ASIC farms',
     solution:
-      'Homefire PoW: RandomX-class, memory-hard and non-outsourceable. A farm earns no more per dollar than your laptop, and pools can’t form.',
+      'Homefire PoW: memory-hard and CPU-friendly, so a farm earns little more per dollar than the laptop you already own. Work handed to you also cannot be redirected — the block pays the key that signed the proof.',
   },
   {
     problem: 'Coins behave like “gold” you hoard',
@@ -66,7 +68,8 @@ export const WHY_ROWS = [
   },
   {
     problem: 'Slow & expensive to pay with',
-    solution: '15-second blocks, sub-cent fees, and instant retail settlement over Tab payment channels.',
+    solution:
+      '15-second blocks and a sub-cent fee that is burned rather than auctioned. Tab payment channels for instant retail settlement are a signed state machine in the Rust core today, not yet a thing you can spend through.',
   },
   {
     problem: 'The “fee cliff” — security dies when rewards end',
@@ -79,7 +82,7 @@ export const WHY_ROWS = [
   {
     problem: 'Too hard for normal humans',
     solution:
-      'One app — node, wallet and polite miner in a single download — a web wallet, a block explorer, and a two-line “Accept EMBER” SDK.',
+      'A web wallet and a browser miner that need nothing installed, a live block explorer, and a reference node that is a full node, a wallet and a miner in one process.',
   },
 ] as const
 
@@ -90,7 +93,7 @@ export const COIN_FACTS = [
   { k: 'Ticker', v: 'EMBER' },
   { k: 'Smallest unit', v: '1 EMBER = 100,000,000 sparks' },
   { k: 'Block time', v: '15 seconds' },
-  { k: 'Proof of work', v: 'Homefire — CPU-only, non-outsourceable' },
+  { k: 'Proof of work', v: 'Homefire — memory-hard, CPU-friendly, ASIC-resistant' },
   { k: 'Emission', v: 'Halving-free decay → perpetual tail' },
   { k: 'Commons share', v: '10% of every block reward' },
   { k: 'Base fee', v: 'Burned on every transaction' },
@@ -108,23 +111,33 @@ export const EMISSION_ROWS = [
   { yr: '30', reward: '0.30', issued: '631,152', burned: '536,479', supply: '25,784,267', net: '0.37' },
 ] as const
 
-/** Mining — Homefire pillars, from whitepaper §2. */
+/**
+ * Mining — what Homefire actually does, checked against node/src/pow.js.
+ *
+ * These four claims used to overstate it in two ways worth remembering, because
+ * both are easy to write again. Homefire does not compile a program per nonce
+ * the way RandomX does — it is chained SHA-256 over a scratchpad — and it is not
+ * non-outsourceable: pow.js binds only the coinbase PUBLIC key into the seed, so
+ * a pool operator can hand out work under its own key and sign the blocks
+ * itself. What is true is that work handed to a hasher cannot be redirected by
+ * that hasher, which is a real property and a smaller one.
+ */
 export const MINING_POINTS = [
   {
-    title: 'RandomX-class & memory-hard',
-    body: 'Each nonce compiles a program that runs against a large scratchpad — a random walk that reads and writes memory. Commodity CPUs are the fair-value hardware; there is no super-linear farm advantage to buy.',
+    title: 'Memory-hard, not compute-only',
+    body: 'Every nonce fills a 64 KiB scratchpad with chained SHA-256, then takes a pseudo-random walk that reads and rewrites it, and derives the digest from the whole pad. Memory latency is the bottleneck, not gate count — which is what keeps commodity CPUs close to fair value and blunts the advantage a farm can buy.',
   },
   {
-    title: 'CPU-only, non-outsourceable',
-    body: 'The puzzle binds work to the miner who’d be paid, so a hasher can’t sell their work to a pool operator. Pools can’t form — which is exactly what keeps mining spread across ordinary people.',
+    title: 'Your work cannot be redirected',
+    body: 'The proof has to be Ed25519-signed by the key the coinbase pays, so a block you find can only ever pay you. That stops your work being stolen; it does not make mining impossible to pool, and we would rather say so than imply otherwise.',
   },
   {
     title: 'Polite mining',
-    body: 'The app mines only on AC power or when your machine is idle, throttled and low-variance. Money mined in the background of the computer you already own — no rigs, no roar, no rented warehouse.',
+    body: 'The effort slider is a real duty cycle — the workers sleep through the rest of it — a background tab drops to a trickle, and in browsers that report power state the miner pauses the moment you unplug. Money mined in the background of the computer you already own, with the fans staying quiet.',
   },
   {
     title: 'One app',
-    body: 'A single download is a full node, a wallet and the miner at once. No stratum config, no pool signup, no separate wallet — start the app and you’re on the network.',
+    body: 'The reference node is a full node, a wallet and a miner in one process, and the browser miner is the same proof-of-work in a tab. No stratum config, no pool signup, no separate wallet.',
   },
 ] as const
 

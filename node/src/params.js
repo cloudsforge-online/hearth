@@ -54,7 +54,30 @@ module.exports = {
   // Easy on purpose so the first blocks come in ~seconds on one machine.
   // ~8 leading zero bits ⇒ ≈1/256 chance/hash ⇒ a block every ~1–2s at dev hashrate
   GENESIS_TARGET: '00ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
-  MIN_TARGET: '00000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+  // The hardest target the retarget is allowed to reach, i.e. the difficulty
+  // CEILING. This used to be ~2^-20, which capped a block at ~1.1M attempts.
+  // At a couple of hundred hashes per second per core that is roughly 300–500
+  // cores of total network hashrate — past that, _nextTarget (chain.js) clamps,
+  // blocks come in faster than the 15s target, and emission permanently
+  // accelerates because the schedule is indexed by height, not by time. For a
+  // coin whose whole thesis is that ordinary people mine it, a ceiling that
+  // binds at a few hundred CPUs is the launch blocker.
+  //
+  // 2^-64 instead: ~1.8e19 attempts per block, ~1.2e18 H/s sustained. Every CPU
+  // on Earth is on the order of 1e13 H/s, so this is five orders of magnitude of
+  // headroom and the clamp is what it should be — an arithmetic backstop against
+  // a runaway retarget, not a cap on how big the network may get.
+  //
+  // CONSEQUENCE, PLAINLY: this is a hard consensus break and it discards every
+  // existing chain. `_validate` recomputes the expected target for each block
+  // (`hdr.target !== this._nextTarget(parent.id)`), and disk replay runs the same
+  // validation — so a data directory containing any block whose target was
+  // clamped at the old ceiling will now fail to load, and two nodes on either
+  // side of this change will reject each other's blocks with 'wrong difficulty
+  // target'. There is no migration and none is wanted: nothing but throwaway
+  // testnets has ever run. Wipe the volumes (`docker compose down -v`) and mine
+  // a fresh genesis. Doing this before launch is free; doing it after is a fork.
+  MIN_TARGET: '0000000000000000ffffffffffffffffffffffffffffffffffffffffffffffff',
   MAX_TARGET: '03ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
 
   // ---- safety limits (consensus + DoS) ----
@@ -78,6 +101,26 @@ module.exports = {
   P2P_MAX_BLOCKS: 200,                      // blocks served per getblocks round trip
   P2P_MAX_ORPHANS: 32,                      // parentless blocks held while ancestors arrive (× P2P_MAX_LINE = memory bound)
   P2P_RESYNC_MS: 20_000,                    // pull from every peer this often (converges equal-height forks)
+  // Verifying one proof costs a full Homefire evaluation — the same ~8,450
+  // sequential SHA-256 rounds a miner pays per attempt, so ~5ms of a core here.
+  // A peer may put P2P_MAX_BLOCKS of them in a single frame and pipeline frames
+  // as fast as the wire allows, which is a free remote DoS: one socket can pin
+  // a core with garbage that fails on the very check it paid for.
+  //
+  // Two limits, because they answer different attacks, and both meter WASTED
+  // verification only — p2p.js refunds the token whenever a block turns out to
+  // be useful or to have cost no hashing at all. That matters: initial sync is
+  // the one time an honest peer legitimately pushes thousands of blocks at us as
+  // fast as the wire allows, and a flat rate cap would turn a long chain into an
+  // hours-long sync while stopping nothing an attacker cares about.
+  //
+  // The token bucket bounds the STEADY rate of junk an anonymous peer can make
+  // us hash; the burst is one full getblocks page. The invalid-block budget
+  // bounds the TOTAL before disconnection — 16 × ~5ms is the entire wasted-CPU
+  // budget of a hostile connection, after which it is gone.
+  P2P_BLOCK_VERIFY_BURST: 200,              // wasted proofs a peer may buy back-to-back
+  P2P_BLOCK_VERIFY_PER_S: 25,               // …then this many per second, sustained
+  P2P_MAX_INVALID_BLOCKS: 16,               // invalid blocks before the peer is dropped
   MEMPOOL_MAX_TXS: 50_000,                  // cap pending txs (DoS)
 
   // ---- special addresses ----

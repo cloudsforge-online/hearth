@@ -17,6 +17,7 @@ class Miner {
     this.hashes = 0;
     this.hashrate = 0;
     this._rateStart = 0;
+    this._sel = null;        // memoized tx selection, see _selection()
   }
 
   start() { if (!this.running) { this.running = true; this._rateStart = Date.now(); this._mineOne(); } }
@@ -29,17 +30,21 @@ class Miner {
   }
 
   /**
-   * A candidate block whose coinbase pays whoever holds `coinbasePub`.
+   * The transactions the next block would carry, and the tips they pay.
    *
-   * Split out of `_candidate` for remote miners — a browser signs the winning
-   * digest itself, so the node never sees its private key and cannot mine on its
-   * behalf. That is not a convenience: Homefire is non-outsourceable, so a
-   * candidate built for someone else's key is worthless to this node. It can
-   * only ever hand out work that pays the requester.
+   * Memoized on (tip, mempool version) because the answer does not depend on who
+   * the block pays — only on the chain and the mempool. That matters: building
+   * it copies the ENTIRE UTXO set to validate the selection against, and the
+   * only caller that is reachable from outside the process is
+   * `GET /mining/template`, which is unauthenticated and served under
+   * `access-control-allow-origin: *`. Uncached, every anonymous request bought
+   * an O(utxo-set) allocation; cached, a flood of them costs one.
    */
-  candidateFor(coinbasePubHex, coinbaseAddress) {
+  _selection(height) {
     const { chain, mempool } = this.node;
-    const height = chain.height + 1;
+    const key = chain.tipId + ':' + mempool.version;
+    if (this._sel && this._sel.key === key) return this._sel.val;
+
     const picked = mempool.select();
     // Total fees and the burned portion, from the selected txs. The burn is per
     // tx, not a flat count × base fee: a tx carrying records burns its data fee
@@ -55,7 +60,23 @@ class Miner {
       burnable += r.required;
       valid.push(tx);
     }
-    const tips = totalFee - burnable;
+    const val = { valid, tips: totalFee - burnable };
+    this._sel = { key, val };
+    return val;
+  }
+
+  /**
+   * A candidate block whose coinbase pays whoever holds `coinbasePub`.
+   *
+   * Split out of `_candidate` for remote miners — a browser signs the winning
+   * digest itself, so the node never sees its private key and cannot mine on its
+   * behalf. A candidate built for someone else's key is worthless to this node:
+   * the coinbase pays that key, and the proof has to be signed by it.
+   */
+  candidateFor(coinbasePubHex, coinbaseAddress) {
+    const { chain } = this.node;
+    const height = chain.height + 1;
+    const { valid, tips } = this._selection(height);
     const coinbase = TX.coinbase(height, coinbaseAddress, tips);
     const txs = [coinbase, ...valid];
     const header = {

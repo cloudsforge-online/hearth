@@ -1,9 +1,18 @@
-//! Homefire proof-of-work (production core).
+//! Homefire proof-of-work — memory-hard core.
 //!
-//! Memory-hard: fill a scratchpad and take a pseudo-random walk that reads and
-//! mutates it, deriving the digest from the whole pad. This mirrors the JS
-//! reference implementation's algorithm. Dev-tuned sizes; production uses a
+//! Fill a scratchpad and take a pseudo-random walk that reads and mutates it,
+//! deriving the digest from the whole pad. Dev-tuned sizes; production uses a
 //! ~2 GiB dataset and more walk steps.
+//!
+//! # NOT CONSENSUS-COMPATIBLE
+//!
+//! The *shape* mirrors `node/src/pow.js`, but the seed does not. Consensus binds
+//! `(headerCoreHash, nonce, coinbasePubHex)`; this module hashes whatever seed
+//! bytes it is handed and the binary never puts the coinbase public key in them.
+//! A digest from here therefore does not match the chain's for the same header,
+//! and a "valid" proof produced with this code would be rejected by every node
+//! on the network. Reconcile before wiring this to a block.
+//! See docs/why-two-implementations.md.
 
 use crate::sha256::sha256;
 
