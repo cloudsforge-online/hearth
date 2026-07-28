@@ -30,7 +30,9 @@ group('address decoding');
 const addr = (n) => '0x' + n.toString(16).padStart(40, '0');
 eq(P.precompileIndex(addr(1)), 1, '0x..01 is precompile 1');
 eq(P.precompileIndex(addr(5)), 5, '0x..05 is precompile 5');
-eq(P.precompileIndex(addr(6)), null, '0x..06 is not a v1 precompile — bn128 is out of scope');
+eq(P.precompileIndex(addr(6)), 6, '0x..06 is bn128 add');
+eq(P.precompileIndex(addr(9)), 9, '0x..09 is blake2f');
+eq(P.precompileIndex(addr(10)), null, '0x..0a is an ordinary account, not a precompile');
 eq(P.precompileIndex(addr(0)), null, '0x..00 is not a precompile');
 eq(P.precompileIndex(addr(0x0101)), null, 'a non-zero high byte disqualifies an address');
 eq(P.precompileIndex(buf('00'.repeat(19) + '04')), 4, 'a 20-byte Buffer decodes');
@@ -38,10 +40,19 @@ eq(P.precompileIndex(buf('00'.repeat(18) + '04')), null, 'a 19-byte address is n
 eq(P.precompileIndex('nonsense'), null, 'garbage decodes to nothing');
 eq(P.precompileIndex(null), null, 'null decodes to nothing');
 ok(P.isPrecompile(addr(3)), 'isPrecompile agrees');
-ok(!P.isPrecompile(addr(9)), 'isPrecompile rejects 0x09');
+ok(!P.isPrecompile(addr(10)), 'isPrecompile rejects 0x0a');
 eq(P.precompileAt(addr(2)).name, 'sha256', 'precompileAt names the right one');
-eq(P.precompileAt(addr(9)), null, 'precompileAt returns null for an ordinary account');
-eq(Object.keys(P.PRECOMPILES).length, 5, 'exactly five precompiles ship in v1');
+eq(P.precompileAt(addr(8)).name, 'bn128Pairing', 'precompileAt names the pairing check');
+eq(P.precompileAt(addr(10)), null, 'precompileAt returns null for an ordinary account');
+eq(Object.keys(P.PRECOMPILES).length, 9, 'all nine of Shanghai\'s precompiles ship');
+// The warm set in statedb.js is 0x01-0x09 and must not have drifted from the table.
+{
+  const { PRECOMPILES: WARM } = require('../src/state/statedb');
+  eq(WARM.length, Object.keys(P.PRECOMPILES).length,
+    'the EIP-2929 warm set and the implemented set are the same nine addresses');
+  ok(WARM.every((a) => P.precompileIndex(a) !== null),
+    'every pre-warmed address resolves to a real precompile');
+}
 
 // ---- 0x02 sha256 -----------------------------------------------------------
 group('0x02 sha256 — 60 + 12 per word');
@@ -263,6 +274,76 @@ group('0x01 ecrecover — gas 3000, empty output on failure');
     ok(/lowS:\s*false/.test(src),
       'ecrecover passes { lowS: false } — the secp256k1 default of true is wrong here');
   }
+}
+
+// ---- 0x06-0x09 pricing and the hard-failure convention ---------------------
+/* The maths for these four is exercised by test/bn128.js and test/blake2f.js
+ * against the published EIP-152/196/197 and go-ethereum vectors. What is asserted
+ * here is what only the TABLE can get wrong: the EIP-1108 prices, that `gas` stays
+ * O(1) in the input, and that a bad input comes back as null rather than empty.
+ *
+ * The null is the whole point. 0x01-0x05 answer a malformed input with an empty
+ * buffer and a SUCCESSFUL call; if 0x06-0x09 did the same, a verifier contract
+ * would read "success, no output" as a zero and accept a forged proof. */
+group('0x06-0x09 — EIP-1108 pricing, and failure that is not an empty success');
+{
+  const add = P.PRECOMPILES[6], mul = P.PRECOMPILES[7];
+  const pair = P.PRECOMPILES[8], b2 = P.PRECOMPILES[9];
+
+  eq(add.gas(Buffer.alloc(0)), 150n, 'ecAdd is a flat 150 (EIP-1108, was 500)');
+  eq(add.gas(Buffer.alloc(1000)), 150n, 'ecAdd ignores input length when pricing');
+  eq(mul.gas(Buffer.alloc(0)), 6000n, 'ecMul is a flat 6000 (EIP-1108, was 40,000)');
+  eq(mul.gas(Buffer.alloc(1000)), 6000n, 'ecMul ignores input length when pricing');
+
+  eq(pair.gas(Buffer.alloc(0)), 45000n, 'an empty pairing costs the 45,000 base alone');
+  eq(pair.gas(Buffer.alloc(192)), 79000n, 'one pair is 45,000 + 34,000');
+  eq(pair.gas(Buffer.alloc(192 * 5)), 215000n, 'five pairs is 45,000 + 5 x 34,000');
+  // A length that is not a multiple of 192 still pays for the whole pairs it
+  // contains, and then fails. go-ethereum prices it with the same truncation.
+  eq(pair.gas(Buffer.alloc(191)), 45000n, 'a 191-byte input pays the base and then fails');
+  eq(pair.gas(Buffer.alloc(193)), 79000n, 'a 193-byte input pays for one pair and then fails');
+
+  // blake2f is priced by a number the CALLER supplies, big-endian, in the first
+  // four bytes — while every other field in the same 213 bytes is little-endian.
+  const b2in = (roundsHex, flag) => buf(roundsHex + '00'.repeat(208) + flag);
+  eq(b2.gas(b2in('0000000c', '01')), 12n, 'blake2f charges one gas per round');
+  eq(b2.gas(b2in('00000000', '00')), 0n, 'zero rounds is zero gas');
+  eq(b2.gas(b2in('ffffffff', '01')), 4294967295n,
+    'the round count is read BIG-endian: 0xffffffff is 4.29 billion gas, not 0xff');
+  eq(b2.gas(Buffer.alloc(212)), 0n, 'a wrong-length blake2f has no round count and costs nothing');
+
+  // …and the failures.
+  eq(add.run(buf('ff'.repeat(128))), null, 'ecAdd fails on a coordinate above the modulus');
+  eq(mul.run(buf('ff'.repeat(96))), null, 'ecMul fails on a coordinate above the modulus');
+  eq(pair.run(Buffer.alloc(191)), null, 'ecPairing fails on a length that is not a multiple of 192');
+  eq(b2.run(Buffer.alloc(212)), null, 'blake2f fails on anything but exactly 213 bytes');
+  eq(b2.run(b2in('00000000', '02')), null, 'blake2f fails on a final flag that is neither 0 nor 1');
+
+  // …and the successes that must NOT be mistaken for failures.
+  eq(hex(add.run(Buffer.alloc(128))), '00'.repeat(64), 'O + O = O, encoded as 64 zero bytes');
+  eq(hex(pair.run(Buffer.alloc(0))),
+    '0000000000000000000000000000000000000000000000000000000000000001',
+    'an empty pairing product is 1 (true), not 0 and not a failure');
+
+  // Every one of the nine must be callable with no input at all without throwing:
+  // the interpreter hands over whatever memory holds, including nothing.
+  for (const i of [1, 2, 3, 4, 5, 6, 7, 8, 9]) {
+    let threw = false;
+    try { P.PRECOMPILES[i].gas(Buffer.alloc(0)); P.PRECOMPILES[i].run(Buffer.alloc(0)); }
+    catch (err) { threw = /secp256k1|keccak/.test(err.message) ? false : true; }
+    ok(!threw, `precompile ${i} survives an empty input without throwing`);
+  }
+
+  /* `gas` MUST NOT touch the input beyond its length. It runs before the
+   * interpreter's affordability test, so any work it does is work an attacker gets
+   * for the ~130 gas a CALL costs — a 192 KB pairing input validated inside `gas`
+   * would be a node-halting denial of service. This times it to prove the point. */
+  const huge = Buffer.alloc(192 * 4000);
+  const t0 = process.hrtime.bigint();
+  eq(pair.gas(huge), 45000n + 34000n * 4000n, 'a 4000-pair input prices correctly');
+  const us = Number(process.hrtime.bigint() - t0) / 1000;
+  ok(us < 1000, `pricing a 4000-pair input is O(1) in the input (${us.toFixed(0)}us) — ` +
+    'validity checks belong in run(), after the gas is paid');
 }
 
 const total = pass + fail;
