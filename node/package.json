@@ -34,7 +34,7 @@
     "start": "node bin/hearthd.js --mine",
     "node": "node bin/hearthd.js",
     "cli": "node bin/hearth-cli.js",
-    "test": "node test/unit.js && node test/e2e.js && node test/p2p-fork.js",
+    "test": "node test/unit.js && node test/e2e.js && node test/records.js && node test/p2p-fork.js",
     "test:p2p": "node test/p2p-fork.js"
   },
   "engines": { "node": ">=18" }

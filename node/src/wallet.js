@@ -32,6 +32,10 @@ class Wallet {
   }
 
   save() {
+    // Chain.load() happened to create this directory first in every existing
+    // caller, so the wallet never had to. A wallet-only tool is not obliged to
+    // open a chain.
+    fs.mkdirSync(path.dirname(this.file), { recursive: true });
     fs.writeFileSync(this.file, JSON.stringify({ keys: this.keys, identity: this.identity }, null, 2));
   }
 

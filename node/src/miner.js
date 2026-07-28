@@ -27,9 +27,10 @@ class Miner {
     const key = wallet.keyForAddress(this.node.minerAddress) || wallet.keys[0];
     const height = chain.height + 1;
     const picked = mempool.select();
-    const fees = picked.length * 0; // computed precisely below
-    // compute total fees from selected txs
-    let totalFee = 0;
+    // Total fees and the burned portion, from the selected txs. The burn is per
+    // tx, not a flat count × base fee: a tx carrying records burns its data fee
+    // too, and claiming that as a tip would be an over-mint the chain rejects.
+    let totalFee = 0, burnable = 0;
     const scratch = new Map(chain.utxo);
     const valid = [];
     for (const tx of picked) {
@@ -37,9 +38,9 @@ class Miner {
       if (!r.ok) continue;
       TX.applyToUtxo(tx, scratch, height);
       totalFee += r.fee;
+      burnable += r.required;
       valid.push(tx);
     }
-    const burnable = valid.length * P.BASE_FEE_SPARKS;
     const tips = totalFee - burnable;
     const coinbase = TX.coinbase(height, key.address, tips);
     const txs = [coinbase, ...valid];

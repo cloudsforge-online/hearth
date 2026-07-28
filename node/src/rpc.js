@@ -65,9 +65,15 @@ class RPC {
     });
   }
 
-  /** Send one SSE event to every client whose filter accepts it. */
+  /**
+   * Send one SSE event to every client whose filter accepts it.
+   *
+   * Block frames stay UNNAMED. An SSE frame with `event:` only reaches
+   * addEventListener(name), not onmessage — so naming these would have silently
+   * stopped every existing client's live updates, including the explorer's.
+   */
   _emit(event, payload, record) {
-    const data = `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;
+    const data = (event === 'block' ? '' : `event: ${event}\n`) + `data: ${JSON.stringify(payload)}\n\n`;
     for (const c of this.sseClients) {
       if (record && c.cfApp && (c.cfApp !== record.app || (c.cfKey && c.cfKey !== record.key))) continue;
       if (!record && c.cfApp) continue;   // a filtered subscriber asked for records, not blocks
