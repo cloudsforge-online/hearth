@@ -26,8 +26,28 @@ tractable because the reference tests exist.
 | RLP | Ethereum RLP test vectors |
 | secp256k1 | RFC 6979 + recovery vectors |
 | Merkle Patricia Trie | `ethereum/tests` TrieTests |
-| EVM opcodes & gas | `ethereum/tests` VMTests + `execution-spec-tests` |
-| State transition | `ethereum/tests` GeneralStateTests |
+| EVM opcodes & gas | **`ethereum/legacytests`** VMTests — *moved; cloning `ethereum/tests` gets RLP and trie only* |
+| State transition | **`ethereum/legacytests`** GeneralStateTests |
+
+Four things about the corpus that a naive runner gets silently wrong, all found by running the
+full 3,425-file set and all now guarded by the harness self-test:
+
+- **GeneralStateTests `post` entries are not in index order.** `stEIP2930/transactionCosts.json`
+  lists `0,1,2,3,4,5,6,10,7,8,9,11`, so a positional runner checks eight of twelve against the
+  wrong state root and reports green.
+- The `indexes` key for the gas limit is **`gas`**, not `gasLimit`, and `accessLists` is indexed by
+  the *data* index with `null` meaning "legacy transaction for this combination".
+- **VMTests are Constantinople-priced.** They predate EIP-2929/3529/3855, so their semantics and
+  post states hold under Shanghai but their gas figures do not. Take gas conformance from
+  GeneralStateTests only.
+- In VMTests, `logs` is `keccak256(rlp(logs))` rather than a log list, `gas` is gas *remaining*,
+  and an exception case **omits `post`, `gas`, `out` and `logs` entirely** — the absence is the
+  assertion.
+
+**An implementation signals EVM failure by returning `{ exception }`, never by throwing.** A thrown
+JS error is a harness-level `ERROR`, not a pass. Without that rule a `TypeError` in the interpreter
+masquerades as a correctly-rejected transaction, which makes the vectors that assert *failure* the
+easiest ones to fake.
 
 A divergence from Ethereum semantics is not a cosmetic bug — it means a Solidity contract behaves
 differently here than where it was audited, and somebody loses money. **No component is
