@@ -14,8 +14,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@cloudsforge/shared": "^0.3.0",
-    "@cloudsforge/ui": "^0.4.0",
+    "@cloudsforge/shared": "^0.4.0",
+    "@cloudsforge/ui": "^0.5.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.1.0"

@@ -9,11 +9,11 @@ importers:
   .:
     dependencies:
       '@cloudsforge/shared':
-        specifier: ^0.3.0
-        version: 0.3.0
-      '@cloudsforge/ui':
         specifier: ^0.4.0
-        version: 0.4.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+        version: 0.4.0
+      '@cloudsforge/ui':
+        specifier: ^0.5.0
+        version: 0.5.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       react:
         specifier: ^19.0.0
         version: 19.2.8
@@ -134,11 +134,11 @@ packages:
     resolution: {integrity: sha512-4zBIxpPzowiZpusoFkyGVwakdRJUyuH5PxQ/PrqghfdFWWasvnCdPfQXHrenDai+gyLARulZjZowCOj6fjT4pA==}
     engines: {node: '>=6.9.0'}
 
-  '@cloudsforge/shared@0.3.0':
-    resolution: {integrity: sha512-0z9Qyau/LBdys1qytgTHhN0/jeQcBnZ+qWRxwHQztbhsc+aqtCEBrM1ys/bDV0EOT/3kfmmLfzvC04qVsboiEg==}
+  '@cloudsforge/shared@0.4.0':
+    resolution: {integrity: sha512-OCxXy3t7EL6erDuoChr6rMbRcxL7VCa3cP2lo0SDpiqdp/8pIfQ4My0tQ4yHYJ8WKhVkPq7h1Wh5i6OJWKVg7g==}
 
-  '@cloudsforge/ui@0.4.0':
-    resolution: {integrity: sha512-OryIB5qjIJ8+FlCK62DfeN+3TnDgH9yNEdUcIBlz+uyA8Hn1t/AhbWE4GdMPUy8bRUE9Nu+3RKhv3af4hsYZBw==}
+  '@cloudsforge/ui@0.5.0':
+    resolution: {integrity: sha512-LrTMpe+Lu4m/xwfrbUaQo1QLOtmQ20VrqU3gezCP/WnyVkPT0my11CixkXxSnqz498zMZZYMOgzP0oM/thVjUQ==}
     peerDependencies:
       react: ^19.0.0
       react-dom: ^19.0.0
@@ -1009,13 +1009,13 @@ snapshots:
       '@babel/helper-string-parser': 7.29.7
       '@babel/helper-validator-identifier': 7.29.7
 
-  '@cloudsforge/shared@0.3.0':
+  '@cloudsforge/shared@0.4.0':
     dependencies:
       zod: 3.25.76
 
-  '@cloudsforge/ui@0.4.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
+  '@cloudsforge/ui@0.5.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
     dependencies:
-      '@cloudsforge/shared': 0.3.0
+      '@cloudsforge/shared': 0.4.0
       react: 19.2.8
       react-dom: 19.2.8(react@19.2.8)
 

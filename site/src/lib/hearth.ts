@@ -86,12 +86,17 @@ export const WHY_ROWS = [
   },
 ] as const
 
-/** "The coin" — spec facts. Sourced from README + coinnomics.md. */
+/** "The coin" — spec facts. Sourced from README + coinnomics.md + evm-spec.md. */
 export const COIN_FACTS = [
   { k: 'Network', v: 'Hearth' },
   { k: 'Coin', v: 'Ember' },
   { k: 'Ticker', v: 'EMBER' },
-  { k: 'Smallest unit', v: '1 EMBER = 100,000,000 sparks' },
+  // 18, not the 8 this said for a year. The "spark" was the UTXO chain's
+  // smallest unit and that chain is retired; on the account model the unit is a
+  // wei and 1 EMBER = 1e18 of them (docs/evm-spec.md §1, node/src/params.js
+  // WEI_PER_EMBER). Publishing 8 here is not a rounding difference — it is the
+  // number a wallet or an exchange would scale raw amounts by, wrong by 1e10.
+  { k: 'Smallest unit', v: '1 EMBER = 10¹⁸ wei (18 decimals)' },
   { k: 'Block time', v: '15 seconds' },
   { k: 'Proof of work', v: 'Homefire — memory-hard, CPU-friendly, ASIC-resistant' },
   { k: 'Emission', v: 'Halving-free decay → perpetual tail' },
@@ -156,7 +161,11 @@ export const LOOP_STEPS = [
   {
     verb: 'Hold',
     where: 'Your wallet, or ours',
-    body: 'Keep your own key in the web wallet, or deposit to a custodied ember1… address. CloudsForge custodies EMBER with hearthd’s own Ed25519 scheme rather than a second one it invented.',
+    // The address shape and the key scheme both moved with the account-model
+    // rebuild: `0x…` EIP-55 over secp256k1, not `ember1…` over Ed25519. An
+    // Ed25519 key names no account on an EVM chain, so the old sentence told a
+    // reader to expect a deposit address that can no longer exist.
+    body: 'Keep your own key in the web wallet, or deposit to a custodied 0x… address. CloudsForge custodies EMBER with hearthd’s own secp256k1 scheme rather than a second one it invented.',
   },
   {
     verb: 'Convert',

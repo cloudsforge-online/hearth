@@ -43,10 +43,10 @@ export default function TheLoop() {
               <p className="mt-3 text-sm leading-relaxed text-ash-dim">
                 <span className="text-ash">EMBER is pre-mainnet.</span> The network you can run today
                 is a testnet: the coin has no market, no price, and nothing mined on it is worth
-                money. The path off it is built and running — Forge Pay reads the Hearth chain, and
-                custody uses the node’s own key scheme — but it credits deposits at the chain tip
-                rather than at a confirmation depth, which is one of the things that has to be fixed
-                before any of it holds real value. Treat every EMBER you mine now as a rehearsal.
+                money. The path off it is built and running — Forge Pay reads the Hearth chain,
+                custody uses the node’s own key scheme, and deposits now credit at a confirmation
+                depth of 60 blocks rather than at the chain tip. What is still missing is a market:
+                treat every EMBER you mine now as a rehearsal.
               </p>
             </div>
             <div className="flex flex-wrap gap-3 md:justify-end">
