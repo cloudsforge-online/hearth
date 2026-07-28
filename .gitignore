@@ -33,6 +33,13 @@ Thumbs.db
 *.log
 tmp/
 
+# tools/verify caches solc builds here — ~9 MB per compiler release, fetched
+# from binaries.soliditylang.org and checked against its published keccak256.
+tools/verify/.solc-cache/
+# Runtime state of the two listing services. Both are rebuildable from a node.
+tools/verify/verified/
+tools/explorer-api/explorer-index/
+
 # scripts/run-local-network.sh writes these at the repo root. In the monorepo
 # they were covered by the root .gitignore; standalone, this file is the only
 # thing covering them.

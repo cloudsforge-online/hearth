@@ -162,13 +162,22 @@ jobs:
         run: node --test test/build.test.mjs
 
   tools:
-    name: Developer kit (faucet tests + template configs parse)
+    name: Developer kit (faucet, explorer API, verifier)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      # tools/verify downloads a ~9 MB soljson build and checks it against the
+      # keccak256 published in binaries.soliditylang.org's own list.json. The
+      # cache saves the download, not the check — the hash is verified on every
+      # run, including a cache hit, so a poisoned cache cannot be loaded.
+      - name: Cache solc builds
+        uses: actions/cache@v4
+        with:
+          path: tools/verify/.solc-cache
+          key: solc-v0.8.26+commit.8a97fa7a
       # The faucet holds a funded key and its whole engineering problem is
       # REFUSING: per-address and per-IP limits, a global payout cap, a clear
       # answer when dry, and — the one that looks correct in review and is not —
@@ -177,6 +186,33 @@ jobs:
       # network and no dependencies.
       - name: Faucet
         run: node tools/faucet/test/faucet.test.js
+      # The two services that stand between Hearth and an exchange listing
+      # (docs/listing-checklist.md §3). Both run over real HTTP with no network
+      # and no dependencies — the explorer API against a fake chain served by
+      # node/src/jsonrpc, so the fixtures are encoded by the same code the real
+      # RPC will use.
+      #
+      # The assertions that matter in the explorer API are the ones about
+      # REFUSING: an index that is behind the node must not answer "no
+      # transactions found", `txlistinternal` must not claim an empty list on a
+      # chain with no tracer, and circulating supply must not be served as total
+      # supply when the Commons treasury cannot be subtracted — which is exactly
+      # the defect in the node's own /supply that this service exists to fix.
+      # It also unwinds a reorg and asserts the orphaned transaction stops being
+      # served, which an append-only indexer would fail.
+      - name: Explorer API (Etherscan shim + address index)
+        run: node tools/explorer-api/test/explorer-api.test.js
+      # And in the verifier, the assertion that matters is the REJECTION: it
+      # compiles contracts/src/WEMBER.sol with the pinned solc, verifies the
+      # match, then changes one byte of the deployed code and requires a refusal
+      # naming the offset. A verifier that cannot reject is worse than none,
+      # because it turns "unverified bytecode" into "verified, apparently".
+      #
+      # This step needs network access to binaries.soliditylang.org on a cache
+      # miss. If that is ever a problem, pre-seed tools/verify/.solc-cache and
+      # set HEARTH_VERIFY_SOLC_OFFLINE=1.
+      - name: Contract verification (compile, match, then reject)
+        run: node tools/verify/test/verify.test.js
       # Not a compile — just proof that the templates and the probe still parse
       # after a refactor upstream. `hardhat.config.js` in particular is the file
       # that pins evmVersion to shanghai, and a syntax error in it fails as

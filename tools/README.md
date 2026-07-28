@@ -8,6 +8,8 @@ chain is further along than it is.
 | [`hardhat/`](hardhat) | A Hardhat project preconfigured for chain 7411, Shanghai and legacy gas. Deploy, interact, deploy the AMM, run a swap | **Yes** — compiles, and the AMM scripts run end to end against Hardhat's own EVM |
 | [`foundry/`](foundry) | The Foundry equivalent: `foundry.toml`, a sample contract, a deploy script, tests | **Yes** — `forge build` and `forge test` pass |
 | [`faucet/`](faucet) | A testnet EMBER faucet. Zero dependencies, plain `node:http` | **Yes** — 66 tests pass; runs against a stub node |
+| [`explorer-api/`](explorer-api) | The Etherscan-compatible `/api` shim, the address index behind it, and correctly-labelled supply endpoints | **Yes** — 171 tests pass against a fake chain; nothing has run against a node |
+| [`verify/`](verify) | Contract source verification: recompile, compare against deployed bytecode, serve the result. Speaks the API `forge verify-contract` speaks | **Yes** — 116 tests pass, including compiling a real `contracts/src` artifact and rejecting a one-byte change |
 | [`rpc-probe/`](rpc-probe) | A stub that serves Hearth's real `eth_*` layer over a fake chain, and logs every method a client calls | **Yes** — and read its README before trusting it |
 | [`metamask.md`](metamask.md) | Add-network details and the `wallet_addEthereumChain` payload | Reference |
 
