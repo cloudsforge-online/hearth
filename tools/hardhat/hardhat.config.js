@@ -17,13 +17,20 @@
 
 require('@nomicfoundation/hardhat-ethers');
 
-/** Chain id 7411 — docs/evm-spec.md §1, and `node/src/chain/transaction.js`. */
-const HEARTH_CHAIN_ID = 7411;
+/* Chain id — 7411 mainnet, 7412 testnet (docs/evm-spec.md §1, and
+ * `node/src/params.js`, which is the only place the mapping lives). It is set
+ * from the environment because the two networks MUST NOT share an id: with one
+ * id, a transaction signed for the testnet is byte-identical on mainnet, and a
+ * faucet becomes a way to drain the account it funds. Hardhat also refuses to
+ * send when this disagrees with `eth_chainId`, which is the check that catches
+ * a misconfigured node before it costs anything. */
+const HEARTH_CHAIN_ID = Number(process.env.HEARTH_CHAIN_ID || 7411);
 
-/* There is no public Hearth endpoint yet: phase 5 (consensus) has not landed,
- * so nothing serves eth_* on a real chain. Point this at your own node, or at
- * `tools/rpc-probe/stub.js` to smoke-test the wiring. */
-const RPC_URL = process.env.HEARTH_RPC_URL || 'http://127.0.0.1:8645';
+/* `hearthd --evm` serves eth_* on 8545, path `/` (docs/evm-spec.md §6). The
+ * REST API is a different PORT, 8645, and answers `POST /` with a 404 naming
+ * this one — so pointing at the wrong port fails loudly rather than looking
+ * like an empty chain. */
+const RPC_URL = process.env.HEARTH_RPC_URL || 'http://127.0.0.1:8545';
 
 /* NEVER put a key in this file. The account comes from the environment and
  * nothing else; `.env` is gitignored at the repository root. */
