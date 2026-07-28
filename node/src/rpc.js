@@ -1,13 +1,17 @@
 'use strict';
 /* HTTP API for wallets, explorers and merchants. Built on Node's http module.
  *   REST:   GET  /info /supply /blocks /block/:id /address/:addr /mempool
+ *           GET  /tx/:txid          (one transaction + its confirmation depth)
+ *           GET  /records?app=&key= (application records on the active chain)
  *   submit: POST /tx        (broadcast a signed tx)
  *   JSONRPC POST /rpc       ({method, params})
- *   live:   GET  /events    (Server-Sent Events: new blocks)
+ *   live:   GET  /events    (SSE: new blocks, or ?app= for that app's records)
  * CORS is open so the static web/ front-ends can talk to it from anywhere. */
 
 const http = require('http');
 const P = require('./params');
+const C = require('./crypto');
+const TX = require('./tx');
 const BLOCK = require('./block');
 
 function json(res, code, body) {
@@ -44,12 +48,37 @@ class RPC {
     this.server.listen(port, () => this.node.log(`rpc/http listening on :${port}`, { port }));
     // push new blocks to SSE subscribers
     this.node.chain.on('block', b => {
-      const data = 'data: ' + JSON.stringify(blockSummary(this.node, b)) + '\n\n';
-      for (const c of this.sseClients) {
-        // a client that has gone away stays in the set forever otherwise
-        try { c.write(data); } catch { this.sseClients.delete(c); }
+      this._emit('block', blockSummary(this.node, b), null);
+      // An application waiting on its own records should not have to poll every
+      // block and diff. Records are pushed as their own event, filterable by
+      // namespace and key, so a chat client subscribes to exactly its inbox.
+      for (const tx of b.txs) {
+        for (const r of TX.txRecords(tx)) {
+          this._emit('record', {
+            app: r.app, key: r.key, data: r.data, txid: tx.id,
+            height: b.header.height, timestamp: b.header.timestamp,
+            from: (tx.inputs || []).map(i => i.pub).filter(Boolean)
+              .map(pub => C.addressFromPub(pub))[0] || null,
+          }, r);
+        }
       }
     });
+  }
+
+  /**
+   * Send one SSE event to every client whose filter accepts it.
+   *
+   * Block frames stay UNNAMED. An SSE frame with `event:` only reaches
+   * addEventListener(name), not onmessage — so naming these would have silently
+   * stopped every existing client's live updates, including the explorer's.
+   */
+  _emit(event, payload, record) {
+    const data = (event === 'block' ? '' : `event: ${event}\n`) + `data: ${JSON.stringify(payload)}\n\n`;
+    for (const c of this.sseClients) {
+      if (record && c.cfApp && (c.cfApp !== record.app || (c.cfKey && c.cfKey !== record.key))) continue;
+      if (!record && c.cfApp) continue;   // a filtered subscriber asked for records, not blocks
+      try { c.write(data); } catch { this.sseClients.delete(c); }
+    }
   }
 
   async _handle(req, res) {
@@ -84,7 +113,21 @@ class RPC {
         return json(res, 200, this._address(a));
       }
       if (p === '/mempool') return json(res, 200, { size: this.node.mempool.size, txs: this.node.mempool.list() });
-      if (p === '/events') return this._sse(req, res);
+      if (p.startsWith('/tx/')) {
+        const found = this.node.chain.getTx(p.slice('/tx/'.length));
+        return found ? json(res, 200, found) : json(res, 404, { err: 'not found' });
+      }
+      if (p === '/records') {
+        const app = url.searchParams.get('app');
+        if (!P.APP_NS_RE.test(app || '')) return json(res, 400, { err: 'app namespace required' });
+        const key = url.searchParams.get('key') || '';
+        if (key && !P.RECORD_KEY_RE.test(key)) return json(res, 400, { err: 'bad key' });
+        const since = Math.max(0, Number(url.searchParams.get('since') || 0));
+        const limit = Math.min(500, Math.max(1, Number(url.searchParams.get('limit') || 100)));
+        const records = this.node.chain.getRecords(app, key, { since, limit });
+        return json(res, 200, { app, key: key || null, height: this.node.chain.height, records });
+      }
+      if (p === '/events') return this._sse(req, res, url);
 
       if (req.method === 'POST' && (p === '/tx' || p === '/rpc')) {
         const body = await readBody(req);
@@ -105,13 +148,21 @@ class RPC {
     }
   }
 
-  _sse(req, res) {
+  _sse(req, res, url) {
     res.writeHead(200, {
       'content-type': 'text/event-stream',
       'cache-control': 'no-cache',
       connection: 'keep-alive',
       'access-control-allow-origin': '*',
     });
+    // ?app=chat[&key=ember1…] narrows the stream to one application's records.
+    // Without a filter the stream stays what it always was: new blocks.
+    const app = url && url.searchParams.get('app');
+    if (app && P.APP_NS_RE.test(app)) {
+      res.cfApp = app;
+      const key = url.searchParams.get('key');
+      if (key && P.RECORD_KEY_RE.test(key)) res.cfKey = key;
+    }
     res.write(': connected\n\n');
     this.sseClients.add(res);
     req.on('close', () => this.sseClients.delete(res));

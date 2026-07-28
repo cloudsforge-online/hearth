@@ -24,6 +24,27 @@ module.exports = {
   // ---- fees ----
   BASE_FEE_SPARKS: 40_000,                      // 0.0004 EMBER, BURNED, per tx
   //                                               excess over base fee = miner tip
+  // Data is priced by the byte and BURNED like the base fee, not tipped to the
+  // miner. A miner who is paid for data has an incentive to fill blocks with it.
+  FEE_PER_RECORD_BYTE_SPARKS: 100,              // 0.000001 EMBER per byte of record data
+
+  // ---- application records (see docs/records.md) ----
+  // Records are the only consensus-committed place to put application bytes:
+  // they are inside the signed tx body, so they are covered by the txid, the
+  // input signatures, the merkle root and the block hash. Everything about them
+  // is bounded, because unbounded data on a chain with a flat fee is a DoS.
+  //
+  // Enabling records is a HARD FORK: a pre-records node rebuilds the tx body
+  // without them, computes a different txid, and rejects the block. Nodes must
+  // agree on this height before it passes.
+  RECORDS_ACTIVATION_HEIGHT: 0,
+  MAX_TX_RECORDS: 16,                       // records per transaction
+  MAX_RECORD_BYTES: 4_096,                  // payload bytes in one record
+  MAX_TX_RECORD_BYTES: 8_192,               // payload bytes across one tx
+  MAX_RECORD_KEY_LEN: 72,                   // index key, e.g. an ember1… address
+  // A namespace so two applications cannot read each other's records by accident.
+  APP_NS_RE: /^[a-z][a-z0-9-]{1,15}$/,
+  RECORD_KEY_RE: /^[0-9a-z._-]{1,72}$/,
 
   // ---- Proof of work (Homefire) ----
   // dev sizes keep local mining snappy; production ≈ 2 GiB / thousands of steps.
@@ -41,6 +62,13 @@ module.exports = {
   MAX_BLOCK_TXS: 5_000,                     // reject oversized blocks before doing work
   MAX_TX_INPUTS: 1_000,
   MAX_TX_OUTPUTS: 1_000,
+  // Byte ceilings. There were none: a tx was bounded only by input/output COUNT,
+  // so a block could be arbitrarily large in bytes and still pass. That was
+  // survivable while an output was two fixed fields; it is not once a tx can
+  // carry a payload. MAX_BLOCK_BYTES is well under P2P_MAX_LINE so a full block
+  // still fits one frame.
+  MAX_TX_BYTES: 100_000,
+  MAX_BLOCK_BYTES: 2_000_000,
   COINBASE_MATURITY: 10,                    // (dev) coinbase unspendable until N deep; prod ~100
   MAX_FUTURE_DRIFT_S: 7200,                 // reject timestamps >2h in the future (Bitcoin-like)
   MEDIAN_TIME_SPAN: 11,                     // median-time-past window

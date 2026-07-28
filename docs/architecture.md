@@ -72,9 +72,22 @@ sub-cent while keeping the base layer lean.
 - **Web wallet:** all key material stays client-side (WebCrypto); talks to a public
   or self-hosted `hearthd` over JSON-RPC/WS. A **WASM light-miner** lets users mine
   in a browser tab.
-- **Explorer:** a static front-end (`web/index.html`) over the node's REST API.
+- **Explorer:** a static front-end (`web/index.html`) over the node's REST API,
+  reached same-origin at `/rpc` so the page and the node it describes cannot
+  disagree about being up.
 - **Hearth Pay SDK:** `web/assets/hearth-pay.js` — a drop-in merchant button that
   builds a `hearth:` payment URI and watches the merchant's node for settlement.
+- **Chat:** `node/src/apps/chat.js` + `bin/hearth-chat.js` — encrypted messages
+  carried by records. It is the reference application, not a privileged one: it
+  uses nothing the node reserves for itself.
+
+### Records — how anything other than payment gets built
+The signed transaction body carries an optional `records` array — namespaced,
+byte-metered, consensus-committed application data. It is the seam every
+non-payment application hangs off, and the reason one is possible without a
+scripting VM. Payload is opaque to the node: it is counted, priced, indexed by
+`(app, key)`, and never parsed. Encrypt before signing — a record is public and
+permanent. Full reference: **[records.md](records.md)**.
 
 ## Tech choices & rationale
 

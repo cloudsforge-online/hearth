@@ -7,7 +7,7 @@
   <br/><br/>
 
   <a href="https://github.com/cloudsforge-online/hearth/actions/workflows/ci.yml"><img alt="ci" src="https://github.com/cloudsforge-online/hearth/actions/workflows/ci.yml/badge.svg"></a>
-  <img alt="tests" src="https://img.shields.io/badge/node-77%2F77%20checks-brightgreen">
+  <img alt="tests" src="https://img.shields.io/badge/node-126%2F126%20checks-brightgreen">
   <img alt="rust" src="https://img.shields.io/badge/rust%20core-29%20tests%20%C2%B7%20clippy%20clean-orange">
   <img alt="deps" src="https://img.shields.io/badge/rust%20deps-2%20(ed25519%2C%20getrandom)-blue">
   <img alt="license" src="https://img.shields.io/badge/license-MIT-lightgrey">
@@ -76,6 +76,8 @@ Everything below **runs**:
 - ✅ **P2P networking** — nodes gossip and sync over TCP (network-id handshake, DoS caps)
 - ✅ **wallet + CLI** — keys, checksummed addresses, balances, signed payments
 - ✅ **HTTP/JSON-RPC/SSE API** + a live **block explorer**, **web wallet**, and **Hearth Pay** merchant SDK
+- ✅ **application records** — consensus-committed, namespaced, byte-metered data inside the signed transaction body, with a tx index and per-app subscriptions (**[docs/records.md](docs/records.md)**)
+- ✅ **encrypted on-chain chat** built on them — X25519 reading keys, sealed boxes, `hearth-chat announce · send · inbox · watch`
 - ✅ a **Rust production core** (`rust/hearthd`) — Homefire PoW, **Ed25519-signed ledger, mempool, and Tab payment channels**; `fmt`/`clippy`/`29 tests` clean
 - ✅ **Docker Compose** to boot a multi-node network on your Mac
 - ✅ **CI** running Node tests + Rust build on every push
@@ -84,7 +86,7 @@ Hardened against an adversarial audit — unlimited-mint, fork-choice, coinbase
 maturity, timestamp, DoS, address-checksum, deterministic-emission, and XSS
 issues are fixed with tests (see **[docs/security-review.md](docs/security-review.md)**).
 
-Verified locally: **50 node checks + 29 Rust tests pass**, two nodes sync over
+Verified locally: **126 node checks + 29 Rust tests pass**, two nodes sync over
 P2P, a reorg replaces the active chain, and the Rust core mines ~8× faster than
 the JS prototype on the same machine.
 
@@ -100,7 +102,7 @@ the JS prototype on the same machine.
 
 ```bash
 docker compose up --build
-# open http://localhost:8080  ·  the explorer reads the live chain from :8645
+# open http://localhost:8080 · the explorer reads the live chain over same-origin /rpc
 ```
 No Docker? `./scripts/run-local-network.sh`. Details: **[docs/network.md](docs/network.md)**.
 
@@ -111,7 +113,8 @@ cd node
 node bin/hearthd.js --mine                       # a mining node + API on :8645
 node bin/hearth-cli.js supply                    # query it
 node bin/hearth-cli.js send <toAddress> 5        # send 5 EMBER
-node test/unit.js && node test/e2e.js            # 40 checks
+node bin/hearth-chat.js announce                 # then: send / inbox / watch
+npm test                                         # 126 checks
 ```
 
 **3 — Build the Rust core** (needs stable Rust):
@@ -122,7 +125,8 @@ cargo run --release -- 20                         # mine a demo block
 cargo fmt --check && cargo clippy -- -D warnings && cargo test
 ```
 
-**4 — Open the web experience** (works offline on demo data, or live against a node):
+**4 — Open the web experience** (live against a node; clearly-labelled sample
+data only when none answers):
 
 ```bash
 npx serve web        # or: open web/index.html
@@ -144,7 +148,7 @@ cd site && pnpm install && pnpm dev   # http://localhost:3003
 ```
 hearth/
 ├── README.md · WHITEPAPER.md          the pitch and the full design
-├── docs/                              architecture · coinnomics · mining · network · roadmap · faq
+├── docs/                              architecture · coinnomics · mining · network · records · roadmap · faq
 ├── node/                              hearthd — runnable reference node/wallet/miner (JS) + tests
 │   ├── src/  bin/  test/  Dockerfile
 ├── rust/hearthd/                      production core (Rust): SHA-256 + Homefire PoW + ledger + P2P, zero deps
@@ -154,7 +158,7 @@ hearth/
 ├── proto/                             coinnomics simulator + standalone PoW demo
 ├── scripts/run-local-network.sh       local network without Docker
 ├── docker-compose.yml                 seed + 2 miners + web
-└── .github/workflows/ci.yml           CI: node tests (unit + e2e + p2p) + rust build + web lint + secret hygiene
+└── .github/workflows/ci.yml           CI: node tests (unit + e2e + records + p2p) + rust build + web lint + secret hygiene
 ```
 
 ## Status

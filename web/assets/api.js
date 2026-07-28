@@ -3,7 +3,16 @@
  * fall back to the demo generator in app.js so the pages still work offline
  * (e.g. opened straight from disk).
  *
- * Node URL resolution order:  ?rpc=<url>  →  <meta name="hearth-rpc">  →  :8645
+ * Node URL resolution order:
+ *   ?rpc=<url>  →  <meta name="hearth-rpc">  →  same-origin /rpc  →  :8645
+ *
+ * Same-origin `/rpc` is the deployed path: nginx proxies it to the node (see
+ * web/nginx.conf). It used to guess `<protocol>//<hostname>:8645`, which in
+ * production is explorer.cloudsforge.online:8645 — a port nothing publishes.
+ * Every call failed, and the pages fell back to the demo generator, so the
+ * public explorer showed invented blocks that looked exactly like real ones.
+ * The :8645 guess survives only as the last resort, for a page opened straight
+ * off disk with a node running locally.
  */
 (function (global) {
   'use strict';
@@ -13,6 +22,7 @@
     if (q) return q.replace(/\/$/, '');
     const m = document.querySelector('meta[name="hearth-rpc"]');
     if (m && m.content) return m.content.replace(/\/$/, '');
+    if (location.protocol === 'http:' || location.protocol === 'https:') return location.origin + '/rpc';
     return `${location.protocol}//${location.hostname || 'localhost'}:8645`;
   }
 

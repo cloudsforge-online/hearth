@@ -13,12 +13,16 @@
 <meta property="og:site_name" content="Hearth · CloudsForge">
 <meta property="og:description" content="Watch the Hearth network live — home-mined EMBER blocks, supply, and hashrate.">
 <!-- A PNG, absolute, served by the Hearth site: scrapers do not render SVG. -->
-<meta property="og:image" content="https://hearth.cloudsforge.online/social-hearth.png">
+<meta property="og:image" content="https://hearth.cloudsforge.online/og-hearth.png">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:image" content="https://hearth.cloudsforge.online/social-hearth.png">
+<meta name="twitter:image" content="https://hearth.cloudsforge.online/og-hearth.png">
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
 <link rel="manifest" href="site.webmanifest">
-<meta name="hearth-rpc" content="http://localhost:8645">
+<!-- No hearth-rpc pin: the node is same-origin /rpc, proxied by nginx.
+     This used to be hardcoded to http://localhost:8645, which meant the
+     deployed explorer asked the VISITOR'S OWN machine for the chain,
+     always failed, and fell back to sample data. Set this meta only to
+     point a page at a node on a different origin. -->
 <link rel="stylesheet" href="assets/vendor/cf-tokens.css">
 <link rel="stylesheet" href="assets/vendor/cf-ui.css">
 <link rel="stylesheet" href="assets/styles.css">
@@ -44,10 +48,10 @@
   <div class="wrap">
     <span class="pill" id="mode">● connecting…</span>
     <h2>Block explorer</h2>
-    <p>Every block, every payment, in the open. Point it at any running
-      <span class="mono">hearthd</span> node (default <span class="mono">:8645</span>,
-      override with <span class="mono">?rpc=</span>). If none is reachable it streams
-      a simulated chain so the page still works offline.</p>
+    <p>Every block, every payment, in the open. This reads the
+      <span class="mono">hearthd</span> node behind this site; point it somewhere else
+      with <span class="mono">?rpc=</span>. If no node answers, the page says so and
+      falls back to clearly-labelled sample data rather than pretending.</p>
 
     <div class="grid g4" style="margin:24px 0">
       <div class="card stat"><div class="n" id="s-height">—</div><div class="l">block height</div></div>
@@ -135,8 +139,17 @@
   }
 
   function runDemo() {
-    mode.textContent = '● DEMO — no node reachable';
+    mode.textContent = '● SAMPLE DATA — no node reachable';
     mode.style.color = 'var(--gold-300)';
+    // The badge alone was not enough: the rows below are invented, and at a
+    // glance they read exactly like a busy chain. Say it where the numbers are.
+    const warn = document.createElement('p');
+    warn.textContent = 'These blocks are not real. No Hearth node answered, so this page is '
+      + 'drawing sample data to show what the explorer looks like.';
+    warn.style.cssText = 'margin:.75rem 0;padding:.6rem .8rem;border-radius:.4rem;'
+      + 'background:rgba(255,90,30,.08);border:1px solid rgba(255,90,30,.35);'
+      + 'color:var(--gold-300);font-size:.85rem';
+    tbody.closest('table').before(warn);
     let height = 1284301, supply = 21430000, commons = 2143000;
     const paint = (initial) => {
       const chain = Hearth.makeChain(height, 12);

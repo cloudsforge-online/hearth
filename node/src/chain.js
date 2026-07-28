@@ -33,6 +33,11 @@ class Chain extends EventEmitter {
     this.tipId = null;
     this.utxo = new Map();      // active UTXO: "txid:vout" -> {address,amount,coinbase,height}
     this.burned = 0;
+    // Active-chain indexes. Without these an application cannot find its own
+    // transaction except by scanning every block, which is why there was no
+    // /tx/:txid route to write.
+    this.txIndex = new Map();   // txid -> { height, blockId, index }
+    this.recordIndex = new Map(); // "app" and "app:key" -> [{...record hit}]
   }
 
   // ---- lifecycle ----------------------------------------------------------
@@ -72,7 +77,65 @@ class Chain extends EventEmitter {
     this.chainIndex = [id];
     this.utxo = new Map();
     this.burned = 0;
+    this.txIndex = new Map();
+    this.recordIndex = new Map();
     this._applyBlock(g, this.utxo);
+    this._index(g, id);
+  }
+
+  // ---- indexes ------------------------------------------------------------
+  /** Index one block's transactions and records. Active chain only. */
+  _index(block, blockId) {
+    block.txs.forEach((tx, index) => {
+      this.txIndex.set(tx.id, { height: block.header.height, blockId, index });
+      for (const r of TX.txRecords(tx)) {
+        const hit = {
+          app: r.app, key: r.key, data: r.data,
+          txid: tx.id, height: block.header.height, blockId,
+          // who signed the transaction the record rode in, which is the only
+          // authenticated notion of "sender" the chain has
+          from: (tx.inputs || []).map(i => i.pub).filter(Boolean)
+            .map(pub => C.addressFromPub(pub))[0] || null,
+          timestamp: block.header.timestamp,
+        };
+        for (const k of [r.app, r.app + ':' + r.key]) {
+          if (!this.recordIndex.has(k)) this.recordIndex.set(k, []);
+          this.recordIndex.get(k).push(hit);
+        }
+      }
+    });
+  }
+
+  _reindex(id) {
+    this.txIndex = new Map();
+    this.recordIndex = new Map();
+    for (const e of this._fullChain(id)) this._index(e.block, e.id);
+  }
+
+  getTx(txid) {
+    const at = this.txIndex.get(txid);
+    if (!at) return null;
+    const block = this.store.get(at.blockId);
+    if (!block) return null;
+    return {
+      tx: block.block.txs[at.index],
+      height: at.height,
+      blockId: at.blockId,
+      confirmations: this.height - at.height + 1,
+    };
+  }
+
+  /** Records for an app, or for one key within it, oldest first. */
+  getRecords(app, key, { since = 0, limit = 100 } = {}) {
+    const hits = this.recordIndex.get(key ? app + ':' + key : app) || [];
+    return hits.filter(h => h.height >= since).slice(0, limit);
+  }
+
+  /** Sparks a block destroys: every non-coinbase tx burns its required fee. */
+  _burnedIn(block) {
+    let n = 0;
+    for (const tx of block.txs) if (tx.type !== 'coinbase') n += TX.requiredFee(tx);
+    return n;
   }
 
   // ---- accessors ----------------------------------------------------------
@@ -173,6 +236,10 @@ class Chain extends EventEmitter {
     if (hdr.height !== parent.height + 1) return { ok: false, err: 'bad height' };
     if (!Array.isArray(block.txs) || block.txs.length === 0) return { ok: false, err: 'no txs' };
     if (block.txs.length > P.MAX_BLOCK_TXS) return { ok: false, err: 'block too large' };
+    // A count limit is not a size limit. Checked before the signature work below,
+    // so an oversized block costs a serialization and not 5,000 verifications.
+    if (Buffer.byteLength(C.canonical(block)) > P.MAX_BLOCK_BYTES)
+      return { ok: false, err: 'block exceeds max bytes' };
 
     // timestamp bounds (H2)
     const now = Math.floor(Date.now() / 1000);
@@ -186,12 +253,15 @@ class Chain extends EventEmitter {
 
     // transactions
     const scratch = new Map(utxo);
-    let fees = 0;
+    let fees = 0, burnable = 0;
     for (let i = 0; i < block.txs.length; i++) {
       const tx = block.txs[i];
       if (i === 0) {
         if (tx.type !== 'coinbase') return { ok: false, err: 'first tx must be coinbase' };
         if (tx.inputs && tx.inputs.length) return { ok: false, err: 'coinbase has inputs' };
+        // A coinbase is not signed by anyone, so a record in one would be an
+        // unauthenticated write that the miner alone chooses.
+        if (TX.txRecords(tx).length) return { ok: false, err: 'coinbase carries records' };
         continue;
       }
       if (tx.type === 'coinbase') return { ok: false, err: 'extra coinbase' };
@@ -199,6 +269,7 @@ class Chain extends EventEmitter {
       if (!r.ok) return r;
       TX.applyToUtxo(tx, scratch, hdr.height);
       fees += r.fee;
+      burnable += r.required;   // base fee + the data fee, both destroyed
     }
 
     // coinbase reward + anti-inflation (C1)
@@ -208,7 +279,6 @@ class Chain extends EventEmitter {
       if (!Number.isInteger(o.amount) || o.amount < 0 || o.amount > P.MAX_MONEY)
         return { ok: false, err: 'bad coinbase output amount' };
     }
-    const burnable = (block.txs.length - 1) * P.BASE_FEE_SPARKS;
     const tips = fees - burnable;
     const subsidy = P.subsidy(hdr.height);
     const commons = Math.floor(subsidy * P.COMMONS_SHARE);
@@ -245,6 +315,7 @@ class Chain extends EventEmitter {
       this.store.set(id, { block, height: hdr.height, work, id });
       this.tipId = id;
       this.chainIndex[hdr.height] = id;
+      this._index(block, id);
       if (persist) this._persist(block);
       this.emit('block', block);
       return { ok: true, id };
@@ -292,7 +363,7 @@ class Chain extends EventEmitter {
     let burned = 0;
     for (const e of chain) {
       this._applyBlock(e.block, utxo);
-      burned += Math.max(0, e.block.txs.length - 1) * P.BASE_FEE_SPARKS;
+      burned += this._burnedIn(e.block);
     }
     return { utxo, burned };
   }
@@ -305,6 +376,9 @@ class Chain extends EventEmitter {
     const st = this._stateAt(id);
     this.utxo = st.utxo;
     this.burned = st.burned;
+    // A reorg unwrites records too — a message on an orphaned branch was never
+    // sent as far as the chain is concerned.
+    this._reindex(id);
   }
 
   _persist(block) { fs.appendFileSync(this.file, JSON.stringify(block) + '\n'); }
