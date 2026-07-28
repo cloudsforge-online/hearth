@@ -144,10 +144,16 @@ GitHub Pages (`.github/workflows/pages.yml`).
 | `web/pay-demo.html` | Merchant-button **mockup** — see §8 |
 | `web/explorer.html` | 0-second redirect to `./`, kept so old links land |
 
-The wallet and the miner resolve the node URL `?rpc=` → `<meta name="hearth-rpc">`
-→ same-origin `/rpc` → `:8645` (`web/assets/api.js:20-27`) and speak the REST
-API. Same-origin `/rpc` is the deployed path and nginx proxies it
-(`web/nginx.conf:63`).
+Node URL resolution is now split by protocol, because the pages no longer all
+speak one. The miner's `/mining/*` calls and the pay mockup still resolve
+`?rpc=` → `<meta name="hearth-rpc">` → same-origin `/rpc` → `:8645`
+(`web/assets/api.js:20-27`) and speak the REST API. The explorer and the wallet
+speak `eth_*` JSON-RPC and resolve `?rpc=` → `<meta name="hearth-eth-rpc">` →
+same-origin `/rpc/` → `:8545` (`web/assets/explorer/rpc.js:37-44`). Same-origin
+`/rpc` is the deployed path either way and nginx proxies it
+(`web/nginx.conf:63`). **Where the JSON-RPC server mounts inside the node is
+still undecided and it collides with the legacy `POST /rpc` handler** — see
+`docs/evm-spec.md` §6.
 
 #### 2.5.1 The explorer
 
@@ -476,34 +482,76 @@ tip with the UTXO set following (`node/test/p2p-fork.js:1-6`). It runs in CI
 
 ## 7. The wallet and the miner
 
-### 7.1 Browser wallet (`web/wallet.html`, `web/assets/wallet-core.js`, `web/assets/keystore.js`)
+### 7.1 Browser wallet (`web/wallet.html`, `web/assets/wallet/`)
+
+**Account-model, and a clean break.** The wallet was Ed25519, `ember1…` and
+UTXOs; it is now secp256k1, `0x…` and `[nonce, gasPrice, gasLimit, to, value,
+data]` at 18 decimals (`docs/evm-spec.md` §2–§3). Nothing carries over and
+nothing pretends to: there is no migration path and deliberately no export
+machinery for one, because an Ed25519 key names no account on an EVM chain and
+nobody holds EMBER — the testnet is reset. The pre-EVM modules
+(`web/assets/wallet-core.js`, `web/assets/keystore.js`,
+`web/assets/vendor/noble-ed25519.js`) are imported by no page and survive only
+because `node/test/keystore.js` still exercises them in `npm test`.
 
 Non-custodial and genuinely so. The key is generated in the tab with
-`crypto.getRandomValues` (`wallet-core.js:91-93`) and signed with a vendored
-noble-ed25519; only the public key, the address and finished signed transactions
-reach the network (`wallet-core.js:1-11`).
+`crypto.getRandomValues` (`wallet/account.js:60`, `wallet/secp256k1.js:296-301`);
+the address is `keccak256(uncompressed_pubkey[1:])[12:]`, rendered EIP-55
+(`wallet/account.js:39-57`).
 
-**Encryption at rest.** Keys are stored under `hearth.wallet.v2` as
-`{v, address, created, kdf, cipher, iv, ct}`: PBKDF2-HMAC-SHA256 at 600,000
-iterations → AES-256-GCM, WebCrypto only, passphrase never stored and never
-defaulted (`web/assets/keystore.js:10-33`, `:65-100`). The address stays in the
-clear on purpose so a locked wallet can still show what it holds
-(`keystore.js:12-14`). A wrong passphrase is the only failure mode, because GCM
-authenticates (`keystore.js:94-98`). The older plaintext `hearth.wallet.v1`
-record is **not** read implicitly: `peek()` reports it and `migrate()` converts
-it under a passphrase the user chooses, removing the plaintext only after the
-sealed record has been written and read back (`keystore.js:20-23`, `:147-155`).
-The private key is no longer rendered into the DOM on load — the export field is
-filled only while the Reveal panel is open (`web/wallet.html:328-331`, `:595-601`).
+**The ports, and how they are held honest.** `wallet/secp256k1.js`,
+`wallet/rlp.js` and `wallet/transaction.js` are browser ports of
+`node/src/crypto/secp256k1.js`, `node/src/crypto/rlp.js` and
+`node/src/chain/transaction.js`. `web/assets/wallet-selftest.js` runs both
+implementations over the same random inputs and compares them — 200 random keys
+for public keys, RFC 6979 nonces, `r`, `s`, `recoveryId` and recovery; 500 random
+RLP structures; 120 random transactions for the signing hash, the signed bytes,
+the transaction hash, the recovered sender and intrinsic gas — plus the EIP-155
+worked example byte for byte (`wallet-selftest.js:408-560`).
+`.github/workflows/ci.yml` gates on it. `wallet/sha256.js` exists so RFC 6979 can
+be synchronous: WebCrypto's HMAC is a Promise, and a DRBG loop built on it would
+make signing async all the way up.
 
-**Sending works.** The page reads `/address/:addr`, filters to
-`spendable !== false`, builds and signs locally via `WC.buildTx`, broadcasts to
-`POST /tx`, then watches for inclusion over SSE with a 4-second polling backstop
-(`web/wallet.html:505-525`, `:460-485`, `wallet-core.js:116-143`).
+**One extra check the node has no reason to make.** `signAndCheck` signs, then
+decodes its own bytes back, recovers the sender from them and refuses to
+broadcast unless that sender is the unlocked account and every field survived the
+round trip (`wallet/transaction.js:400-433`). A node only has to agree with the
+network about what a transaction *means*; a wallet decides what it *says*, and a
+one-field disagreement there pays the wrong person rather than bouncing.
 
-**Boot is a five-panel state machine** — `offline`, `lock`, `migrate`, `setup`,
-`app` — and `app` is only reachable with an opened key (`web/wallet.html:319-323`,
-`:627-640`).
+**Encryption at rest, versioned this time.** Keys are stored under
+`hearth.wallet.v3` as `{version, curve, chainId, address, created, kdf, cipher,
+iv, ct}` — the same construction as the v2 Ed25519 keystore it replaces,
+PBKDF2-HMAC-SHA256 at 600,000 iterations → AES-256-GCM, WebCrypto only,
+passphrase never stored (`wallet/keystore.js:93-115`). `open()` refuses any
+`version` it does not recognise by number, and refuses a record whose stored
+address does not match the key that comes out of it
+(`wallet/keystore.js:117-153`). A `v1`/`v2` Ed25519 record is reported as
+`kind: 'pre-evm'`, explained in one paragraph on the page, never read and never
+deleted (`wallet/keystore.js:157-172`, `web/wallet.html:97-110`).
+
+**The private key reaches the DOM in exactly one place**, behind a button called
+"Reveal private key" which re-asks for the passphrase and re-derives from storage
+rather than printing the copy already unlocked in memory
+(`wallet/app.js:498-516`).
+
+**Sending.** `eth_getBalance` and `eth_getTransactionCount(…, 'pending')`, then
+sign, then `eth_sendRawTransaction`, then poll `eth_getTransactionReceipt` — a
+null receipt is "not yet", never an error (`wallet/app.js:324-410`, `:295-322`).
+The node's returned hash is compared with the locally computed one; a mismatch is
+reported as "those are not the bytes this wallet signed" rather than as success.
+History is a bounded backwards block walk, batched, because there is no address
+index and cannot cheaply be one (`wallet/app.js:186-230`, `docs/evm-spec.md` §6).
+
+**Boot is a six-panel state machine** — `offline`, `preEvm`, `lock`,
+`unreadable`, `setup`, `app` — and `app` is only reachable with an opened key
+(`wallet/app.js:86-87`, `:572-615`).
+
+**The chain does not exist yet.** Phase 5 is being built, so `?fixtures=1` serves
+a canned account chain over the real transport (`wallet/fixtures.js`). It is
+opt-in from the URL, labelled on screen, and its `eth_sendRawTransaction`
+validates with the same module the node uses — so a signing bug is rejected there
+exactly as it would be on the wire (`wallet/fixtures.js:270-330`).
 
 ### 7.2 Browser miner (`web/mine.html`, `web/assets/mining/`)
 
@@ -525,9 +573,20 @@ real HTTP (`node/test/mining-api.js:1-9`).
 `templateId`; the node keeps the transactions, so a full block is not sent per
 attempt (`mining.js:18-23`). Workers are assigned disjoint arithmetic
 progressions of nonces — `startNonce: i, stride: workers.length` — so no nonce
-is tried twice with no shared counter (`web/assets/mining/miner.js:163-167`).
+is tried twice with no shared counter (`web/assets/mining/miner.js:196-208`).
 The winning digest is signed in the page and only the signature is posted
-(`miner.js:204-214`). `scratchKiB` and `walkSteps` travel *with* the work, so a
+(`miner.js:246-256`). **That signature is secp256k1 now, not Ed25519**: spec §4
+makes `coinbasePub` a secp256k1 key because the coinbase has to receive the
+reward and the fees, so it must be an account this chain can credit. The hashing
+half is untouched — Homefire, the pad fill, the walk, the digest — and
+`node/test/browser-pow.js` still passes. The miner imports the wallet's port
+rather than carrying a second one, since two independent browser ports of one
+curve is how they drift apart. The wire form it assumes is named in one place,
+`POW_SIG_FORM` (`miner.js:46`): `r || s`, 64 bytes, low-s, no recovery id,
+because the header already carries the public key. **Phase 5 owns the node half
+of that contract and had not landed it when this was written** — if it chooses a
+recoverable 65-byte form instead, that constant is the one line to change.
+`scratchKiB` and `walkSteps` travel *with* the work, so a
 stale miner stops producing valid work rather than quietly producing invalid
 work (`mining.js:67-71`, `homefire.js:23-25`).
 
@@ -542,11 +601,11 @@ oldest-first eviction, so an unauthenticated caller cannot grow the map
 **Politeness is real, and honestly scoped.** The effort slider is a duty cycle
 the workers actually sleep through; a background tab drops to ≤15%; and where
 the Battery Status API exists the miner pauses on unplug
-(`web/assets/mining/miner.js:108-135`). Where it does not — Firefox and Safari
+(`web/assets/mining/miner.js:149-178`). Where it does not — Firefox and Safari
 removed it — `powerKnown` stays false and the UI says which of the two it got
-(`miner.js:80-106`, `web/mine.html:294-297`). There is deliberately **no** idle
+(`miner.js:122-147`, `web/mine.html:313-316`). There is deliberately **no** idle
 detection: a page cannot see whether someone is at the keyboard
-(`miner.js:116-121`).
+(`miner.js:157-163`).
 
 ### 7.3 Node-side wallet and miner
 

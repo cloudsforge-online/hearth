@@ -5,7 +5,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Hearth Wallet — Non-Custodial EMBER Wallet</title>
-<meta name="description" content="A real non-custodial EMBER wallet that runs entirely in your browser: Ed25519 keys generated on your device, transactions signed locally, balances read live from a hearthd node.">
+<meta name="description" content="A non-custodial EMBER wallet that runs entirely in your browser: secp256k1 keys generated on your device, transactions signed locally and broadcast over eth_* JSON-RPC.">
 <meta name="robots" content="index, follow">
 <meta name="theme-color" content="#0e0c0a">
 <link rel="canonical" href="https://explorer.cloudsforge.online/wallet.html">
@@ -18,24 +18,29 @@
 <meta name="twitter:image" content="https://hearth.cloudsforge.online/og-hearth.png">
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
 <link rel="manifest" href="site.webmanifest">
-<!-- No hearth-rpc pin: the node is same-origin /rpc, proxied by nginx.
-     This used to be hardcoded to http://localhost:8645, which meant the
-     deployed explorer asked the VISITOR'S OWN machine for the chain,
-     always failed, and fell back to sample data. Set this meta only to
-     point a page at a node on a different origin. -->
+<!-- No hearth-eth-rpc pin: the node is same-origin /rpc/, proxied by nginx.
+     Set this meta only to point the page at a node on a different origin;
+     ?rpc=<url> overrides it for one visit. -->
 <link rel="stylesheet" href="assets/vendor/cf-tokens.css">
 <link rel="stylesheet" href="assets/vendor/cf-ui.css">
 <link rel="stylesheet" href="assets/styles.css">
 <style>
   /* Page-specific only — .field, .lbl, .log, .row-btns, .brk and .hide are in
-     assets/styles.css, shared with the miner. */
+     assets/styles.css, shared with the miner and the explorer. Colours come from
+     assets/vendor/cf-tokens.css; there is no hex in this file. */
   .note { border-left:2px solid var(--ember-500); padding:2px 0 2px 14px; margin:14px 0; }
   .kv { display:flex; justify-content:space-between; gap:12px; padding:7px 0; border-bottom:1px solid var(--line); }
   .kv:last-child { border-bottom:0; }
   .kv .k { color:var(--cream-faint); font-size:.85rem; }
-  .kv .v { font-family:var(--mono); font-size:.85rem; }
+  .kv .v { font-family:var(--mono); font-size:.85rem; text-align:right; }
   code.cmd { display:block; background:var(--ink-900); border:1px solid var(--line); border-radius:var(--radius-sm);
              padding:12px; font-family:var(--mono); font-size:.8rem; overflow-x:auto; white-space:pre; }
+  .addr-big { font-family:var(--mono); font-size:1rem; word-break:break-all; color:var(--cream); }
+  .warn { color:var(--gold-300); }
+  .bad  { color:var(--ember-400); }
+  .good { color:var(--ok); }
+  .fields2 { display:grid; grid-template-columns:1fr 1fr; gap:0 14px; }
+  @media (max-width: 720px) { .fields2 { grid-template-columns:1fr; } }
 </style>
 <!-- first, so it catches failures in everything below it -->
 <script src="assets/obs.js"></script>
@@ -60,21 +65,48 @@
   <div class="wrap">
     <span class="pill" id="mode">● connecting…</span>
     <h2>Web wallet</h2>
-    <p>Your key is created here, in this tab, encrypted with a passphrase you choose, and
-      stays here. Balances come from a
-      running <span class="mono">hearthd</span> node (default <span class="mono">:8645</span>, override
-      with <span class="mono">?rpc=</span>); payments are signed on this device and broadcast already
-      signed. There is no server-side wallet and no demo mode — if no node is reachable this
-      page tells you so instead of inventing numbers.</p>
+    <p>One secp256k1 key, created in this tab, sealed with a passphrase you choose, and never
+      sent anywhere. Balances and nonces are read over <span class="mono">eth_*</span> JSON-RPC
+      from a Hearth node (same origin <span class="mono">/rpc/</span> by default, override with
+      <span class="mono">?rpc=</span>); payments are signed on this device and broadcast already
+      signed. There is no server-side wallet — if no node is reachable this page says so instead
+      of inventing numbers.</p>
+  </div>
+
+  <!-- fixture-mode / wrong-chain banner -->
+  <div class="wrap card hide" id="banner" style="margin-top:20px; border-color:var(--ember-500)">
+    <p style="margin:0" id="bannerText"></p>
   </div>
 
   <!-- node unreachable -->
   <div class="wrap card hide" id="offline" style="margin-top:24px; border-color:var(--ember-500)">
     <h3 style="margin-top:0">No node reachable</h3>
-    <p class="muted" id="offlineWhy">Could not reach the Hearth node.</p>
-    <p class="muted">Start one locally and reload:</p>
+    <p class="muted" id="offlineWhy">Could not reach a Hearth node.</p>
+    <p class="muted">The account-model chain is phase 5 of
+      <span class="mono">docs/evm-spec.md</span> and is being built now, so there may not be one to
+      reach yet. Start a node and reload:</p>
     <code class="cmd">cd hearth/node &amp;&amp; node bin/hearthd.js --mine</code>
-    <div class="row-btns"><button class="btn btn-primary" id="retryBtn">Retry connection</button></div>
+    <p class="muted">Or open this page against a canned chain to see every screen it has —
+      nothing there is real, and it says so on every one:</p>
+    <div class="row-btns">
+      <button class="btn btn-primary" id="retryBtn">Retry connection</button>
+      <a class="btn btn-ghost" href="?fixtures=1">Open with fixture data</a>
+    </div>
+  </div>
+
+  <!-- an Ed25519 key from the pre-EVM chain. One sentence, no machinery. -->
+  <div class="wrap card hide" id="preEvm" style="margin-top:24px">
+    <h3 style="margin-top:0">There is an older key in this browser</h3>
+    <p class="muted">This browser holds an Ed25519 key for
+      <span class="mono brk" id="preEvmAddr">an ember1… address</span>, saved by the previous
+      version of this wallet. It belongs to the pre-EVM chain and cannot be used here: an address on
+      this chain is derived from a <strong>secp256k1</strong> key by Keccak-256
+      (<span class="mono">docs/evm-spec.md §2</span>), and there is no way to turn one kind of key
+      into the other. That chain has been reset, so it holds nothing.</p>
+    <p class="muted">Nothing has been deleted: this wallet neither reads nor writes that record, and
+      it is left exactly where it lies in case you want it for something else.
+      <a href="mine.html">The browser miner</a> has moved to secp256k1 too, for the same reason —
+      a block's coinbase has to be an account this chain can credit. Create a new key below.</p>
   </div>
 
   <!-- a sealed key is stored here -->
@@ -93,47 +125,41 @@
     <div class="log" id="unlockMsg"></div>
   </div>
 
-  <!-- a plaintext key from before this page encrypted anything -->
-  <div class="wrap card hide" id="migrate" style="margin-top:24px; border-color:var(--ember-500)">
-    <h3 style="margin-top:0">Encrypt the key already in this browser</h3>
-    <p class="muted">The key for <span class="mono brk" id="migAddr">—</span> is stored here
-      in <strong>plaintext</strong> — that is how earlier versions of this page saved it. Choose a
-      passphrase and it will be re-saved sealed. The key itself does not change, your address does
-      not change, and no coins move.</p>
-    <p class="muted">If you forget this passphrase the key is unrecoverable. Reveal and back it up
-      first if you have not already.</p>
-    <label class="lbl" for="migPass">new passphrase (8 characters or more)</label>
-    <input id="migPass" class="field" type="password" autocomplete="new-password">
-    <label class="lbl" for="migPass2">repeat it</label>
-    <input id="migPass2" class="field" type="password" autocomplete="new-password">
+  <!-- a stored record this build does not understand -->
+  <div class="wrap card hide" id="unreadable" style="margin-top:24px; border-color:var(--ember-500)">
+    <h3 style="margin-top:0">This browser holds a keystore this page cannot read</h3>
+    <p class="muted">The record under <span class="mono">hearth.wallet.v3</span> says it is keystore
+      version <span class="mono" id="unreadableVer">?</span>, and this build reads version
+      <span class="mono">3</span>. That means it was written by a newer version of this wallet.
+      Nothing here will touch it — open the newer version, or forget it deliberately below.</p>
     <div class="row-btns">
-      <button class="btn btn-primary" id="migBtn">Encrypt and continue</button>
-      <button class="btn btn-ghost" id="migRevealBtn">Reveal the key first</button>
+      <button class="btn btn-ghost" id="unreadableForgetBtn">Forget it and start over</button>
     </div>
-    <textarea id="migPem" class="field hide" rows="5" readonly spellcheck="false" style="margin-top:12px"></textarea>
-    <div class="log" id="migMsg"></div>
   </div>
 
   <!-- no key yet -->
   <div class="wrap card hide" id="setup" style="margin-top:24px">
     <h3 style="margin-top:0">Create or import a key</h3>
-    <p class="muted">A wallet is one Ed25519 keypair. Creating one runs
+    <p class="muted">A wallet is one secp256k1 keypair. Creating one runs
       <span class="mono">crypto.getRandomValues()</span> in this tab — nothing is requested from the
       network and nothing about the key is sent anywhere. It is then sealed with AES-256-GCM under a
-      key derived from the passphrase below, and only the sealed form is written to this browser.
-      The passphrase is never stored and cannot be recovered.</p>
+      key derived from the passphrase below by PBKDF2-HMAC-SHA256 at 600,000 iterations, and only the
+      sealed form is written to this browser. The passphrase is never stored and cannot be recovered:
+      forget it and the coins are gone, exactly as a lost backup file would be.</p>
     <label class="lbl" for="newPass">passphrase (8 characters or more)</label>
     <input id="newPass" class="field" type="password" autocomplete="new-password">
     <label class="lbl" for="newPass2">repeat it</label>
     <input id="newPass2" class="field" type="password" autocomplete="new-password">
     <div class="row-btns">
       <button class="btn btn-primary" id="createBtn">Create a new key</button>
-      <button class="btn btn-ghost" id="showImportBtn">Import a PEM key instead</button>
+      <button class="btn btn-ghost" id="showImportBtn">Import a private key instead</button>
     </div>
     <div class="hide" id="importBox">
-      <label class="lbl" for="importPem">PKCS#8 Ed25519 private key (PEM)</label>
-      <textarea id="importPem" class="field" rows="5" spellcheck="false"
-        placeholder="-----BEGIN PRIVATE KEY-----"></textarea>
+      <label class="lbl" for="importKey">private key — 32 bytes as hex, with or without 0x</label>
+      <textarea id="importKey" class="field" rows="3" spellcheck="false"
+        placeholder="0x…"></textarea>
+      <p class="muted" style="font-size:.8rem">The same form MetaMask, <span class="mono">cast
+        wallet</span> and Hardhat use, so a key works in all of them and here.</p>
       <div class="row-btns"><button class="btn btn-primary" id="importBtn">Import under that passphrase</button></div>
     </div>
     <div class="log" id="setupMsg"></div>
@@ -144,24 +170,25 @@
     <div class="grid g2" style="gap:32px; align-items:start; margin-top:24px">
 
       <div class="card">
-        <span class="pill">Balance · live from node</span>
+        <span class="pill" id="balPill">Balance · live from node</span>
         <div style="display:flex; align-items:center; gap:16px; margin:16px 0">
           <div class="hearth" style="width:104px;height:104px;border-radius:16px">
             <div class="embers"></div><div class="flame" style="width:56px;height:72px;bottom:20px"></div>
           </div>
           <div>
             <div class="stat">
-              <div class="l">spendable</div>
+              <div class="l">EMBER</div>
               <div class="n" id="bal">—</div>
             </div>
             <div class="muted mono" style="font-size:.8rem" id="balSub">reading chain…</div>
           </div>
         </div>
-        <div class="kv"><span class="k">your address</span><span class="v brk" id="addr">—</span></div>
-        <div class="kv"><span class="k">confirmed total</span><span class="v" id="balTotal">—</span></div>
-        <div class="kv"><span class="k">maturing (coinbase)</span><span class="v" id="balImmature">—</span></div>
-        <div class="kv"><span class="k">unspent outputs</span><span class="v" id="utxoCount">—</span></div>
+        <p class="addr-big" id="addr">—</p>
+        <div class="kv"><span class="k">exact balance (wei)</span><span class="v brk" id="balWei">—</span></div>
+        <div class="kv"><span class="k">nonce · next transaction</span><span class="v" id="nonce">—</span></div>
         <div class="kv"><span class="k">chain height</span><span class="v" id="height">—</span></div>
+        <div class="kv"><span class="k">chain id</span><span class="v" id="chainIdLbl">—</span></div>
+        <div class="kv"><span class="k">node suggests</span><span class="v" id="gasPriceLbl">—</span></div>
         <div class="row-btns">
           <button class="btn btn-ghost" id="copyAddrBtn">Copy address</button>
           <button class="btn btn-ghost" id="refreshBtn">Refresh</button>
@@ -171,98 +198,101 @@
       <div class="card" id="send">
         <h3 style="margin-top:0">Send EMBER</h3>
         <label class="lbl" for="to">to address</label>
-        <input id="to" class="field" spellcheck="false" placeholder="ember1…" autocomplete="off">
+        <input id="to" class="field" spellcheck="false" placeholder="0x…" autocomplete="off">
+        <div class="log" id="toMsg"></div>
         <label class="lbl" for="amt">amount (EMBER)</label>
-        <input id="amt" class="field" spellcheck="false" placeholder="0.00" autocomplete="off">
-        <div class="kv" style="margin-top:14px"><span class="k">network fee (burned)</span><span class="v" id="feeLbl">0.0004 EMBER</span></div>
-        <div class="kv"><span class="k">total debited</span><span class="v" id="totalLbl">—</span></div>
-        <div class="row-btns"><button class="btn btn-primary" id="sendBtn">Sign &amp; broadcast</button></div>
+        <input id="amt" class="field" spellcheck="false" placeholder="0.0" autocomplete="off" inputmode="decimal">
+        <div class="fields2">
+          <div>
+            <label class="lbl" for="gasPrice">gas price (gwei)</label>
+            <input id="gasPrice" class="field" spellcheck="false" autocomplete="off" inputmode="decimal">
+          </div>
+          <div>
+            <label class="lbl" for="gasLimit">gas limit</label>
+            <input id="gasLimit" class="field" spellcheck="false" autocomplete="off" inputmode="numeric" value="21000">
+          </div>
+        </div>
+        <div class="kv" style="margin-top:14px"><span class="k">max fee · gasLimit × gasPrice</span><span class="v" id="feeLbl">—</span></div>
+        <div class="kv"><span class="k">most this can debit</span><span class="v" id="totalLbl">—</span></div>
+        <div class="row-btns">
+          <button class="btn btn-primary" id="sendBtn">Sign &amp; broadcast</button>
+          <button class="btn btn-ghost" id="maxBtn">Send everything</button>
+        </div>
         <div class="log" id="sendLog"></div>
       </div>
     </div>
 
     <div class="card" style="margin-top:24px; padding:8px 8px 0">
-      <h3 style="margin:14px 16px 6px">Unspent outputs</h3>
-      <p class="muted" style="margin:0 16px 10px; font-size:.85rem">Every coin this address controls,
-        straight from the node's UTXO set. Freshly mined coins are locked until they are
-        <span class="mono">10</span> blocks deep.</p>
+      <h3 style="margin:14px 16px 6px">Transactions</h3>
+      <p class="muted" style="margin:0 16px 10px; font-size:.85rem" id="histNote">Found by walking
+        blocks backwards from the tip. There is no address index on this chain and there cannot be a
+        cheap one (<span class="mono">docs/evm-spec.md §6</span>), so this is a bounded scan, not a
+        complete history — anything older than the window below is not missing, just not looked at.</p>
       <table class="blocks">
-        <thead><tr><th>Amount</th><th>Source tx</th><th>Vout</th><th>Height</th><th>Status</th></tr></thead>
-        <tbody id="utxos"></tbody>
+        <thead><tr><th>Age</th><th>Hash</th><th>Direction</th><th>Counterparty</th><th>Amount</th><th>Status</th></tr></thead>
+        <tbody id="histBody"></tbody>
       </table>
-    </div>
-
-    <div class="card hide" style="margin-top:24px; padding:8px 8px 0" id="pendingCard">
-      <h3 style="margin:14px 16px 6px">Pending in mempool</h3>
-      <table class="blocks">
-        <thead><tr><th>Txid</th><th>Effect on this address</th><th>Fee</th></tr></thead>
-        <tbody id="pending"></tbody>
-      </table>
+      <div class="row-btns" style="margin:0 16px 16px">
+        <button class="btn btn-ghost" id="histMoreBtn">Scan further back</button>
+        <span class="muted mono" style="font-size:.8rem; align-self:center" id="histRange"></span>
+      </div>
     </div>
 
     <div class="grid g2" style="gap:32px; align-items:start; margin-top:24px">
       <div class="card">
-        <h3 style="margin-top:0">Mining</h3>
-        <p class="muted">This page does not mine. To mine to this address in a browser tab, open
-          <a href="mine.html">the miner</a> — it uses this same key. To mine with a full node
-          instead, Hearth's proof-of-work (Homefire) is memory-hard and runs in
-          <span class="mono">hearthd</span>.</p>
-        <p class="muted">A block's proof must be signed by the key its coinbase pays, so a node can
-          only mine to a key it actually holds. Pointing
-          <span class="mono">--miner-address</span> at an address the node has no key for silently
-          mines to the node's own wallet instead. To mine to <em>this</em> address, give the node this
-          key — reveal it below, append it to <span class="mono">data/wallet.json</span>, then:</p>
-        <code class="cmd" id="mineCmd">node bin/hearthd.js --mine --miner-address …</code>
-        <p class="muted" style="font-size:.85rem">Mined coins are locked for 10 blocks before they can
-          be spent; until then they show up above as <em>maturing</em>.</p>
-        <div class="row-btns"><button class="btn btn-ghost" id="copyCmdBtn">Copy command</button></div>
-      </div>
-
-      <div class="card">
         <h3 style="margin-top:0">Your key</h3>
         <div class="note">
           <p class="muted" style="margin:0">The private key is stored in this browser's
-            <span class="mono">localStorage</span> under <span class="mono">hearth.wallet.v2</span>,
+            <span class="mono">localStorage</span> under <span class="mono">hearth.wallet.v3</span>,
             sealed with AES-256-GCM under a key derived from your passphrase by PBKDF2-HMAC-SHA256
             at 600,000 iterations. The passphrase is not stored anywhere, so a copy of this browser
             profile is not enough to spend these coins — and nobody, including us, can open the key
             for you if you forget it. Clearing site data destroys the key and the coins with it.
             Keep a backup.</p>
         </div>
-        <div class="kv"><span class="k">public key (SPKI DER)</span><span class="v brk" id="pubKey">—</span></div>
+        <div class="kv"><span class="k">public key (uncompressed)</span><span class="v brk" id="pubKey">—</span></div>
+        <div class="kv"><span class="k">address derivation</span><span class="v">keccak256(pub)[12:]</span></div>
         <div class="row-btns">
-          <button class="btn btn-ghost" id="exportBtn">Reveal key (PEM)</button>
-          <button class="btn btn-ghost" id="downloadBtn">Download backup</button>
+          <!-- The name is the warning. Nothing else on this page reveals a key,
+               and this path re-asks for the passphrase rather than reading the
+               copy already in memory. -->
+          <button class="btn btn-ghost" id="revealBtn">Reveal private key</button>
           <button class="btn btn-ghost" id="forgetBtn">Forget key</button>
         </div>
-        <div class="hide" id="exportBox">
-          <label class="lbl">private key — anyone holding this owns the funds</label>
-          <textarea id="exportPem" class="field" rows="5" readonly spellcheck="false"></textarea>
-          <p class="muted" style="font-size:.8rem">Same PKCS#8 PEM format
-            <span class="mono">hearthd</span> keeps in <span class="mono">data/wallet.json</span>, so this key
-            works in the CLI wallet too.</p>
+        <div class="hide" id="revealBox">
+          <p class="muted" style="font-size:.85rem">Anyone who sees this line owns these coins,
+            permanently and with no recourse. It will not be shown until the passphrase is retyped,
+            and it is removed from the page as soon as you hide it.</p>
+          <label class="lbl" for="revealPass">passphrase</label>
+          <input id="revealPass" class="field" type="password" autocomplete="current-password">
+          <div class="row-btns">
+            <button class="btn btn-primary" id="revealGoBtn">Show the private key</button>
+            <button class="btn btn-ghost" id="revealHideBtn">Cancel</button>
+          </div>
+          <textarea id="revealOut" class="field hide" rows="2" readonly spellcheck="false" style="margin-top:12px"></textarea>
+          <div class="row-btns hide" id="revealActions">
+            <button class="btn btn-ghost" id="downloadBtn">Download backup</button>
+          </div>
+          <div class="log" id="revealMsg"></div>
         </div>
       </div>
-    </div>
 
-    <div class="card" style="margin-top:24px">
-      <h3 style="margin-top:0">What this wallet does and doesn't do</h3>
-      <div class="grid g2">
-        <div>
-          <p class="muted" style="margin:0 0 6px"><strong style="color:var(--ok)">Does</strong></p>
-          <p class="muted" style="font-size:.9rem; margin:0">Generates an Ed25519 key locally · derives a
-            checksummed <span class="mono">ember1</span> address · seals the key at rest with AES-256-GCM
-            behind a passphrase · reads real balances and UTXOs from the node ·
-            builds, signs and broadcasts real transactions · shows the node's own txid and waits for the
-            block that contains it.</p>
-        </div>
-        <div>
-          <p class="muted" style="margin:0 0 6px"><strong style="color:var(--ember-400)">Doesn't</strong></p>
-          <p class="muted" style="font-size:.9rem; margin:0">No mining (that is <a href="mine.html">the
-            miner</a>) · no seed phrase or multi-address HD derivation (one key per browser) · no
-            passphrase recovery of any kind · no transaction history beyond the current UTXO set and
-            mempool · no fee estimation beyond the fixed base fee · no hardware wallet support.</p>
-        </div>
+      <div class="card">
+        <h3 style="margin-top:0">What this wallet does and doesn't do</h3>
+        <p class="muted" style="margin:0 0 6px"><strong class="good">Does</strong></p>
+        <p class="muted" style="font-size:.9rem; margin:0 0 14px">Generates a secp256k1 key locally ·
+          derives an EIP-55 checksummed <span class="mono">0x</span> address · seals the key at rest
+          with AES-256-GCM behind a passphrase · reads balance and nonce over
+          <span class="mono">eth_*</span> JSON-RPC · builds, signs (EIP-155, chain 7411) and
+          broadcasts legacy type-0 transactions · decodes its own signed bytes back and refuses to
+          send anything that does not recover to this address · polls for the receipt.</p>
+        <p class="muted" style="margin:0 0 6px"><strong class="warn">Doesn't</strong></p>
+        <p class="muted" style="font-size:.9rem; margin:0">No mining (that is <a href="mine.html">the
+          miner</a>) · no seed phrase or HD derivation — one key per browser · no passphrase recovery
+          of any kind · no contract calls, no token transfers and no transaction
+          <span class="mono">data</span> field · no EIP-1559 fees, because the chain has none in v1
+          (<span class="mono">docs/evm-spec.md §3</span>) · no hardware wallet · no complete history,
+          for the reason given above the table.</p>
       </div>
     </div>
   </div>
@@ -276,372 +306,6 @@
 <script>CloudsForge.mountBar(document.getElementById('cf-bar'), { current: 'crypto' });</script>
 
 <script src="assets/app.js"></script>
-<script src="assets/api.js"></script>
-<script type="module">
-import * as WC from './assets/wallet-core.js';
-import * as KS from './assets/keystore.js';
-
-const $ = id => document.getElementById(id);
-const show = (el, on) => el.classList.toggle('hide', !on);
-const EMBER = WC.SPARKS_PER_EMBER;
-
-let key = null, net = null, tipHeight = 0, utxos = [], unsubscribe = null;
-
-document.querySelectorAll('.hearth').forEach(h => Hearth.igniteHearth(h, 1));
-
-function setMode(text, color) {
-  $('mode').textContent = text;
-  $('mode').style.color = color;
-}
-
-function logLine(box, text, cls) {
-  const d = document.createElement('div');
-  if (cls) d.className = cls;
-  d.textContent = text;
-  box.appendChild(d);
-  return d;
-}
-
-function cell(tr, text, opts = {}) {
-  const td = document.createElement('td');
-  if (opts.cls) td.className = opts.cls;
-  if (opts.style) td.style.cssText = opts.style;
-  td.textContent = text;
-  tr.appendChild(td);
-}
-
-async function flash(btn, text) {
-  const old = btn.textContent;
-  btn.textContent = text;
-  setTimeout(() => { btn.textContent = old; }, 1400);
-}
-
-// ---- key lifecycle ---------------------------------------------------------
-// Only one of these five panels is ever on screen, and `app` is only reachable
-// with an opened key in hand.
-const PANELS = ['offline', 'lock', 'migrate', 'setup', 'app'];
-function panel(name) { for (const p of PANELS) show($(p), p === name); }
-
-function adoptKey(k) {
-  key = k;
-  $('addr').textContent = k.address;
-  $('pubKey').textContent = k.pub;
-  // NOT $('exportPem').value — the private key used to be written into the DOM
-  // on every load, so anything that could read the document could read the key
-  // without ever touching storage. It is filled in only when Reveal is clicked.
-  $('mineCmd').textContent = 'node bin/hearthd.js --mine --miner-address ' + k.address;
-  panel('app');
-  refresh();
-}
-
-/** Read a passphrase from a pair of fields, complaining into `box` if it is bad. */
-function readNewPassphrase(a, b, box) {
-  box.textContent = '';
-  const p1 = $(a).value, p2 = $(b).value;
-  if (p1.length < 8) { logLine(box, '✗ passphrase must be at least 8 characters', 'bad'); return null; }
-  if (p1 !== p2) { logLine(box, '✗ the two passphrases do not match', 'bad'); return null; }
-  return p1;
-}
-
-/** Run a slow crypto step with the button disabled, since PBKDF2 takes a moment. */
-async function working(btn, label, fn) {
-  const old = btn.textContent;
-  btn.disabled = true;
-  btn.textContent = label;
-  try { return await fn(); }
-  finally { btn.disabled = false; btn.textContent = old; }
-}
-
-// ---- node reads ------------------------------------------------------------
-async function connect() {
-  setMode('● connecting…', 'var(--gold-300)');
-  try {
-    const info = await HearthAPI.get('/info');
-    net = info.network;
-    tipHeight = info.height;
-    setMode('● LIVE — ' + info.network + ' @ ' + HearthAPI.BASE, 'var(--ok)');
-    return true;
-  } catch (e) {
-    setMode('● offline', 'var(--ember-400)');
-    $('offlineWhy').textContent =
-      `Could not reach ${HearthAPI.BASE} — ${e.message}. The wallet needs a node to read balances and to broadcast payments.`;
-    panel('offline');
-    return false;
-  }
-}
-
-async function refresh() {
-  if (!key || !net) return;
-  try {
-    const [acct, info, pool] = await Promise.all([
-      HearthAPI.get('/address/' + key.address),
-      HearthAPI.get('/info'),
-      HearthAPI.get('/mempool'),
-    ]);
-    tipHeight = info.height;
-    utxos = acct.utxos || [];
-    renderAccount(acct, info);
-    renderUtxos(acct.utxos || []);
-    renderPending(pool.txs || []);
-  } catch (e) {
-    $('balSub').textContent = 'node unreachable — ' + e.message;
-    setMode('● offline', 'var(--ember-400)');
-  }
-}
-
-function renderAccount(acct, info) {
-  // older nodes don't report maturity; fall back to treating everything as spendable
-  const spendable = acct.spendable != null ? acct.spendable : acct.balance;
-  const immature = acct.immature != null ? acct.immature : 0;
-  $('bal').textContent = WC.emberStr(spendable, 4);
-  $('balSub').textContent = spendable === 0 && acct.balance === 0
-    ? 'no coins yet — mine to this address or receive a payment'
-    : 'EMBER · updated at height ' + info.height;
-  $('balTotal').textContent = WC.emberStr(acct.balance) + ' EMBER';
-  $('balImmature').textContent = WC.emberStr(immature) + ' EMBER';
-  $('utxoCount').textContent = String((acct.utxos || []).length);
-  $('height').textContent = '#' + Number(info.height).toLocaleString();
-  setMode('● LIVE — ' + net + ' @ ' + HearthAPI.BASE, 'var(--ok)');
-}
-
-function renderUtxos(list) {
-  const tb = $('utxos');
-  tb.textContent = '';
-  if (!list.length) {
-    const tr = document.createElement('tr');
-    cell(tr, 'no unspent outputs for this address', { cls: 'muted' });
-    tr.firstChild.colSpan = 5;
-    tb.appendChild(tr);
-    return;
-  }
-  for (const u of [...list].sort((a, b) => b.amount - a.amount)) {
-    const tr = document.createElement('tr');
-    const spendable = u.spendable !== false;
-    cell(tr, WC.emberStr(u.amount) + ' EMBER', { style: 'color:var(--gold-200);font-weight:700' });
-    cell(tr, u.txid.slice(0, 20) + '…', { cls: 'muted' });
-    cell(tr, String(u.vout));
-    cell(tr, u.height != null ? '#' + u.height : '—', { cls: 'muted' });
-    cell(tr, spendable ? 'spendable' : `maturing → #${u.maturesAtHeight}`,
-      { style: spendable ? 'color:var(--ok)' : 'color:var(--gold-300)' });
-    tb.appendChild(tr);
-  }
-}
-
-function renderPending(txs) {
-  const mine = [];
-  for (const e of txs) {
-    const tx = e.tx || e;
-    const out = (tx.outputs || []).filter(o => o.address === key.address).reduce((s, o) => s + o.amount, 0);
-    const spent = (tx.inputs || []).some(i => utxos.some(u => u.txid === i.txid && u.vout === i.vout));
-    if (out > 0 || spent) mine.push({ id: tx.id, out, spent, fee: e.fee });
-  }
-  show($('pendingCard'), mine.length > 0);
-  const tb = $('pending');
-  tb.textContent = '';
-  for (const m of mine) {
-    const tr = document.createElement('tr');
-    cell(tr, m.id.slice(0, 24) + '…', { cls: 'muted' });
-    cell(tr, m.spent ? 'spends your outputs' : '+' + WC.emberStr(m.out) + ' EMBER',
-      { style: m.spent ? 'color:var(--ember-400)' : 'color:var(--ok)' });
-    cell(tr, m.fee != null ? WC.emberStr(m.fee) + ' EMBER' : '—', { cls: 'muted' });
-    tb.appendChild(tr);
-  }
-}
-
-// ---- send ------------------------------------------------------------------
-function updateTotal() {
-  try {
-    const s = WC.emberToSparks($('amt').value || '0');
-    $('totalLbl').textContent = s > 0 ? WC.emberStr(s + WC.BASE_FEE_SPARKS) + ' EMBER' : '—';
-  } catch { $('totalLbl').textContent = '—'; }
-}
-$('amt').addEventListener('input', updateTotal);
-
-async function waitForInclusion(txId, box) {
-  const line = logLine(box, '⋯ waiting for a block to include it…');
-  const check = async (height) => {
-    try {
-      const b = await HearthAPI.get('/block/' + height);
-      if ((b.txs || []).some(t => t.id === txId)) {
-        line.textContent = `✓ confirmed in block #${b.header.height}`;
-        line.className = 'good';
-        if (unsubscribe) { unsubscribe(); unsubscribe = null; }
-        refresh();
-        return true;
-      }
-    } catch {}
-    return false;
-  };
-  if (unsubscribe) unsubscribe();
-  unsubscribe = HearthAPI.onBlock(async (b) => { await check(b.height); });
-  // SSE can be blocked by proxies; poll the tip as a backstop
-  const poll = setInterval(async () => {
-    try {
-      const info = await HearthAPI.get('/info');
-      if (await check(info.height)) clearInterval(poll);
-    } catch {}
-  }, 4000);
-  setTimeout(() => clearInterval(poll), 300000);
-}
-
-$('sendBtn').addEventListener('click', async () => {
-  const box = $('sendLog');
-  box.textContent = '';
-  const btn = $('sendBtn');
-  const to = $('to').value.trim();
-  let amountSparks;
-  try {
-    amountSparks = WC.emberToSparks($('amt').value);
-  } catch (e) {
-    logLine(box, '✗ ' + e.message, 'bad');
-    return;
-  }
-  if (!(amountSparks > 0)) { logLine(box, '✗ amount must be greater than zero', 'bad'); return; }
-  if (!(await WC.isValidAddress(to))) {
-    logLine(box, '✗ that is not a valid ember1 address (checksum failed)', 'bad');
-    return;
-  }
-
-  btn.disabled = true;
-  try {
-    const acct = await HearthAPI.get('/address/' + key.address);
-    const spendableUtxos = (acct.utxos || []).filter(u => u.spendable !== false);
-    logLine(box, `· ${spendableUtxos.length} spendable output(s), ${WC.emberStr(acct.spendable ?? acct.balance)} EMBER available`);
-
-    const tx = await WC.buildTx({ key, utxos: spendableUtxos, to, amountSparks, net });
-    logLine(box, `· signed locally — ${tx.inputs.length} input(s), ${tx.outputs.length} output(s)`);
-    logLine(box, `· txid ${tx.id}`);
-
-    logLine(box, '· broadcasting to ' + HearthAPI.BASE + ' …');
-    const r = await HearthAPI.post('/tx', { tx });
-    if (!r.ok) { logLine(box, '✗ node rejected it: ' + (r.err || 'unknown error'), 'bad'); return; }
-
-    const pool = await HearthAPI.get('/mempool');
-    const held = (pool.txs || []).some(e => (e.tx || e).id === tx.id);
-    logLine(box, held ? '✓ node accepted — tx is in its mempool' : '✓ node accepted', 'good');
-    $('amt').value = '';
-    updateTotal();
-    refresh();
-    waitForInclusion(tx.id, box);
-  } catch (e) {
-    logLine(box, '✗ ' + e.message, 'bad');
-  } finally {
-    btn.disabled = false;
-  }
-});
-
-// ---- key management UI -----------------------------------------------------
-$('unlockBtn').addEventListener('click', async () => {
-  const box = $('unlockMsg');
-  box.textContent = '';
-  try {
-    adoptKey(await working($('unlockBtn'), 'Unlocking…', () => KS.unlock($('unlockPass').value)));
-    $('unlockPass').value = '';
-  } catch (e) {
-    logLine(box, '✗ ' + e.message, 'bad');
-  }
-});
-$('unlockPass').addEventListener('keydown', e => { if (e.key === 'Enter') $('unlockBtn').click(); });
-$('lockForgetBtn').addEventListener('click', () => {
-  if (!confirm('Delete this key from this browser? Without an exported backup the coins are gone for good.')) return;
-  KS.forget();
-  location.reload();
-});
-
-$('migRevealBtn').addEventListener('click', () => {
-  const ta = $('migPem');
-  const raw = localStorage.getItem(KS.LEGACY_STORE_KEY);
-  if (raw) ta.value = JSON.parse(raw).priv;
-  show(ta, ta.classList.contains('hide'));
-});
-$('migBtn').addEventListener('click', async () => {
-  const box = $('migMsg');
-  const pass = readNewPassphrase('migPass', 'migPass2', box);
-  if (pass === null) return;
-  try {
-    const k = await working($('migBtn'), 'Encrypting…', () => KS.migrate(pass));
-    $('migPass').value = $('migPass2').value = $('migPem').value = '';
-    adoptKey(k);
-  } catch (e) {
-    logLine(box, '✗ ' + e.message, 'bad');
-  }
-});
-
-$('createBtn').addEventListener('click', async () => {
-  const box = $('setupMsg');
-  const pass = readNewPassphrase('newPass', 'newPass2', box);
-  if (pass === null) return;
-  try {
-    const k = await working($('createBtn'), 'Sealing…', () => KS.create(pass));
-    $('newPass').value = $('newPass2').value = '';
-    adoptKey(k);
-  } catch (e) {
-    logLine(box, '✗ ' + e.message, 'bad');
-  }
-});
-$('showImportBtn').addEventListener('click', () => show($('importBox'), true));
-$('importBtn').addEventListener('click', async () => {
-  const box = $('setupMsg');
-  const pass = readNewPassphrase('newPass', 'newPass2', box);
-  if (pass === null) return;
-  try {
-    const k = await working($('importBtn'), 'Sealing…', () => KS.adopt($('importPem').value, pass));
-    $('importPem').value = $('newPass').value = $('newPass2').value = '';
-    adoptKey(k);
-  } catch (e) {
-    logLine(box, '✗ ' + e.message, 'bad');
-  }
-});
-$('exportBtn').addEventListener('click', () => {
-  const box = $('exportBox');
-  const revealing = box.classList.contains('hide');
-  // The PEM lives in this field only while it is on screen.
-  $('exportPem').value = revealing ? key.priv : '';
-  show(box, revealing);
-});
-$('downloadBtn').addEventListener('click', () => {
-  const blob = new Blob([key.priv], { type: 'application/x-pem-file' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = key.address.slice(0, 18) + '.pem';
-  a.click();
-  URL.revokeObjectURL(a.href);
-});
-$('forgetBtn').addEventListener('click', () => {
-  if (!confirm('Delete this key from this browser? Without an exported backup the coins are gone for good.')) return;
-  KS.forget();
-  location.reload();
-});
-$('copyAddrBtn').addEventListener('click', async () => {
-  await navigator.clipboard.writeText(key.address);
-  flash($('copyAddrBtn'), 'Copied');
-});
-$('copyCmdBtn').addEventListener('click', async () => {
-  await navigator.clipboard.writeText($('mineCmd').textContent);
-  flash($('copyCmdBtn'), 'Copied');
-});
-$('refreshBtn').addEventListener('click', refresh);
-$('retryBtn').addEventListener('click', boot);
-
-// ---- boot ------------------------------------------------------------------
-async function boot() {
-  if (!(await connect())) return;
-  const stored = KS.peek();
-  if (stored.kind === 'locked') {
-    $('lockAddr').textContent = stored.address || 'this browser';
-    panel('lock');
-    $('unlockPass').focus();
-  } else if (stored.kind === 'legacy') {
-    $('migAddr').textContent = stored.address || 'this browser';
-    panel('migrate');
-  } else {
-    panel('setup');
-  }
-}
-
-HearthAPI.onBlock(() => refresh());
-setInterval(() => { if (key && net) refresh(); }, 8000);
-boot();
-</script>
+<script type="module" src="assets/wallet/app.js"></script>
 </body>
 </html>

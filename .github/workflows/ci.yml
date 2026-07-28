@@ -91,6 +91,14 @@ jobs:
       # showing the old answer.
       - name: Explorer self-test
         run: node web/assets/explorer/selftest.js
+      # The wallet carries browser PORTS of three things the node owns —
+      # secp256k1, RLP and the legacy transaction — and it signs with them. This
+      # runs both implementations over the same random keys and transactions and
+      # compares r, s, recoveryId, the signed bytes, the hash and the recovered
+      # sender. A wallet that signs differently from the node does not bounce, it
+      # pays the wrong person, so this gate is not optional.
+      - name: Wallet self-test
+        run: node web/assets/wallet-selftest.js
 
   secret-hygiene:
     name: Secret hygiene

@@ -1,4 +1,21 @@
-/* Encrypted key storage for the browser wallet and the browser miner.
+/* SUPERSEDED — this is the PRE-EVM keystore (v1/v2), sealing an Ed25519 PEM.
+ *
+ * Both pages that used it — web/wallet.html and web/mine.html — now use
+ * web/assets/wallet/keystore.js, which seals a secp256k1 key under the identical
+ * construction (PBKDF2-HMAC-SHA256 at 600,000 iterations, then AES-256-GCM) and
+ * is versioned from its first line. The two formats do not interoperate and
+ * deliberately cannot: an Ed25519 key names no account on an EVM chain
+ * (docs/evm-spec.md §2), so there is no migration to write.
+ *
+ * A `hearth.wallet.v1` or `.v2` record left in a browser is reported by the new
+ * keystore's `peek()` as `kind: 'pre-evm'` and explained on the page. It is never
+ * read and never deleted.
+ *
+ * Kept only because node/test/keystore.js imports it and runs in `npm test`; see
+ * the note at the top of web/assets/wallet-core.js.
+ *
+ * ---------------------------------------------------------------------------
+ * Encrypted key storage for the browser wallet and the browser miner.
  *
  * The spending key used to sit in localStorage as a plaintext PKCS#8 PEM under
  * `hearth.wallet.v1`. localStorage is readable by anything with script access to

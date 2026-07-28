@@ -75,8 +75,8 @@
       <h3 style="margin-top:0">Where the reward goes</h3>
       <div id="noKey">
         <p class="muted">Mining needs a key to pay. This page uses the same one as the
-          <a href="wallet.html">wallet</a>, stored in this browser under
-          <span class="mono">hearth.wallet.v2</span> and sealed with AES-256-GCM under a
+          <a href="wallet.html">wallet</a> — one secp256k1 key, stored in this browser under
+          <span class="mono">hearth.wallet.v3</span> and sealed with AES-256-GCM under a
           passphrase you choose. The passphrase is never stored and cannot be recovered.</p>
         <label class="lbl" for="newPass">passphrase (8 characters or more)</label>
         <input id="newPass" class="field" type="password" autocomplete="new-password">
@@ -98,10 +98,13 @@
         <div class="log" id="unlockMsg"></div>
       </div>
       <div id="legacyKey" class="hide">
-        <p class="muted">The key in this browser is still stored in <strong>plaintext</strong>, from
-          before this wallet encrypted anything. <a href="wallet.html">Open the wallet</a> to seal it
-          under a passphrase — it takes one step, your address does not change, and no coins move.
-          Mining will work again straight afterwards.</p>
+        <p class="muted">The key in this browser is an <strong>Ed25519</strong> key from the pre-EVM
+          chain. It cannot be mined to: a block's proof is now signed with
+          <strong>secp256k1</strong>, and the coinbase has to be an account this chain can credit
+          (<span class="mono">docs/evm-spec.md §4</span>). There is no way to convert one kind of key
+          into the other, and that chain has been reset, so it holds nothing.</p>
+        <p class="muted">Nothing has been deleted. <a href="wallet.html">Open the wallet</a> to
+          create a key for this chain, then come back — mining will work straight afterwards.</p>
       </div>
       <div id="haveKey" class="hide">
         <p class="muted" style="margin:0 0 .3rem">Rewards are paid to</p>
@@ -170,8 +173,14 @@
 <script>CloudsForge.mountBar(document.getElementById('cf-bar'), { current: 'crypto' });</script>
 <script src="assets/api.js"></script>
 <script type="module">
-import { emberStr } from './assets/wallet-core.js';
-import * as KS from './assets/keystore.js';       // shared with wallet.html, deliberately
+/* The key, the address and the amounts are all account-model now: one secp256k1
+ * key shared with wallet.html (deliberately), a 0x address, and EMBER at 18
+ * decimals rather than 8 (docs/evm-spec.md §1). The hashing side of this page —
+ * homefire.js, worker.js, sha256.js — is untouched and still checked against the
+ * node by node/test/browser-pow.js. */
+import { formatEmber } from './assets/explorer/format.js';
+import * as rpc from './assets/explorer/rpc.js';
+import * as KS from './assets/wallet/keystore.js';   // shared with wallet.html, deliberately
 import { Miner } from './assets/mining/miner.js';
 
 const $ = id => document.getElementById(id);
@@ -211,14 +220,19 @@ async function working(btn, label, fn) {
   finally { btn.disabled = false; btn.textContent = old; }
 }
 
+/* Balance comes from eth_getBalance now: there are no UTXOs to be spendable or
+ * maturing, just an account with a number in it. If the eth_* surface is not
+ * mounted yet — phase 6 — this fails quietly and mining carries on, because
+ * mining does not depend on being able to read the balance. */
 async function refreshBalance() {
   if (!key) return;
   try {
-    const a = await HearthAPI.get('/address/' + key.address);
-    $('bal').textContent = emberStr(a.spendable, 4);
-    $('immature').textContent = a.immature > 0
-      ? `${emberStr(a.immature, 4)} EMBER still maturing` : '';
-  } catch { /* the banner already says the node is unreachable */ }
+    const wei = await rpc.call('eth_getBalance', [key.address, 'latest']);
+    $('bal').textContent = formatEmber(BigInt(wei), 6);
+    $('immature').textContent = '';
+  } catch (e) {
+    $('immature').textContent = 'balance unavailable — ' + rpc.describeError(e);
+  }
 }
 
 $('createKey').addEventListener('click', async () => {
@@ -284,7 +298,7 @@ $('startBtn').addEventListener('click', async () => {
   });
   miner.addEventListener('accepted', e => {
     $('s-found').textContent = miner.accepted;
-    log(`BLOCK FOUND at height ${e.detail.height} — ${emberStr(e.detail.reward, 4)} EMBER`, 'found');
+    log(`BLOCK FOUND at height ${e.detail.height} — ${formatEmber(BigInt(e.detail.reward || 0), 6)} EMBER`, 'found');
     refreshBalance();
   });
   miner.addEventListener('stale', () => log('Someone else found that height first.'));
@@ -347,7 +361,8 @@ $('stopBtn').addEventListener('click', stop);
   if (stored.kind === 'locked') {
     $('lockedAddr').textContent = stored.address || 'this browser';
     keyPanel('lockedKey');
-  } else if (stored.kind === 'legacy') {
+  } else if (stored.kind === 'pre-evm') {
+    // An Ed25519 key from before the account model. Named, not silently ignored.
     keyPanel('legacyKey');
   } else {
     keyPanel('noKey');
