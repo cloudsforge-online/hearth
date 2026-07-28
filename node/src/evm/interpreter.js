@@ -364,8 +364,25 @@ class EVM {
 
       /* An occupied address is not a revert-and-carry-on: it consumes every last
        * unit of the child's gas, because the alternative is a cheap probe for
-       * whether an address is taken. */
-      if (state.getNonce(address) !== 0n || !state.getCodeHash(address).equals(EMPTY_CODE_HASH)) {
+       * whether an address is taken.
+       *
+       * THREE conditions make an address occupied, and the third is the one that
+       * is easy to miss: a non-zero nonce, non-empty code, **or non-empty
+       * storage** (EIP-7610). EIP-684 named only the first two, and reading it
+       * alone leads to the conclusion that a CREATE onto storage-with-no-code is
+       * a legal reset that wipes the slots. It is not. Every major client — and
+       * every Paris-era fixture in the corpus — treats it as a collision and
+       * leaves the storage exactly where it was: `stSStoreTest/InitCollisionParis`,
+       * `stCreate2/create2collisionStorageParis`, `stRevertTest/RevertInCreateInInit_Paris`
+       * and `stCreate2/RevertInCreateInInitCreate2Paris`. The `…Paris` suffix on
+       * all four is upstream's record that the pre-Paris files assert the other
+       * answer, which is why the two sets carry different fork lists.
+       *
+       * Balance is deliberately NOT a condition: anyone can send to an address
+       * before it holds a contract, and that must not be able to brick it. */
+      if (state.getNonce(address) !== 0n
+        || !state.getCodeHash(address).equals(EMPTY_CODE_HASH)
+        || state.hasStorage(address)) {
         return result(ERR.COLLISION, 0n, EMPTY);
       }
 

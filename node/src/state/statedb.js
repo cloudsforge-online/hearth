@@ -251,6 +251,23 @@ class StateDB {
     }
   }
 
+  /**
+   * The account's storage root. An absent account reports the empty root, so
+   * "has no storage" is one comparison and never needs an existence test first.
+   *
+   * This is consensus, not introspection: CREATE treats a non-empty storage
+   * root as an address collision (EIP-7610), so an address carrying storage but
+   * no code and nonce 0 is occupied, not reusable. See the note in
+   * `interpreter.create`.
+   */
+  getStorageRoot(addr) {
+    const a = this._load(toAddress(addr).toString('hex'));
+    return a === null ? EMPTY_TRIE_ROOT : a.storageRoot;
+  }
+
+  /** Does this address hold any storage at all — the EIP-7610 collision test. */
+  hasStorage(addr) { return !this.getStorageRoot(addr).equals(EMPTY_TRIE_ROOT); }
+
   getNonce(addr) { const a = this._load(toAddress(addr).toString('hex')); return a === null ? 0n : a.nonce; }
   getBalance(addr) { const a = this._load(toAddress(addr).toString('hex')); return a === null ? 0n : a.balance; }
 
@@ -360,19 +377,21 @@ class StateDB {
   originalStorage(addr, slot) {
     const a = toAddress(addr);
     const hex = a.toString('hex');
-    // A CREATE landing on an address that has storage but no code and nonce 0
-    // resets it — not a collision, a legal reset. The storage is wiped, so the
-    // "original" value is zero from here on, even though the pre-transaction
-    // root still holds the old one.
-    //
-    // Checked BEFORE the memo, because a slot read earlier in the same
+    // `createAccount` wipes the storage, so from that point on the "original"
+    // value is zero even though the pre-transaction root still holds the old
+    // one. Checked BEFORE the memo, because a slot read earlier in the same
     // transaction has already cached the pre-reset value.
     //
-    // Left unhandled this is not a rounding error: SSTORE prices the EIP-2200
-    // rows against `original`, so it charges rows 8/9 instead of row 3 and
-    // subRefund drives the refund counter negative and throws. Ten
-    // GeneralStateTests catch it — the create2collision and
-    // RevertInCreateInInit families.
+    // NO CONFORMANCE VECTOR REACHES THIS, and the honest thing is to say so.
+    // The EVM only reaches `createAccount` after the CREATE collision test has
+    // already established that the address holds no storage (interpreter.js —
+    // EIP-7610), so `_reset` can never fire from a transaction. It stays
+    // because `createAccount` is a public method of this module whose contract
+    // is "the storage does not survive", and an `originalStorage` that then
+    // answered from the pre-transaction root would contradict it; test/statedb.js
+    // pins that directly. It was once believed to be what the ten
+    // InitCollision/create2collision vectors were failing on. It was not — the
+    // missing storage arm of the collision test was.
     if (this._reset.has(hex)) return ZERO_WORD;
     const key = hex + toWord(slot).toString('hex');
     const memo = this._committed.get(key);
