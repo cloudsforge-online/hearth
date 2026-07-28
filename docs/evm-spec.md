@@ -74,8 +74,25 @@ keystore needs reworking.
 
 ## 3. Transactions
 
-v1 supports **legacy (type 0) only**, with EIP-155 replay protection. EIP-1559 (type 2) is
-deferred to v2; wallets fall back to legacy pricing without complaint.
+v1 supports **legacy (type 0) only**. EIP-1559 (type 2) is deferred to v2; wallets fall back to
+legacy pricing without complaint.
+
+**Both EIP-155-protected and pre-155 unprotected transactions are accepted**, exactly as Ethereum
+does. This is not laziness — a whole tier of ecosystem infrastructure is deployed by *keyless*
+presigned transactions (Nick's method), where a transaction with a made-up signature is broadcast
+from an address nobody controls, so the contract lands at the same address on every chain.
+Multicall3 at `0xcA11bde05977b3631167028862bE2a173976CA11` is deployed this way, and every
+front-end and indexer assumes that address. Reject pre-155 and that address is permanently
+unreachable here, and every tool needs hand-configuring.
+
+The trade is that an unprotected transaction is replayable on any chain that accepts them. That
+risk sits with the sender, every modern wallet signs with EIP-155 by default, and it is the same
+trade Ethereum itself makes.
+
+**Deploy Multicall3 from the canonical presigned transaction, not from our own build.** The
+presigned payload carries the canonical 0.8.12/london bytecode; deploying our `Multicall3.sol`
+instead would produce different code and a different address, which defeats the entire point.
+`contracts/src/Multicall3.sol` is kept as readable reference for what is being deployed.
 
 ```
 [nonce, gasPrice, gasLimit, to, value, data, v, r, s]
@@ -217,6 +234,16 @@ which is why precompile `0x01` is in v1.
 
 **Ship with liquidity.** A DEX with empty pools attracts nobody. Seed EMBER/WEMBER and at least one
 pair against a bridged or issued stable asset at launch.
+
+**`feeToSetter` must not be a deployer EOA.** It controls where protocol fees go, with no timelock
+and no two-step handover in V2 — whoever holds that key can redirect the fee switch in one
+transaction. It should be a multisig from the moment the factory is deployed, not "moved later",
+because moving it later requires the very key you are trying to stop relying on.
+
+**Verify the init code hash against the live factory before any liquidity is added.** The Router
+computes pair addresses from a hard-coded hash rather than asking the factory, so a mismatch sends
+it looking for pools that do not exist. The factory exposes `pairCodeHash()` for exactly this
+check. Current hash: `0x46b4122ae9db4a03c913cfbed4e6321064741545c60aafe3ed9410be7657a537`.
 
 Crucible already runs a fail-closed, multi-source, median price oracle — publishing it on-chain is
 a genuine head start over a new chain with no price feed.
