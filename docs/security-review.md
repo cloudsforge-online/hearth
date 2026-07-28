@@ -1,6 +1,23 @@
-# Security & completeness review
+# Security & completeness review — **of the UTXO-era code**
 
-An independent adversarial audit of Hearth (code correctness, security, and
+> ## Scope, before anything else
+>
+> **This review predates every line of the EVM.** It was conducted against the
+> UTXO ledger, its Ed25519 signatures, its `ember1…` addresses and its REST API —
+> the chain that is now being retired. Nothing in `node/src/{crypto,state,evm,chain,jsonrpc}/`
+> has been reviewed here, and neither has the account model.
+>
+> **It is not an audit and must never be cited as one.** It is an internal
+> adversarial review whose findings were implemented. Nothing in this repository
+> has been independently audited
+> ([`listing-checklist.md`](listing-checklist.md) §4).
+>
+> The EVM's assurance comes from a different mechanism entirely: Ethereum's
+> published conformance vectors, which are CI-relevant and cover 609/609 VMTests,
+> 20,067/20,077 GeneralStateTests and 188/188 TransactionTests. Vectors make an
+> EVM tractable; they do not make it audited.
+
+An internal adversarial review of Hearth (code correctness, security, and
 functionality gaps that would block it from being real money), plus the status
 of each finding. Findings are ranked most-severe first. "Fixed" items ship with
 tests; "tracked" items are documented with a concrete plan on the
@@ -33,7 +50,7 @@ Legend: ✅ fixed & tested · 🟡 partially addressed · ⬜ tracked (not yet a
 
 | # | Finding | Status |
 |---|---------|--------|
-| **M1** | Web wallet is a **mockup** (hardcoded balance, fake mining/send). | 🟡 Labeled as a demo; the real client path is the desktop app + `node/`. Wiring the web wallet to real client-side keys/signing is ⬜ tracked. |
+| **M1** | Web wallet is a **mockup** (hardcoded balance, fake mining/send). | ✅ **Closed, and then superseded.** The wallet is now real, non-custodial and secp256k1: keys generated in the tab, sealed with PBKDF2 → AES-256-GCM, signing legacy transactions at 18 decimals. Its crypto is a *port* of `node/src`, and CI runs both over the same random inputs and compares them (`web/assets/wallet-selftest.js`, 141 checks) — a cross-check that found a real gas bug in the node on its first run. |
 | **M2** | **Mempool** had no size cap and O(n²) admission. | 🟡 Added `MEMPOOL_MAX_TXS` cap; incremental spent-set (vs. full replay) is ⬜ tracked. |
 | **M3** | Output amounts not constrained to positive integers ≤ max. | ✅ `Number.isInteger`, `> 0`, `≤ MAX_MONEY` enforced. |
 | **M4** | **Commons treasury** funds are unspendable (no governance path). | ⬜ Tracked — governance/multisig spend path is Roadmap Phase 6; documented, not silently broken. |
@@ -44,7 +61,7 @@ Legend: ✅ fixed & tested · 🟡 partially addressed · ⬜ tracked (not yet a
 | # | Finding | Status |
 |---|---------|--------|
 | **L1** | No cross-network replay domain in signatures. | ✅ The network id is bound into the signed transaction body. |
-| **L2** | RPC has open CORS, unbounded POST body, unbounded SSE clients. | ⬜ Tracked — cap body/SSE, document that RPC must sit behind a proxy in production. |
+| **L2** | RPC has open CORS, unbounded POST body, unbounded SSE clients. | 🟡 The POST body is now capped at `MAX_TX_BYTES + 8,192` = 108,192 bytes, answered with 413, and the socket destroyed (`node/src/rpc.js:257-290`). CORS is still `*` and SSE clients are still uncapped, both deliberately — the node is meant to sit behind a proxy, and [`../SECURITY.md`](../SECURITY.md) declares that out of scope rather than pretending otherwise. |
 | **L3** | Append-only persistence with no atomicity; blocks trusted on reload. | 🟡 Blocks are now **re-validated on reload** (full replay through consensus). Atomic writes/fsync + integrity marker ⬜ tracked. |
 
 ## Bottom line
@@ -60,3 +77,10 @@ mainnet — see the [roadmap](roadmap.md).
 
 *Re-run the evidence:* `cd node && node test/unit.js && node test/e2e.js` and
 `cd rust/hearthd && cargo test`.
+
+**What this review does not cover, restated because it is now most of the
+repository:** the EVM (`node/src/{crypto,state,evm,chain}/`), the JSON-RPC surface
+(`node/src/jsonrpc/`), the `hearth` CLI, the AMM contracts, the EVM-aware explorer
+and the secp256k1 browser wallet. For those, see
+[`../MAP.md`](../MAP.md) §4 and the audit scope in
+[`listing-checklist.md`](listing-checklist.md) §4.

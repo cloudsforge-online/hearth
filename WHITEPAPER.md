@@ -1,6 +1,6 @@
 # Hearth — a chain ordinary people can mine, and developers can build on
 
-**EMBER · working paper v0.2 · 2026-07-28**
+**EMBER · working paper v0.3 · 2026-07-29**
 
 ---
 
@@ -13,19 +13,30 @@ claim before you read the claim.
 | --- | --- |
 | Homefire proof-of-work, LWMA difficulty, emission schedule | **Running.** JavaScript reference node, tested in CI, digest-conformant browser miner |
 | UTXO ledger, Ed25519 signatures, `ember1…` addresses | **Running, and being retired.** Replaced by the account model below |
-| EVM primitives — Keccak-256, RLP, secp256k1, `uint256` | **Complete**, passing published vectors |
-| State — Merkle Patricia Trie, StateDB | **Complete**, passing `ethereum/tests` TrieTests |
-| EVM execution — opcode table, gas schedule, precompiles | **Partial.** The tables exist and are tested; the interpreter is being written now |
-| State transition, header v2, `eth_*` JSON-RPC | **Specified, not built.** See [`docs/evm-spec.md`](docs/evm-spec.md) |
-| AMM contracts (WEMBER, Factory, Pair, Router) | **Source written, not deployed.** No chain has executed them |
+| EVM primitives — Keccak-256, RLP, secp256k1, `uint256` | **Built**, passing published vectors |
+| State — Merkle Patricia Trie, StateDB | **Built**, passing `ethereum/tests` TrieTests |
+| EVM execution — interpreter, opcode table, gas schedule | **Built. 609/609 VMTests pass** |
+| Precompiles `0x01`–`0x09`, including bn128 and blake2f | **Built.** All nine implemented; EIP-196/197/152 vectors pass |
+| Transactions, receipts, logs bloom | **Built. 188/188 TransactionTests pass** |
+| State transition | **Built. 20,067 of 20,077 GeneralStateTests pass** — ten known failures, all `*Paris` account-collision fixtures — see [`MAP.md`](MAP.md) §4.3 |
+| `eth_*` JSON-RPC surface | **Built**, 301 checks — against a chain *interface* and an in-memory fake. Nothing serves it yet |
+| EVM-aware explorer · secp256k1 browser wallet · `hearth` CLI with an opcode tracer | **Built** |
+| AMM contracts (WEMBER, Factory, Pair, Router, Multicall3) | **Compiled, and executed — on our own EVM.** A full Uniswap V2 deployment and a real swap run in `node/test/dex.js`. **Deployed to no chain, because there is no chain** |
+| **Consensus on the account model** | **Being built now. No block has ever been produced on it**, so there is no endpoint, no testnet and no mainnet |
 | Mainnet | **Does not exist.** Nothing but throwaway testnets has ever run |
 
 There is no mainnet, no market, no listed price, and no EMBER of any monetary
 value in existence. Anything in this document written in the present tense is
 running today; anything else is marked.
 
+**The single most important line in that table is the second-to-last one.**
+Everything marked "built" above is a component proved offline against published
+vectors. None of it has ever been driven by a block.
+
 **This paper replaces v0.1, which made two claims the code did not support.**
-Both retractions are in §8.
+Both retractions are in §8. v0.3 updates the status table, which v0.2 took as a
+snapshot of `node/src` before the interpreter, the state transition and the RPC
+existed.
 
 ---
 
@@ -292,8 +303,8 @@ Per [`docs/evm-spec.md`](docs/evm-spec.md):
 | State model | UTXO | accounts `{nonce, balance, storageRoot, codeHash}` |
 | Address | `ember1…` bech32 | `0x…`, last 20 bytes of `keccak256(pubkey[1:])`, EIP-55 checksummed |
 | Signatures | Ed25519 | secp256k1 with public-key recovery |
-| Decimals | 8 ("sparks") | **18** — every EVM tool assumes 18 for a native asset |
-| Chain ID | none | **7411**, EIP-155 replay protection |
+| Decimals | 8 ("sparks") | **18** — every EVM tool assumes 18 for a native asset. *Specified; `node/src/params.js:6` still defines 1e8* |
+| Chain ID | none (a `net` field inside the signed body) | **7411** mainnet, **7412** testnet, EIP-155 replay protection |
 | Fork semantics | n/a | **Shanghai** — PUSH0, EIP-3529 refunds, warm coinbase, initcode cap. No blobs |
 | Transactions | custom JSON | RLP legacy (type 0). EIP-1559 deferred |
 | Block gas limit | n/a | 30,000,000 |
@@ -318,17 +329,34 @@ VMTests and GeneralStateTests. A divergence from Ethereum semantics is not a
 cosmetic bug — it means a Solidity contract behaves differently here than where
 it was audited, and somebody loses money.
 
-The harness runs 121 committed vectors offline and 20,766 against the full
-upstream corpus (`node/test/conformance/README.md`). Primitives and state pass
-today. The interpreter does not exist yet, so opcode and state-transition
-conformance is not yet claimed.
+The harness runs 121 committed vectors offline and 20,935 against the full
+upstream corpus (`node/test/conformance/README.md`). **All of it now passes
+except ten GeneralStateTests**, which are tracked rather than skipped — all ten
+are `*Paris` account-collision fixtures, named individually in
+[`MAP.md`](MAP.md) §4.3:
 
-One honesty note about "CI-gating": the conformance suites run under
-`npm test` (`node/package.json`), and `.github/workflows/ci.yml` currently
-invokes the legacy suites individually rather than `npm test`. So the gate is
-real in the test script and not yet real in the workflow. It is on the
-pre-mainnet list ([`docs/listing-checklist.md`](docs/listing-checklist.md) §7,
-M13).
+| Suite | Result |
+| --- | --- |
+| VMTests | **609 / 609** |
+| GeneralStateTests | **20,067 / 20,077** |
+| TransactionTests | **188 / 188** |
+| RLPTests, TrieTests | pass |
+
+Two things about that which matter more than the numbers. VMTests are run with
+gas checking off, and that is not a concession: `legacytests/Constantinople/VMTests`
+is Constantinople *semantics* at Frontier *prices*, and running them with gas on
+produces 434 divergences that decompose exactly into EIP-2929, EIP-160 and
+EIP-150 with nothing left over (`node/test/interpreter.js:12-21`). Gas conformance
+comes from GeneralStateTests, where it is checked. And the corpus is
+**gitignored** — `node/scripts/fetch-vectors.sh` obtains it — so the full gate is
+a deliberate command rather than something `npm test` runs.
+
+`.github/workflows/ci.yml` now runs `npm test` as a single command rather than
+naming suites individually, so a new suite is covered the moment it is added
+(`ci.yml:19-49`). That closes the gap v0.2 recorded here. What CI still does
+**not** run is the full corpus, only the harness self-test over the committed
+fixtures — and at the time of writing the node job is failing outright for an
+unrelated one-line reason ([`MAP.md`](MAP.md) §11).
 
 ### 6.4 Two opcodes with no natural meaning here, and what they do
 
@@ -350,14 +378,16 @@ EIP-1559, so it pushes zero.
 
 | Directory | What it is |
 | --- | --- |
-| `node/` | The reference full node, wallet, miner, P2P and REST API. JavaScript, zero runtime dependencies. **This is the network.** |
-| `node/src/crypto`, `node/src/state`, `node/src/evm` | The EVM implementation, in progress |
-| `node/test/conformance/` | The vector harness and a committed offline subset |
-| `contracts/` | Uniswap-V2-derived AMM sources, WEMBER, Multicall3. Compile and build tests exist (`contracts/test/build.test.mjs`) but **are not wired into CI**, and nothing has ever been deployed |
-| `web/` | Static block explorer, non-custodial browser wallet, browser miner |
-| `site/` | Marketing site. Copy has been corrected against the code |
-| `rust/hearthd/` | A self-check binary and a Homefire benchmark. **Not a node, not consensus** — two known divergences, documented in `MAP.md` §2.2 |
-| `proto/` | Teaching scripts. Not consensus, not imported |
+| `node/` | The reference full node, wallet, miner, P2P and REST API — **and the entire EVM implementation.** JavaScript, zero runtime dependencies. **This is the network.** |
+| `node/src/{crypto,state,evm,chain,jsonrpc}` | The account-model chain: primitives, trie, interpreter, state transition, RPC. ~7,700 lines |
+| `node/src/cli`, `node/bin/hearth.js` | `hearth` — the terminal tool, including the opcode-level tracer |
+| `node/test/conformance/` | The vector harness and a committed offline subset; the full corpus is gitignored and fetched |
+| `contracts/` | Uniswap-V2-derived AMM sources, WEMBER, Multicall3. **Compiled in CI** (`.github/workflows/ci.yml`), and executed against our own EVM by `node/test/dex.js`. **Deployed nowhere** |
+| `tools/` | The developer kit: a faucet, Hardhat and Foundry templates, and an RPC probe that serves the real method surface over a fake chain |
+| `web/` | EVM-aware block explorer, non-custodial secp256k1 browser wallet, browser miner |
+| `site/` | Marketing site. Its copy still describes the UTXO chain |
+| `rust/hearthd/` | A self-check binary and a Homefire benchmark. **Not a node, not consensus** — two known divergences, documented in `MAP.md` §3.3. It has no EVM at all |
+| `proto/` | Teaching scripts. Not consensus, not imported — and `proto/emission.js` is a *model*, not the schedule |
 
 [`MAP.md`](MAP.md) is the authoritative inventory: every claim in it is checked
 against source and cites `path:line`. Where this paper and `MAP.md` disagree,
@@ -405,11 +435,30 @@ believe `MAP.md`.
   coinbase maturity (10, against a production ~100 — `params.js:95`) are all set
   for local development. Each is a hard fork to change.
 - **Writing an EVM is a serious undertaking.** Conformance vectors make it
-  tractable, not safe. Until GeneralStateTests pass in full and an independent
-  audit has run, treat contract behaviour here as unverified.
-- **`0x06`–`0x09` (bn128, blake2f) are not implemented** and deliberately revert
-  loudly rather than being absent, because in the EVM a call to a codeless
-  address *succeeds* and returns empty — which a pairing check reads as zero.
+  tractable, not safe. Ten GeneralStateTests still fail — all of them
+  `*Paris` account-collision cases, creating into an address that already carries
+  a nonce or storage — and no independent audit has run. Treat contract behaviour
+  here as unverified.
+- **A green DEX run is narrower than it looks.** `node/test/dex.js` proves a real
+  Uniswap V2 swap executes correctly on our EVM, and it proves nothing about
+  `DELEGATECALL`: V2 contains none, because every library is `internal` and solc
+  inlines it. `DELEGATECALL`'s context semantics rest on the conformance vectors
+  alone.
+- **Nothing has been driven by a block.** Every EVM component is proved against
+  vectors and fixtures. Consensus on the account model is the missing phase, and
+  bugs that only appear when state is carried across blocks, reorged, or persisted
+  have had no opportunity to show themselves.
+- **`0x06`–`0x09` (bn128, blake2f) are implemented now.** For a period they were
+  warmed but unimplemented, and they deliberately **failed loudly** rather than
+  being absent — because in the EVM a call to a codeless address *succeeds* and
+  returns empty, which a pairing check reads as zero. The interpreter keeps the
+  machinery to fail a warmed-but-unimplemented address for exactly that reason
+  ([`docs/decisions.md`](docs/decisions.md) §1.3).
+- **`PREVRANDAO` is miner-influenceable** (§6.4). It must not be used as a
+  randomness source for anything an adversarial miner would profit from biasing.
+- **Pre-EIP-155 transactions are accepted**, deliberately, so Multicall3's
+  canonical address stays reachable — which means an unprotected transaction is
+  replayable across chains ([`docs/decisions.md`](docs/decisions.md) §1.4).
 - **No bridges, and none planned soon.** Every bridge is a liability.
 - **No wallet recovery.** The browser wallet has one key per browser: no seed
   phrase, no HD derivation, no hardware wallet, no passphrase recovery.
@@ -457,6 +506,8 @@ already speaks.
 | --- | --- |
 | [`MAP.md`](MAP.md) | What is actually in this repository, cited to `path:line` |
 | [`docs/evm-spec.md`](docs/evm-spec.md) | The account-model / EVM specification. Authoritative |
+| [`docs/decisions.md`](docs/decisions.md) | Why the non-obvious choices were made, and what is still open |
+| [`docs/quickstart.md`](docs/quickstart.md) | Deploy a contract, every step marked RUN / PROBE / WAITING |
 | [`docs/tokenomics.md`](docs/tokenomics.md) | Supply, emission, circulating-supply methodology |
 | [`docs/exchange-integration.md`](docs/exchange-integration.md) | For exchange integration engineers |
 | [`docs/listing-checklist.md`](docs/listing-checklist.md) | What still has to exist before applying |

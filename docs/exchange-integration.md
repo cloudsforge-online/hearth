@@ -22,15 +22,26 @@ honest account of what is not built yet.
 | Piece | Status |
 | --- | --- |
 | Chain id, address format, transaction format, gas model | **Specified and frozen.** [`evm-spec.md`](evm-spec.md) |
-| Keccak-256, RLP, secp256k1 recovery, `uint256` | **Implemented**, passing published vectors |
-| Merkle Patricia Trie, StateDB | **Implemented**, passing `ethereum/tests` TrieTests |
-| EVM opcode table, gas schedule, precompiles `0x01`–`0x05` | **Implemented**, unit-tested; interpreter in progress |
-| State transition, receipts, logs bloom, header v2 | Not built |
-| `eth_*` JSON-RPC surface | **Not built.** Being written now |
+| Keccak-256, RLP, secp256k1 recovery, `uint256` | **Built**, passing published vectors |
+| Merkle Patricia Trie, StateDB | **Built**, passing `ethereum/tests` TrieTests |
+| EVM interpreter, opcode table, gas schedule | **Built. 609/609 VMTests pass** |
+| Precompiles `0x01`–`0x09` — including bn128 and blake2f | **Built.** All nine of Shanghai's set |
+| Transactions, receipts, logs bloom | **Built. 188/188 TransactionTests pass** |
+| State transition | **Built. 20,067/20,077 GeneralStateTests pass** — ten known failures, all `*Paris` account-collision fixtures — see [`MAP.md`](../MAP.md) §4.3 |
+| `eth_*` JSON-RPC surface | **Built**, 301 checks — see the caveat below |
+| AMM contracts | **Compiled, and executed on our own EVM** — a full Uniswap V2 deployment and a real swap, `node/test/dex.js`, 167/167 |
+| **Header v2 and consensus on the account model** | **Not built.** This is the blocker |
 | Public testnet on the account model | Not running |
 | Mainnet | Does not exist |
 
-**Do not begin integration work yet.** This document exists so that when the RPC
+**The caveat on the RPC row, because it is the row you care about.** The method
+table, the strict QUANTITY/DATA hex codec, the JSON-RPC 2.0 transport, the error
+mapping and the block/receipt shapes are all built and tested. They are tested
+against an **in-memory fake chain** — `node/src/jsonrpc/methods.js:1-20` says so
+in its own header — and **nothing mounts the server**. So the surface you will
+talk to exists; the thing behind it does not yet.
+
+**Do not begin integration work yet.** This document exists so that when the chain
 lands you can scope the work in an afternoon rather than a sprint, and so you can
 tell us now if anything below would be a problem for you. The request/response
 shapes in §5 and §6 are the Ethereum JSON-RPC specification, which is what this
@@ -38,8 +49,16 @@ chain implements to — they are the contract, not captures from a running node.
 signing example in §6.2 *is* real: it is produced by this repository's own
 secp256k1, RLP and Keccak code and you can reproduce it byte for byte.
 
+**What you can do today, at zero cost:** point your stack at
+`node tools/rpc-probe/stub.js`, which serves this repository's real `eth_*` method
+surface and hex encoder over a chain with no state. It will not execute anything,
+but it will prove your chain id handling, your encoding assumptions and your
+legacy-pricing path — and it logs every method your client calls, *including the
+ones we do not implement*, which is the fastest way to tell us what you need. See
+[`quickstart.md`](quickstart.md) §3.
+
 Today's running chain is the **UTXO-era** network with a REST API
-(`node/src/rpc.js`, documented in [`../MAP.md`](../MAP.md) §5). It is being
+(`node/src/rpc.js`, documented in [`../MAP.md`](../MAP.md) §7). It is being
 replaced, not extended. If you integrate against it you will have to do the work
 twice.
 
@@ -52,7 +71,7 @@ twice.
 | Chain name | Hearth |
 | Native asset | EMBER |
 | Symbol | `EMBER` |
-| **Chain ID** | **7411** |
+| **Chain ID** | **7411** (mainnet). The testnet is **7412** — a separate id, deliberately: with one id shared, every testnet transaction would be replayable on mainnet |
 | Decimals | **18** |
 | Fork semantics | **Shanghai** — PUSH0 (EIP-3855), EIP-3529 refunds, warm coinbase (EIP-3651), EIP-3860 initcode cap. **No blobs**, no EIP-4844 |
 | Transaction types | **Legacy (type 0) only.** EIP-1559 / type 2 deferred to v2 |
@@ -60,7 +79,8 @@ twice.
 | Block gas limit | 30,000,000 |
 | Consensus | proof-of-work (Homefire), heaviest-cumulative-work fork choice |
 | Finality | **probabilistic, unbounded reorg depth** — see §4 |
-| Default RPC port | 8645 |
+| **Ethereum JSON-RPC port** | **8545, at the root path `/`** — settled ([`evm-spec.md`](evm-spec.md) §6). 8546 is reserved for the v2 WebSocket endpoint |
+| Legacy REST port | 8645 — the UTXO-era REST + SSE surface, which stays for the explorer and is **not** the integration surface |
 | Default P2P port | 8646 |
 | Contract address for EMBER | **none.** EMBER is the native coin |
 
@@ -101,6 +121,11 @@ cheapest possible proof that the derivation is not bespoke.
 git clone https://github.com/cloudsforge-online/hearth && cd hearth/node
 node bin/hearthd.js --data /var/lib/hearth --rpc 8645 --p2p 8646 --peer seed.example:8646
 ```
+
+**That command runs the UTXO-era node**, which is the only one that exists. The
+account-model node does not have an entrypoint yet: `node/src/jsonrpc/server.js`
+is written and tested but nothing in `node/bin/` or `node/src/node.js` constructs
+it. When it does, it will listen on **8545** per §1.
 
 - **Runtime:** Node.js ≥ 18. **Zero runtime dependencies** — the entire node,
   including the EVM, is written against Node's standard library. There is nothing
@@ -185,6 +210,12 @@ LWMA with each solve time clamped to `[1, 90]` seconds
 (`node/src/chain.js:212-235`), so the chain absorbs hashrate changes in about a
 minute and does not oscillate. 60 confirmations is roughly 60× the natural orphan
 depth, which is the same margin exchanges apply on other 15-second chains.
+
+**60 is what we publish and what we credit at.** Stating that explicitly because
+the two used to differ: this document recommended 60 while the estate's own
+payment rail credited EMBER deposits at a shallower depth. It now credits at 60
+(`repos/forge-pay/services/pay/src/chains.ts:35`). If you are told a different
+number by anyone, this table is the one to believe.
 
 **Adversarial reorgs are the real risk, and confirmations do not fix them.** The
 cost of rewriting *N* blocks is the cost of out-hashing the network for *N* × 15
@@ -541,9 +572,13 @@ chain.
   signature binding, so testnets cannot leak into mainnet.
 
 **Before any exchange integration we owe you:** a public account-model testnet
-with a stable RPC endpoint, a documented chain id distinct from 7411, a faucet,
-and an explorer that renders `0x` addresses. None of it is built. It is tracked
-in [`listing-checklist.md`](listing-checklist.md).
+with a stable RPC endpoint, a faucet, and an explorer that renders `0x`
+addresses. **The testnet chain id is decided — `7412`** ([`evm-spec.md`](evm-spec.md)
+§1), and it is deliberately distinct from mainnet's 7411 because a shared id
+would make every testnet transaction replayable on mainnet. Nothing else on that
+list is built: the explorer exists but has no chain to render, and the faucet
+service exists but has nowhere to run. Tracked in
+[`listing-checklist.md`](listing-checklist.md).
 
 ---
 
@@ -552,8 +587,10 @@ in [`listing-checklist.md`](listing-checklist.md).
 The near-zero-cost claim at the top is about the *protocol surface*, and it
 holds. These are the things that are not zero:
 
-1. **The RPC does not exist yet.** Everything above is the contract; the code is
-   in progress. This is the only item that blocks you outright.
+1. **There is no chain.** The `eth_*` surface itself is built and tested (§0), and
+   you can exercise it today against `tools/rpc-probe/stub.js`. What does not
+   exist is consensus on the account model, so nothing produces blocks and
+   nothing serves the RPC. This is the only item that blocks you outright.
 2. **Reorgs have no depth bound** (§4). If your ledger assumes a maximum reorg
    depth per chain, EMBER needs the general case.
 3. **Low hashrate at launch** (§4). This is a risk-desk conversation, not an

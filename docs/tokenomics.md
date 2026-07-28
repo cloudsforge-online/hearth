@@ -20,7 +20,7 @@ those disagree with this file, this file is right and the reason is in §9.
 | Name | Hearth | — |
 | Ticker | `EMBER` | `node/src/params.js:10` |
 | Network id (P2P/tx binding) | `hearth` | `node/src/params.js:9` |
-| Chain ID (EIP-155) | `7411` | [`evm-spec.md`](evm-spec.md) §1 — **specified, not yet in code** |
+| Chain ID (EIP-155) | `7411` mainnet · `7412` testnet | `node/src/chain/transaction.js:57` declares 7411. The testnet id is decided ([`evm-spec.md`](evm-spec.md) §1) and **nothing may hardcode it** — it must become per-network configuration |
 | Decimals | **18** (target) / 8 (today) | see §2 |
 | Contract address | **none — EMBER is a native coin, not a token** | — |
 | Block time | 15 s | `node/src/params.js:14` |
@@ -322,14 +322,15 @@ verify it directly rather than relying on this paragraph.
 
 | Document | Claim | Correction |
 | --- | --- | --- |
-| `docs/coinnomics.md` §4 | Year-1 issuance 10,667,873 EMBER | **11,045,161.** The table is generated from a smooth exponential model (`proto/emission.js`); consensus runs the *integer, linearly interpolated* schedule, which issues ~3.5% more in year 1. Use §3 of this file |
-| `docs/coinnomics.md` §4 | Net inflation → ~0.37% via fee burn | Withdrawn. See §6 |
-| `docs/coinnomics.md` §6 | Commons spending "requires an on-chain proposal to pass hybrid governance" | No governance exists. See §8 |
-| `docs/coinnomics.md` §1 | 8 decimals | 18 on the account-model chain. See §2 |
+| `docs/coinnomics.md` | Year-1 issuance 10,667,873 EMBER | **11,045,161.** That figure comes from a smooth exponential model (`proto/emission.js`); consensus runs the *integer, linearly interpolated* schedule, which issues ~3.5% more in year 1. `coinnomics.md` now prints both columns side by side and labels itself a model; **this file is still the one to quote** |
+| `docs/coinnomics.md` | Net inflation → ~0.37% via fee burn | Withdrawn there and here. See §6 |
+| `docs/coinnomics.md` | Commons spending "requires an on-chain proposal to pass hybrid governance" | No governance exists. Withdrawn there. See §8 |
+| `docs/coinnomics.md` | 8 decimals | 18 on the account-model chain. See §2 |
+| `proto/emission.js` | The burn ramp it still contains | Not a policy. The account-model chain has **no burn** |
 | `WHITEPAPER.md` v0.1 §3.3 | 30-year burn/inflation table | Withdrawn with the burn model |
 
-`coinnomics.md` has not been rewritten and remains as the historical design
-rationale. **This file supersedes its numbers.**
+`coinnomics.md` is kept for the *design rationale* — why uncapped, why a tail, why
+10% to the Commons. **This file supersedes its numbers.**
 
 ---
 

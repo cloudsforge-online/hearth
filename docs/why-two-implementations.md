@@ -1,5 +1,22 @@
 # Two implementations — a transition, not a design
 
+> ### Update: the gap has widened, and this page's framing is now historical
+>
+> This document describes Rust as the target implementation and JavaScript as a
+> temporary reference to be ported away from. **That remains the stated
+> intention and nothing in this repository contradicts it — but no work has moved
+> toward it since the EVM began.**
+>
+> The entire account-model chain — Keccak, RLP, secp256k1, the Merkle Patricia
+> Trie, StateDB, the interpreter, the gas schedule, all nine precompiles, the
+> state transition and the `eth_*` RPC, roughly 7,700 lines — was written in
+> **JavaScript**, and has **no Rust counterpart at all**. `rust/hearthd` is still
+> Ed25519 and UTXO-shaped.
+>
+> So the parity table below is a table about a chain that is being retired. Read
+> it as an accurate record of where the port stood, not as a measure of how far
+> the port has to go, which is now much further.
+
 > **There are not two clients today. There is one.** `node/` is the network.
 > `rust/hearthd` is a crate that runs a self-check and a proof-of-work benchmark:
 > it has no block store, no chain, no fork choice, no RPC and no P2P server, and

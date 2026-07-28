@@ -499,14 +499,22 @@ deployment. `contracts/`'s own test suite asserts that no `MCOPY`, `TSTORE`,
 access lists as a transaction type. If your signer *requires* type 2, it needs a
 legacy path.
 
-**Precompiles `0x06`–`0x09` revert, loudly and deliberately.** bn128
-add/mul/pairing and blake2f are not implemented in v1. They do **not** simply
-not exist — an address with no code would *succeed* and return empty, so a
-contract calling the pairing check would read that as zero and compute something
-wrong without ever erroring. Instead they consume all forwarded gas and revert,
-so anything depending on them breaks visibly. `ecrecover` (`0x01`) through
-`identity` (`0x04`) and `modexp` (`0x05`) are implemented; Uniswap V2's `permit`
-needs only `0x01`.
+**All nine precompiles are implemented, and they fail in two opposite ways.**
+`ecrecover` (`0x01`) through `modexp` (`0x05`) **fail soft**: a malformed input
+gets EMPTY output and a *successful* call, which is what makes Solidity's
+`ecrecover()` return `address(0)` and what every `require(signer != address(0))`
+in every permit implementation is testing. bn128 add/mul/pairing (`0x06`–`0x08`)
+and blake2f (`0x09`) **fail hard**: a coordinate outside the field, a point off
+the curve, a G2 point outside the r-torsion, a pairing input whose length is not a
+multiple of 192, or a blake2f block that is not exactly 213 bytes — each fails the
+call and burns every drop of forwarded gas.
+
+Both conventions are consensus, and the hard one exists because **in the EVM a
+call to an address with no code succeeds and returns empty**. A zk verifier that
+read "success, no output" as a zero would accept a forged proof. Earlier versions
+of this page said `0x06`–`0x09` were unimplemented and reverted for that reason;
+they are implemented now ([`decisions.md`](decisions.md) §1.3), and they still
+fail hard on bad input, which is correct rather than a bug.
 
 **Reorgs have no depth bound.** Fork choice is heaviest-cumulative-work with no
 maximum reorg depth, no checkpointing and no finality gadget. A 500-block reorg
@@ -531,9 +539,9 @@ Do not plan around any of these:
 
 | | |
 | --- | --- |
-| A public RPC endpoint | ⬜ blocked on phase 5 |
-| A public testnet, and its chain id | ⬜ the testnet id is not even chosen |
-| A `0x`-native block explorer | ⬜ `web/index.html` renders the UTXO chain and `ember1…` addresses |
+| A public RPC endpoint | ⬜ blocked on phase 5. The port and path **are** settled: 8545, root path ([`evm-spec.md`](evm-spec.md) §6) |
+| A public testnet | ⬜ blocked on phase 5. Its chain id **is** chosen: **7412** |
+| A **deployed** `0x`-native block explorer | 🟡 `web/index.html` is EVM-aware and built — decoded logs, revert reasons, disassembly, `eth_getLogs` search. It has no chain to read |
 | Contract source verification | ⬜ no Etherscan-compatible `/api`, so `forge verify-contract` has nothing to talk to |
 | A deployed faucet | ⬜ the service is written and tested; nowhere to run it |
 | Any deployed contract | ⬜ WEMBER, the AMM and Multicall3 have never been deployed anywhere |

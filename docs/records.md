@@ -1,5 +1,19 @@
 # Records — application data on Hearth
 
+> ### Records belong to the UTXO chain, and have no account-model successor
+>
+> Everything on this page is real, consensus-enforced and running — on the chain
+> that is being retired. **Nothing in [`evm-spec.md`](evm-spec.md) carries records
+> forward**, because on an EVM chain the same job is done by contract storage and
+> event logs, which are strictly more capable and which every indexer already
+> understands.
+>
+> That means `node/src/apps/chat.js` and `bin/hearth-chat.js` — the reference
+> application built on records — have no future in their current form, and the
+> `records` array, the `(app, key)` index, `GET /records` and the filtered SSE
+> stream all retire with the ledger they belong to. Keep this page for what it
+> documents; do not build anything new on it.
+
 Hearth carries money. Records are the one place it also carries *bytes*, so that
 things other than payments can be built on it without every one of them
 inventing its own chain.

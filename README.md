@@ -1,27 +1,47 @@
 <div align="center">
   <img src="web/assets/logo.svg" width="104" alt="Hearth logo"/>
   <h1>Hearth — Money Mined at Home</h1>
-  <b>A people-mined, ASIC-resistant proof-of-work cryptocurrency built to spend, not hoard.</b>
+  <b>A people-mined, ASIC-resistant proof-of-work chain that speaks Ethereum.</b>
   <br/>
-  <i>Mine EMBER on the computer you already own — no farms, no pools, no premine.</i>
+  <i>Mine EMBER on the computer you already own — then deploy to it with the tools you already have.</i>
   <br/><br/>
 
   <a href="https://github.com/cloudsforge-online/hearth/actions/workflows/ci.yml"><img alt="ci" src="https://github.com/cloudsforge-online/hearth/actions/workflows/ci.yml/badge.svg"></a>
-  <img alt="tests" src="https://img.shields.io/badge/node-158%2F158%20checks-brightgreen">
-  <img alt="rust" src="https://img.shields.io/badge/rust%20core-29%20tests%20%C2%B7%20clippy%20clean-orange">
-  <img alt="deps" src="https://img.shields.io/badge/rust%20deps-2%20(ed25519%2C%20getrandom)-blue">
+  <img alt="vmtests" src="https://img.shields.io/badge/VMTests-609%2F609-brightgreen">
+  <img alt="statetests" src="https://img.shields.io/badge/GeneralStateTests-20%2C067%2F20%2C077-brightgreen">
+  <img alt="dex" src="https://img.shields.io/badge/Uniswap%20V2-swap%20at%20112%2C456%20gas-blue">
   <img alt="license" src="https://img.shields.io/badge/license-MIT-lightgrey">
   <img alt="pow" src="https://img.shields.io/badge/PoW-Homefire%20(CPU%2C%20memory--hard)-ff4d00">
 
   <br/><br/>
   🌐 <b><a href="https://hearth.cloudsforge.online/">hearth.cloudsforge.online</a></b>
-  &nbsp;·&nbsp;
-  <b>live explorer &amp; wallet: <a href="https://explorer.cloudsforge.online/">explorer.cloudsforge.online</a></b>
   <br/>
   <sub>Hearth is the <b>Mine</b> in <a href="https://cloudsforge.online/">CloudsForge</a>'s one crypto world — mine it, trade it, mint it, spend it, play in it.</sub>
   <br/><br/>
-  <code>proof of work · CPU mining · ASIC-resistant · fair launch · digital cash</code>
+  <code>proof of work · CPU mining · ASIC-resistant · fair launch · EVM · chain id 7411</code>
 </div>
+
+---
+
+## Status, before anything else
+
+**Hearth is an account-model, EVM-executing proof-of-work chain under
+construction. There is no mainnet, no testnet, no public endpoint and no EMBER of
+any monetary value.**
+
+The EVM is built and gated on Ethereum's published reference vectors. **Consensus
+on the account model is not** — no block has ever been produced on it. The chain
+that has produced blocks is the original UTXO ledger, and it is being retired.
+
+| | |
+| --- | --- |
+| **Built and vector-gated** | keccak/RLP/uint256/secp256k1 · Merkle Patricia Trie + StateDB · the interpreter (**609/609 VMTests**) · transactions, receipts, bloom (**188/188 TransactionTests**) · the state transition (**20,067/20,077 GeneralStateTests**, ten known failures, all `*Paris` account-collision fixtures) · all nine precompiles including bn128 and blake2f · the `eth_*` JSON-RPC surface · an EVM-aware explorer · the `hearth` CLI with an opcode tracer · a browser wallet on secp256k1 |
+| **Proved end to end** | **Uniswap V2 runs on our own EVM** — `node/test/dex.js`, 167/167, a real swap at **112,456 gas** |
+| **Not built** | Consensus on the account model. Nothing produces blocks, so there is no endpoint, no testnet and no mainnet |
+
+[`MAP.md`](MAP.md) is the verified inventory — every claim in it cites `path:line`
+or a command that was run. **Where this README and `MAP.md` disagree, believe
+`MAP.md`.**
 
 ---
 
@@ -31,122 +51,145 @@ Proof-of-work was supposed to be *one CPU, one vote*. Instead Bitcoin became a
 game for warehouse farms and a few pools, and almost everything since became a
 speculative chip you hoard rather than money you spend.
 
-**Hearth gives the original promise back to ordinary people** and fixes the
-specific things that pushed them out:
+And the CPU-mineable, fair-launch corner of the space is full of coins with no
+contracts, no tooling, no wallet support and no way for anyone to build anything.
+Fairness that nobody can use is a moral position, not a network.
 
 | Big crypto problem | What Hearth does |
-|---|---|
-| Mining centralized into ASIC farms | **Homefire PoW**: memory-hard and CPU-friendly, so a farm earns little more per dollar than your laptop. A winning proof must be signed by the key its coinbase pays, so work handed to you cannot be redirected — see [docs/mining.md](docs/mining.md) for what that does and does not buy. |
-| Coins behave like "gold" you hoard | **Money-first coinnomics**: disinflationary emission → perpetual tail, offset by a fee burn. Net inflation trends toward ~0%. Built for velocity. |
-| Slow & expensive to pay with | **15s blocks** and a sub-cent fee that is *burned*, not auctioned. **Tab** channels for instant retail settlement are a signed state machine in the Rust core, not yet on the network. |
-| The "fee cliff" (security dies when rewards end) | **Perpetual tail emission** funds security forever. |
-| Development captured by VCs / premines | **Fair launch** + on-chain **Commons treasury** (10% of each block), community-governed. |
-| Too hard for normal humans | A **web wallet** and a **browser miner** that need nothing installed, a live **block explorer**, and a reference node that is a full node, a wallet and a miner in one process. |
+| --- | --- |
+| Mining centralized into ASIC farms | **Homefire PoW**: memory-hard and CPU-friendly, so a farm earns little more per dollar than your laptop. A winning proof must be signed by the key its coinbase pays, so work handed to you cannot be redirected — see [docs/mining.md](docs/mining.md) for what that does and does not buy |
+| Development captured by VCs / premines | **Fair launch** + an on-chain **Commons treasury** (10% of each block). Genesis mints zero spendable coins, checkable in about thirty seconds |
+| The "fee cliff" (security dies when rewards end) | **Perpetual tail emission** funds security forever |
+| A chain nobody can build on is a chain nobody uses | **Hearth speaks Ethereum.** `0x…` addresses, secp256k1, 18 decimals, chain id 7411, Shanghai semantics, standard `eth_*` JSON-RPC — so MetaMask, ethers, viem, Hardhat and Foundry work without knowing this chain is bespoke |
+| Too hard for normal humans | A **web wallet** and a **browser miner** that need nothing installed, and a reference node that is a full node, a wallet and a miner in one process |
 
-Full argument: **[WHITEPAPER.md](WHITEPAPER.md)**.
+Full argument: **[WHITEPAPER.md](WHITEPAPER.md)**. The specification:
+**[docs/evm-spec.md](docs/evm-spec.md)**.
 
 ---
 
 ## The coin
 
-- **Network:** Hearth · **Coin:** Ember · **Ticker:** `EMBER`
-- **Smallest unit:** 1 EMBER = 100,000,000 *sparks*
+- **Network:** Hearth · **Coin:** Ember · **Ticker:** `EMBER` · **Chain ID:** `7411` (testnet `7412`)
+- **Decimals:** **18** — specified; `node/src/params.js:6` still defines 1e8 and has not moved yet
 - **Block time:** 15 seconds · **PoW:** Homefire (memory-hard, CPU-friendly, ASIC-resistant)
-- **Emission:** smooth halving-free decay → perpetual tail; 10% to the Commons; base fee burned
-- **Supply:** uncapped but *disinflationary* — modeled net inflation ~0.37% at year 30
+- **Emission:** a deterministic integer schedule — 6 EMBER at genesis, 2-year half-life, perpetual 0.3 EMBER tail; 10% to the Commons
+- **Supply:** uncapped, disinflationary. **No hard cap and no fee burn** — gas is paid to the coinbase in v1
 
 ```
- yr      reward   issued/yr   burned/yr      supply     gross%    net%
-  1        4.24  10,667,873   1,133,462   9,534,412     100.00  100.00
-  5        1.06   2,666,968   1,416,827  22,527,372      11.14    5.55
- 10        0.30     631,152     536,479  23,890,811       2.58    0.40
- 30        0.30     631,152     536,479  25,784,267       2.40    0.37     (node proto/emission.js)
+ yr      reward   issued/yr      supply     commons    gross%
+  1        4.50  11,045,161  11,045,161   1,104,516   100.00
+  2        3.00   7,889,401  18,934,562   1,893,456    41.67
+  5        1.13   2,761,290  31,163,132   3,116,313     8.86
+ 10        0.30     631,152  36,827,722   3,682,772     1.71
+ 30        0.30     631,152  49,450,762   4,945,076     1.28
 ```
 
-*Money, not gold.* Full breakdown: **[docs/coinnomics.md](docs/coinnomics.md)**.
+Those are the numbers the **consensus schedule** produces
+(`node/src/params.js:140-151`); reproduce them with the command in
+[docs/tokenomics.md](docs/tokenomics.md) §3. `docs/coinnomics.md` carries a
+*different* table from a smooth exponential model with an assumed fee burn — it is
+the historical design rationale and its numbers are not the chain's.
 
 ---
 
 ## This is a working application, not a slide deck
 
-Everything below **runs**:
+Everything below **runs**, and every number was produced by running it:
 
-- ✅ a real **blockchain node** (`node/`) — signed UTXO ledger, Homefire PoW, mempool, emission, fee burn, LWMA difficulty, disk persistence
-- ✅ **most-work fork choice with chain reorganization** — not a toy single-chain accept
-- ✅ **P2P networking** — nodes gossip and sync over TCP (network-id handshake, DoS caps)
-- ✅ **wallet + CLI** — keys, checksummed addresses, balances, signed payments
-- ✅ **HTTP/JSON-RPC/SSE API** + a live **block explorer** (tx search, block detail) and **web wallet** (keys encrypted at rest). `web/pay-demo.html` is a merchant-button *mockup* that simulates settlement — not an SDK
-- ✅ **application records** — consensus-committed, namespaced, byte-metered data inside the signed transaction body, with a tx index and per-app subscriptions (**[docs/records.md](docs/records.md)**)
-- ✅ **encrypted on-chain chat** built on them — X25519 reading keys, sealed boxes, `hearth-chat announce · send · inbox · watch`
-- ✅ **browser mining** (`web/mine.html`) — a Web Worker pool running real Homefire against `/mining/template`, ~225 H/s per thread, checked digest-for-digest against the node in CI
-- 🟡 a **Rust crate** (`rust/hearthd`) — a self-check, a PoW benchmark and libraries for ledger/mempool/Tab; `fmt`/`clippy`/`29 tests` clean. **Not a node and not consensus-compatible** — see [docs/why-two-implementations.md](docs/why-two-implementations.md)
-- ✅ **Docker Compose** to boot a multi-node network on your Mac
-- ✅ **CI** running Node tests + Rust build on every push
+- ✅ **An EVM we wrote ourselves** (`node/src/{crypto,state,evm,chain}/`) — Keccak-256,
+  RLP, secp256k1 recovery, `uint256`, the Merkle Patricia Trie, StateDB, the
+  interpreter, the Shanghai gas schedule and all nine precompiles. No
+  `@ethereumjs/*`, no `ethers`, no `web3`, no runtime dependency of any kind
+- ✅ **Gated on Ethereum's own vectors** — 609/609 VMTests, 20,067/20,077
+  GeneralStateTests, 188/188 TransactionTests, plus RLP and Trie tests. **No
+  component is done until its vectors pass**
+- ✅ **Uniswap V2 runs on it** — `node/test/dex.js` deploys the factory, router,
+  pair and WEMBER, adds liquidity, swaps, swaps back, exercises `permit` and
+  removes liquidity. 167/167, swap at 112,456 gas against mainnet's ~150,000
+- ✅ **the `eth_*` JSON-RPC surface** (`node/src/jsonrpc/`) — 301 checks, strict
+  QUANTITY/DATA encoding, batches, notifications, revert payloads as code 3.
+  Written against a chain interface and tested against an in-memory fake
+- ✅ **`hearth`, the terminal tool** — `trace` (an opcode-level debugger with gas,
+  stack, memory and storage deltas per step), `watch`, `wallet`, `call`, `send`,
+  `deploy`, `devnet`. 305 checks
+- ✅ **an EVM-aware block explorer** (`web/`) — decoded logs, revert reasons,
+  EOA-vs-contract with disassembly, ERC-20s, `eth_getLogs` search. Zero
+  dependencies, no build step, and it **renders "no node answered" rather than
+  inventing data**
+- ✅ **a non-custodial browser wallet on secp256k1** — its crypto is a port of the
+  node's, and CI runs both over the same random inputs and compares them. That
+  cross-check found a real gas bug in the node on its first run
+- ✅ **a developer kit** (`tools/`) — a faucet, working Hardhat and Foundry
+  templates, and an RPC probe that serves the real method surface over a fake chain
+- ✅ **a real proof-of-work network** (the UTXO chain) — most-work fork choice with
+  reorg over real sockets, P2P gossip, LWMA difficulty, disk persistence
+- ✅ **browser mining** — a Web Worker pool running real Homefire, checked
+  digest-for-digest against the node in CI
+- 🟡 a **Rust crate** (`rust/hearthd`) — a self-check and a PoW benchmark.
+  **Not a node and not consensus-compatible**, and it has no EVM at all — see
+  [docs/why-two-implementations.md](docs/why-two-implementations.md)
 
-Hardened against an adversarial audit — unlimited-mint, fork-choice, coinbase
-maturity, timestamp, DoS, address-checksum, deterministic-emission, and XSS
-issues are fixed with tests (see **[docs/security-review.md](docs/security-review.md)**).
+> **Two honest caveats about that list.** None of it has been driven by a block —
+> consensus on the account model is the missing phase. And `web/pay-demo.html` is
+> a merchant-button *mockup* that simulates settlement on a timer; there is no
+> payment SDK.
 
-Verified locally: **158 node checks + 29 Rust tests pass**, two nodes sync over
-P2P, a reorg replaces the active chain, and the Rust core mines ~8× faster than
-the JS prototype on the same machine.
-
-> **One implementation is the goal.** Rust is the target; the JS node is the only
-> thing that runs the network today, and `rust/hearthd` is a long way from taking
-> over — it has no block, chain, RPC or P2P layer, and its PoW and difficulty
-> rules do not match consensus. Emission is byte-identical across both, and that
-> is the extent of the parity so far. See
-> **[docs/why-two-implementations.md](docs/why-two-implementations.md)**.
+**A known break:** `npm test` currently fails from a clean clone at
+`node/test/blake2f.js:304` (`ReferenceError: skipped is not defined`, on the path
+taken when the reference corpus has not been fetched), which is why CI is red.
+Fetching the corpus makes it pass. See [`MAP.md`](MAP.md) §11.
 
 ---
 
 ## Try it now
 
-**1 — Boot a real multi-node network** (seed + 2 miners + explorer/wallet):
-
-```bash
-docker compose up --build
-# open http://localhost:8080 · the explorer reads the live chain over same-origin /rpc
-```
-No Docker? `./scripts/run-local-network.sh`. Details: **[docs/network.md](docs/network.md)**.
-
-**2 — Run a node + wallet directly** (needs Node 18+, no install):
+**1 — Run the test suites** (needs Node 18+, no install, no network):
 
 ```bash
 cd node
-node bin/hearthd.js --mine                       # a mining node + API on :8645
-node bin/hearth-cli.js supply                    # query it
-node bin/hearth-cli.js send <toAddress> 5        # send 5 EMBER
-node bin/hearth-chat.js announce                 # then: send / inbox / watch
-npm test                                         # 158 checks
+node test/interpreter.js      # 173 checks
+node test/statetransition.js  # 133 checks
+node test/jsonrpc.js          # 301 checks
+node test/cli.js              # 305 checks
 ```
 
-**3 — Build the Rust core** (needs stable Rust):
+**2 — Run the real conformance gate** (fetches ~350 MB of Ethereum's corpus):
 
 ```bash
-cd rust/hearthd
-cargo run --release -- 20                         # mine a demo block
-cargo fmt --check && cargo clippy -- -D warnings && cargo test
+cd node && ./scripts/fetch-vectors.sh
+node test/conformance/runner.js --impl=test/interpreter.js \
+     --dir=test/conformance/vectors/VMTests --no-gas          # 609/609
+node test/conformance/runner.js --impl=test/statetransition.js \
+     --suite=GeneralStateTests --dir=test/conformance/vectors  # 20,067/20,077
 ```
 
-**4 — Open the web experience** (live against a node; clearly-labelled sample
-data only when none answers):
+**3 — Watch Uniswap V2 execute on our EVM:**
 
 ```bash
-npx serve web        # or: open web/index.html
+pnpm --dir contracts install && pnpm --dir contracts compile
+cd node && node test/dex.js                                    # 167/167
 ```
-`index.html` (live block explorer, with tx search and block detail) ·
-`wallet.html` (non-custodial web wallet, key encrypted at rest — needs a
-reachable node) · `mine.html` (mine EMBER in the tab) · `pay-demo.html` (a
-*mockup* of an Accept EMBER checkout — it simulates settlement and takes no
-payment).
 
-The Hearth **marketing site** is a separate React app in [`site/`](site) — one
-front door, not two:
+**4 — Point your tooling at something** — there is no endpoint, so serve the real
+RPC layer over a fake chain:
 
 ```bash
-cd site && pnpm install && pnpm dev   # http://localhost:3003
+node tools/rpc-probe/stub.js --port 8745
+cast chain-id --rpc-url http://127.0.0.1:8745                   # 7411
 ```
+
+Full walkthrough, with every step marked **[RUN]**, **[PROBE]** or **[WAITING]**:
+**[docs/quickstart.md](docs/quickstart.md)**.
+
+**5 — Boot the UTXO network** (the chain that actually produces blocks today):
+
+```bash
+docker compose up --build      # seed + 2 miners + web on :8080
+```
+
+No Docker? `./scripts/run-local-network.sh`. Details:
+**[docs/network.md](docs/network.md)**.
 
 ---
 
@@ -154,37 +197,36 @@ cd site && pnpm install && pnpm dev   # http://localhost:3003
 
 ```
 hearth/
-├── README.md · WHITEPAPER.md          the pitch and the full design
-├── docs/                              architecture · coinnomics · mining · network · records · roadmap · faq
-├── node/                              hearthd — runnable reference node/wallet/miner (JS) + tests
-│   ├── src/  bin/  test/  Dockerfile
-├── rust/hearthd/                      production core (Rust): SHA-256 + Homefire PoW + ledger + P2P, zero deps
-├── app-desktop/                       Tauri desktop app scaffold (one-click node + wallet + miner)
-├── site/                              the Hearth marketing site (React) — hearth.cloudsforge.online
-├── web/                               block explorer + web wallet + Hearth Pay SDK — explorer.cloudsforge.online
-├── proto/                             coinnomics simulator + standalone PoW demo
-├── scripts/run-local-network.sh       local network without Docker
-├── docker-compose.yml                 seed + 2 miners + web
-└── .github/workflows/ci.yml           CI: node tests (unit + e2e + records + p2p) + rust build + web lint + secret hygiene
+├── README.md · WHITEPAPER.md · MAP.md   the pitch, the argument, and the verified inventory
+├── docs/                                evm-spec (authoritative) · decisions · quickstart ·
+│                                        network-config · tokenomics · exchange-integration ·
+│                                        listing-checklist · mining · records · architecture
+├── node/                                the reference node — AND the EVM implementation
+│   ├── src/crypto  src/state  src/evm  src/chain  src/jsonrpc   the account-model chain
+│   ├── src/*.js                                                 the UTXO chain, being retired
+│   ├── src/cli/  bin/hearth.js                                  the terminal tool + tracer
+│   └── test/  test/conformance/                                 26 suites + the vector harness
+├── contracts/                           WEMBER, a Uniswap V2 port, Multicall3 (compiled, undeployed)
+├── tools/                               faucet · hardhat · foundry · rpc-probe · metamask.md
+├── web/                                 EVM explorer + secp256k1 wallet + browser miner
+├── site/                                the marketing site (React)
+├── rust/hearthd/                        a self-check and a benchmark — not a node
+├── proto/                               teaching scripts (the emission model is NOT consensus)
+└── .github/workflows/ci.yml             six jobs; `npm test` is the single source of truth
 ```
-
-## Status
-
-A complete design with a **working reference network, a compiling Rust core, a
-full web layer, tests and CI** — but **pre-mainnet**: consensus, the Rust core and
-the Tab channel layer still need audits and a public testnet before launch.
-See **[docs/roadmap.md](docs/roadmap.md)**.
 
 ## Contributing
 
-Hearth is a commons. See **[CONTRIBUTING.md](CONTRIBUTING.md)** and
-**[docs/why-two-implementations.md](docs/why-two-implementations.md)**. Highest-leverage
-areas: the Rust core (today a benchmark, not a node), the Tab payment layer, and
-the Tauri desktop app (today unshipped scaffolding — see `app-desktop/README.md`).
+Hearth is a commons. See **[CONTRIBUTING.md](CONTRIBUTING.md)**. Highest-leverage
+areas right now: **consensus on the account model** (the one thing blocking
+everything else), the Etherscan-compatible `/api` shim, and closing the items in
+**[docs/listing-checklist.md](docs/listing-checklist.md)** §7.
 
 ## Security
 
 Please report vulnerabilities privately — see **[SECURITY.md](SECURITY.md)**.
+There is deliberately no `security@` mailbox yet, and that is tracked rather than
+papered over.
 
 ## License
 
@@ -193,8 +235,9 @@ Please report vulnerabilities privately — see **[SECURITY.md](SECURITY.md)**.
 ---
 
 <sub><b>Keywords:</b> Hearth, EMBER, cryptocurrency, proof of work, CPU mining, ASIC resistant,
-memory-hard proof of work, decentralized digital cash, mine crypto at home, no premine,
-fair launch, crypto wallet, block explorer, blockchain node, Rust blockchain, tail emission, fee burn.</sub>
+memory-hard proof of work, EVM chain, EVM implementation, Ethereum JSON-RPC, chain id 7411,
+Solidity, Uniswap V2, decentralized digital cash, mine crypto at home, no premine, fair launch,
+crypto wallet, block explorer, blockchain node, tail emission.</sub>
 
 ## How this was built
 
@@ -208,3 +251,5 @@ rather than leaving it to be inferred.
 
 The models were used under paid API access and the output is the project's to use. Nothing here is
 claimed to be hand-written that is not, and nothing is claimed to work that has not been tested.
+The conformance-vector discipline exists partly for this reason: an implementation is judged by
+whether it passes the reference vectors, not by who or what wrote it.

@@ -62,18 +62,31 @@ sounds impressive.
   or not it is currently exploitable: a contract that behaves differently here
   than where it was audited is the failure mode this codebase most needs
   reported.
+- `node/src/jsonrpc/` — the `eth_*` surface, including anything that would make a
+  client read a wrong value as a correct one (the QUANTITY/DATA distinction above
+  all).
 - `node/src/pow.js`, `node/src/mining.js` and the template/submit protocol.
-- `web/assets/keystore.js`, `web/assets/wallet-core.js` and the browser wallet —
-  key generation, sealing at rest, and anything that could expose a private key.
+- `web/assets/wallet/` — the current secp256k1 browser wallet: key generation,
+  PBKDF2/AES-GCM sealing at rest, the signing path, and anything that could expose
+  a private key. **Any divergence between `web/assets/wallet/{secp256k1,rlp,transaction}.js`
+  and their `node/src` originals is in scope**, because a wallet that signs
+  slightly differently from the node does not bounce — it pays the wrong person.
 - `web/assets/mining/` — the browser miner, including any divergence from the
   node's Homefire digest.
+- `node/src/cli/` and `node/bin/hearth.js` — the terminal tool, particularly the
+  keystore.
 - `contracts/src/` — the AMM sources, even though nothing is deployed.
+
+`web/assets/wallet-core.js`, `web/assets/keystore.js` and
+`web/assets/vendor/noble-ed25519.js` are the **retired pre-EVM** modules. No page
+imports them; they survive only because `node/test/keystore.js` still exercises
+them. Findings there are welcome but are not user-facing.
 
 **Out of scope**
 
 - `rust/hearthd/` — a self-check binary and a benchmark. It has no block type, no
   chain, no fork choice and no P2P server, and two of its modules are known to
-  diverge from consensus (see [`MAP.md`](MAP.md) §2.2). It is documented as not
+  diverge from consensus (see [`MAP.md`](MAP.md) §3.3). It is documented as not
   being a second implementation. Findings are welcome but are not treated as
   consensus issues.
 - `proto/` — teaching scripts, not imported by the node.
@@ -122,22 +135,51 @@ without new impact will be closed with a pointer here.
   is the same trade Ethereum makes; the reasoning is in
   [`docs/evm-spec.md`](docs/evm-spec.md) §3.
 - **`PREVRANDAO` is miner-influenceable.** It returns the parent block's Homefire
-  digest, and a miner who dislikes an outcome can discard the block and grind
-  another. Contracts must not use it as a randomness source for anything an
-  adversarial miner would profit from biasing.
+  digest (`node/src/evm/interpreter.js:211-214`), and a miner who dislikes an
+  outcome can discard the block and grind another. Contracts must not use it as a
+  randomness source for anything an adversarial miner would profit from biasing.
+- **Precompiles `0x06`–`0x09` fail hard where `0x01`–`0x05` fail soft.** Both
+  conventions are consensus and they are opposites; `0x01`–`0x05` answer a
+  malformed input with empty output and a *successful* call, while `0x06`–`0x09`
+  fail the call and burn every drop of forwarded gas. All nine are implemented, and
+  the interpreter retains the machinery to fail a warmed-but-unimplemented address
+  because a call to a codeless address *succeeds and returns empty*
+  ([`docs/decisions.md`](docs/decisions.md) §1.3). A report that "the precompile
+  reverted on bad input" is this, working.
+- **`BASEFEE` pushes zero.** v1 has no fee market; the opcode exists only because
+  Shanghai includes EIP-3198.
 - **The browser wallet has no recovery** — one key per browser, no seed phrase,
   no HD derivation.
+- **The browser miner and the node currently disagree about the coinbase key.**
+  The miner signs secp256k1; `GET /mining/template` still requires an 88-hex
+  Ed25519 SPKI DER key (`node/src/rpc.js:130-134`) and `node/src/block.js:45`
+  still verifies with Ed25519. Phase 5 owns the node half. This is a known,
+  documented transition state ([`MAP.md`](MAP.md) §9.2), not a vulnerability.
 
 ---
 
 ## Status of this codebase
 
 **Pre-mainnet. Nothing here has been independently audited, and no mainnet
-exists.** The account-model EVM chain is under construction: primitives and state
-pass published reference vectors, the interpreter is being written, and the
-state transition, JSON-RPC surface and consensus integration are not built.
-[`docs/evm-spec.md`](docs/evm-spec.md) §8 tracks the phases and
-[`MAP.md`](MAP.md) is the verified inventory.
+exists.**
+
+The account-model EVM chain is under construction. What is built and gated on
+published reference vectors: the primitives, the Merkle Patricia Trie and
+StateDB, the interpreter (**609/609 VMTests**), transactions/receipts/bloom
+(**188/188 TransactionTests**), the state transition (**20,067/20,077
+GeneralStateTests** — ten known failures, all `*Paris` account-collision fixtures), all nine precompiles,
+and the `eth_*` JSON-RPC surface. Uniswap V2 deploys and swaps on it
+(`node/test/dex.js`).
+
+**What is not built is consensus on the account model.** No block has ever been
+produced on it, so there is no endpoint, no testnet and no mainnet. Every
+component above is proved offline against vectors and fixtures — a whole class of
+bug that only appears when state is carried across blocks, reorged or persisted
+has had no opportunity to show itself.
+
+[`docs/evm-spec.md`](docs/evm-spec.md) §8 tracks the phases,
+[`docs/decisions.md`](docs/decisions.md) records why the non-obvious choices were
+made, and [`MAP.md`](MAP.md) is the verified inventory.
 
 An internal review exists at [`docs/security-review.md`](docs/security-review.md)
 and its findings are implemented. **It is not an audit and must not be cited as
