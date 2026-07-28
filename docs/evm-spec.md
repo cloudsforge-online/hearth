@@ -212,6 +212,19 @@ everything appears to work until someone crafts a non-canonical transaction.
 storage, balance, nonce and code changes to a snapshot, while gas already consumed stays consumed.
 Model it as an ordered journal with checkpoint markers.
 
+**EIP-2929 pre-warms `0x01`–`0x09`, and so do we — even though only `0x01`–`0x05` are
+implemented.** The warm set is a gas rule, not a capability claim: Ethereum warms all nine, the
+GeneralStateTests assume it, and treating an address as cold that Ethereum treats as warm costs
+2,500 gas per access. That is consensus, so the warm set follows Ethereum exactly.
+
+**`0x06`–`0x09` must therefore fail loudly rather than be absent.** In the EVM a call to an address
+with no code *succeeds* and returns empty — so if bn128 is simply omitted, a contract calling the
+pairing check receives "success, no output", reads it as zero, and computes something wrong without
+ever erroring. That is the worst available failure mode for a financial contract. Until they are
+implemented properly, `0x06`–`0x09` consume all forwarded gas and revert, so anything depending on
+them breaks visibly and immediately. Implement them for real before mainnet: zk verification is the
+main thing DeFi will eventually want that we would otherwise lack.
+
 **Gas is consensus.** A wrong gas cost is a chain split. The Shanghai schedule including EIP-2929
 access lists (cold 2600 / warm 100 for accounts, cold 2100 / warm 100 for storage) is mandatory,
 not an optimisation. Note that EIP-2929 **removed** the old 700 CALL base — from Berlin onward the
@@ -322,7 +335,9 @@ hard bugs stay hidden. It happens to also be the tool contract developers want m
 ## 9. What is explicitly out of scope for v1
 
 - EIP-1559, blob transactions, account abstraction.
-- Precompiles `0x06`–`0x09` (bn128, blake2f) — no v1 use case; add before anything zk arrives.
+- Full implementations of precompiles `0x06`–`0x09` (bn128 add/mul/pairing, blake2f) — no v1 use
+  case, since Uniswap V2 needs only `ecrecover`. **But see the warming rule below: they are not
+  simply absent.**
 - State pruning, snapshot sync, archive nodes.
 - Lending, stablecoins, anything beyond the AMM.
 - Bridges. Every bridge is a liability; not until the chain has proven itself.
