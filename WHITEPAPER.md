@@ -1,270 +1,463 @@
-# Hearth — a currency mined by people, made to spend
+# Hearth — a chain ordinary people can mine, and developers can build on
 
-**Working paper · v0.1 · 2026**
+**EMBER · working paper v0.2 · 2026-07-28**
 
-> Money mined at home. Made to spend.
+---
+
+## Status, stated first
+
+This paper describes a chain **under construction**. Read the status of every
+claim before you read the claim.
+
+| Part | Status |
+| --- | --- |
+| Homefire proof-of-work, LWMA difficulty, emission schedule | **Running.** JavaScript reference node, tested in CI, digest-conformant browser miner |
+| UTXO ledger, Ed25519 signatures, `ember1…` addresses | **Running, and being retired.** Replaced by the account model below |
+| EVM primitives — Keccak-256, RLP, secp256k1, `uint256` | **Complete**, passing published vectors |
+| State — Merkle Patricia Trie, StateDB | **Complete**, passing `ethereum/tests` TrieTests |
+| EVM execution — opcode table, gas schedule, precompiles | **Partial.** The tables exist and are tested; the interpreter is being written now |
+| State transition, header v2, `eth_*` JSON-RPC | **Specified, not built.** See [`docs/evm-spec.md`](docs/evm-spec.md) |
+| AMM contracts (WEMBER, Factory, Pair, Router) | **Source written, not deployed.** No chain has executed them |
+| Mainnet | **Does not exist.** Nothing but throwaway testnets has ever run |
+
+There is no mainnet, no market, no listed price, and no EMBER of any monetary
+value in existence. Anything in this document written in the present tense is
+running today; anything else is marked.
+
+**This paper replaces v0.1, which made two claims the code did not support.**
+Both retractions are in §8.
+
+---
 
 ## Abstract
 
-Proof-of-work was introduced as an egalitarian lottery — one unit of computation,
-one chance to extend the ledger. In practice, economies of scale turned mining
-into an industrial activity dominated by ASIC farms and a handful of pools, and
-fixed-supply designs turned coins into speculative stores of value that people
-hoard rather than spend. Hearth is a proof-of-work currency engineered against
-both outcomes. It uses a memory-hard puzzle so that a laptop is competitive, a
-proof that must be signed by the key its reward pays so work cannot be
-redirected, and a **money-first** monetary policy — disinflationary emission into
-a perpetual tail, offset by a base-fee burn — so the coin behaves like
-circulating cash rather than digital gold. Around this, Hearth ships the things
-ordinary people actually need: a reference node that is simultaneously node,
-wallet and polite miner; a browser wallet and browser miner; and a block
-explorer.
+Proof-of-work started as an egalitarian lottery and became an industry. SHA-256
+rewards custom silicon, custom silicon concentrates near cheap power, and pools
+concentrate the coordination of it — so the set of parties who decide what the
+ledger says is small, identifiable, and not the set of people who use the money.
 
-> **What is a design and what is running.** This is a working paper. Where a
-> section describes something that does not exist yet, it says so inline. The
-> two that matter most, because earlier drafts stated them as fact:
->
-> * **Homefire is not a RandomX-class VM.** It compiles nothing. It is chained
->   SHA-256 over a scratchpad plus a pseudo-random walk (§2.1).
-> * **Homefire is not non-outsourceable.** Only the coinbase *public* key is
->   bound into the seed, so a pool can be built on top of it (§2.2).
->
-> `node/` is the running network; `rust/hearthd` is a benchmark and a set of
-> libraries, and is not consensus-compatible. See
-> [`docs/why-two-implementations.md`](docs/why-two-implementations.md).
+Hearth's answer is narrow and deliberately unambitious in scope: make the puzzle
+one that a commodity CPU is already near-optimal for, and launch with nothing
+held back. **Homefire** is a memory-hard hash — chained SHA-256 filling a
+scratchpad, then a read-*and-write* walk over it — so the bottleneck is memory
+latency rather than gate count, and a laptop is a real participant. There is no
+premine, no sale, no allocation and no founder balance: the genesis block mints
+zero spendable coins, which anyone can check in about thirty seconds (§3.3).
+
+The second half of the design is a concession to reality. A chain nobody can
+build on is a chain nobody uses. Hearth is therefore becoming an **account-model
+chain that executes the EVM** — `0x…` addresses, secp256k1 signatures, 18
+decimals, standard `eth_*` JSON-RPC — so that MetaMask, ethers, Hardhat, Foundry
+and every block explorer work without knowing this chain is bespoke. The
+proof-of-work and the emission schedule are unchanged by that move.
 
 ---
 
-## 1. The problems, precisely
+## 1. The problem
 
-Hearth is not "another blockchain." It targets six concrete, well-documented
-failures.
+**Mining concentrates.** A hash function that maps efficiently onto a fixed
+circuit hands a permanent, super-linear advantage to whoever can fabricate that
+circuit. The advantage compounds: cheaper hashing funds more hardware, and the
+network's security ends up rented from a handful of firms whose interests are
+not the users'.
 
-**P1 — Mining centralization.** SHA-256 rewards specialized hardware, so hashing
-concentrates in ASIC farms located near cheap power. Pools then concentrate the
-*coordination* of that hashing. The result is that a handful of entities can
-censor or reorganize the chain.
+**Distribution concentrates before the chain even starts.** Premines, private
+sales and team allocations decide the ownership of a network before a single
+person has chosen to use it. Every later governance question is then decided by
+people who were there first, by arrangement rather than by contribution.
 
-**P2 — Hoarding over spending.** A hard cap (e.g. 21M) with halvings creates a
-deflationary narrative that rationally encourages holding, not transacting.
-"Digital gold" is a feature for speculators and a bug for money.
+**Chains that solve both usually solve nothing else.** The CPU-mineable,
+fair-launch corner of the space is full of coins with no contracts, no tooling,
+no wallet support and no way for anyone to build anything. Fairness that nobody
+can use is a moral position, not a network.
 
-**P3 — Throughput and fees.** Ten-minute blocks and small caps make base-layer
-payments slow and, under load, expensive — unusable for a coffee.
-
-**P4 — The security cliff.** When block subsidies approach zero, chains that
-planned to be secured "by fees alone" face an unproven and probably insufficient
-security budget.
-
-**P5 — Capture.** Premines, ICOs and VC allocations mean the people who use the
-money don't own or govern it, and development is steered by early holders.
-
-**P6 — Usability.** Running a node, securing keys, and paying with crypto remain
-too hard for non-technical people, which quietly recentralizes everything onto
-custodians and exchanges.
-
-Hearth addresses each of these directly. The rest of this paper is organized
-around the mechanisms.
+Hearth is an attempt to take the first two seriously without ignoring the third.
 
 ---
 
-## 2. Homefire: proof-of-work that stays with people (P1)
+## 2. Homefire
 
-Homefire combines three ideas.
-
-### 2.1 CPU-optimized, memory-hard hashing
-**Shipped.** Each nonce fills a scratchpad by chaining SHA-256, takes a
-pseudo-random walk that reads and rewrites it, and derives the digest from the
-whole pad — ~8,450 sequential rounds with a data dependency at every step
-(`node/src/pow.js`). Memory latency, not gate count, sets the pace.
-
-**Designed, not built.** The intended production puzzle is a **RandomX-class
-virtual machine**: each nonce compiles a pseudo-random program that executes
-against a large (≈2 GiB) dataset that must live in RAM. Nothing in this
-repository compiles a program. When it exists it does two things:
-
-- It makes custom silicon nearly pointless — a general-purpose CPU with a cache
-  hierarchy *is* close to the optimal machine, so the ASIC premium collapses.
-- It makes the bottleneck **memory bandwidth**, which is cheap and ubiquitous.
-  The device in your bag is already competitive.
-
-The reference proof-of-concept in [`proto/pow.js`](proto/pow.js) models the
-memory-hard core: fill a scratchpad, take a pseudo-random walk that reads *and
-mutates* it, and derive the digest from the whole pad so it can't be shortcut.
-
-### 2.2 Signed proofs, and the pool problem that is still open
-**Shipped.** A valid solution must be **signed by the same key that receives the
-block reward** (`node/src/block.js`). So a candidate built for your public key is
-worthless to anybody else, and work handed to you cannot be taken from you.
-
-**Not shipped: non-outsourceability.** The consensus seed binds only the coinbase
-*public* key (`node/src/pow.js`); the private key is used once, after a nonce has
-already won. A pool operator can therefore distribute the header core together
-with its **own** public key, collect `(nonce, digest)` pairs from hashers who
-genuinely cannot steal the reward, and sign the blocks itself. Consensus does not
-notice, and cannot.
-
-The mechanism from the "non-outsourceable puzzles" literature requires the
-private key **inside the hash loop**. Adopting it is a consensus change that
-forks the chain and invalidates every existing miner, so it is an open design
-decision rather than a property Hearth currently has. Until it is made, "pools
-cannot form" is not a claim this paper is entitled to.
-
-### 2.3 Polite, low-variance home mining
-Solo mining is high-variance, so:
-
-- **15-second blocks** and a smooth per-block difficulty retarget (LWMA) mean
-  even small miners win regularly.
-- **Warmshares** *(designed, not built)*: near-miss solutions (uncles) referenced
-  by later blocks for a fraction of the reward, smoothing income without a pool.
-- **Optional trustless co-ops** *(designed, not built)*: peers sharing variance
-  via a P2P protocol that never takes custody of anyone's key.
-- **Polite mining** *(shipped in the browser miner)*: a real duty cycle the
-  workers sleep through, a trickle in a background tab, and a pause on battery
-  where the browser reports power state. Idle detection and thermal awareness are
-  not implementable from a web page and are not present in the node either.
-
-The net effect: a warehouse of CPUs earns roughly *proportional* to its share of
-honest commodity hardware, with no structural advantage and nobody to centralize
-around.
-
----
-
-## 3. Money-first coinnomics (P2, P4)
-
-Hearth's monetary policy is designed so the coin is **used**, not stockpiled.
-Every parameter below is reproduced by [`proto/emission.js`](proto/emission.js);
-the full derivation is in [`docs/coinnomics.md`](docs/coinnomics.md).
-
-### 3.1 Emission
-Block reward decays **smoothly** (no cliff-edge halvings):
+### 2.1 What it is, exactly
 
 ```
-reward(h) = max(TAIL, R0 · 2^(−h / HALFLIFE))
-R0 = 6 EMBER/block   HALFLIFE = 2 years   TAIL = 0.3 EMBER/block
+pad  = 64 KiB (8,192 × 8-byte words)          node/src/params.js:51, node/src/pow.js:26
+fill : cur = SHA256(seed)
+       repeat 8,192×:  cur = SHA256(cur);  take cur[0..8] into pad
+walk : acc = SHA256(seed ‖ pad[0..64])
+       repeat 256×:    idx = acc.readUInt32LE(0) % 8192
+                       acc = SHA256(acc ‖ pad[idx*8 .. idx*8+8])
+                       pad[idx] ^= acc[0..8]            ← read-modify-write
+out  = SHA256(acc ‖ pad[last 64 bytes])
 ```
 
-This is **disinflationary**: the growth rate of supply falls every block toward
-the tail. Unlike a hard cap, it never stops — which is deliberate.
+`node/src/pow.js:29-42`; step count at `node/src/params.js:52`. One attempt is
+roughly 8,450 sequential SHA-256 invocations and touches the entire pad.
 
-### 3.2 The perpetual tail solves the security cliff (P4)
-The tail (`0.3 EMBER/block`, forever) guarantees miners are always paid, so
-security never depends on a speculative fee market. Because supply keeps growing
-slowly while the tail is constant, the **tail's inflationary weight falls toward
-zero over time** but never reaches it — a permanent, shrinking security budget.
+**Homefire compiles nothing.** It is chained SHA-256 over a scratchpad. It is
+not a RandomX-class virtual machine, and describing it as one — as v0.1 of this
+paper did — is wrong. A RandomX-class VM remains a roadmap item and is not
+claimed here.
 
-### 3.3 The fee burn makes it behave like money (P2)
-Every transaction pays an EIP-1559-style **base fee that is burned**. As real
-usage grows, burn approaches (and can exceed) tail issuance, so **net** supply
-flattens. Modeled over 30 years:
+### 2.2 The properties it has
 
-| Year | Gross issuance/yr | Burned/yr | Net inflation |
-|-----:|------------------:|----------:|--------------:|
-| 1 | 10.67M | 1.13M | 100% (bootstrap) |
-| 5 | 2.67M | 1.42M | 5.55% |
-| 10 | 0.63M | 0.54M | 0.40% |
-| 30 | 0.63M | 0.54M | **0.37%** |
+- **Memory-hard.** Every attempt must fill the pad before it can walk it, and
+  each walk step's index depends on the previous step's accumulator. There is no
+  way to compute the output without materialising the pad.
+- **Unskippable.** The walk *rewrites* the word it reads. A read-only walk can be
+  reordered or partially precomputed across attempts; a read-modify-write walk
+  cannot, because the pad an attempt ends with is a function of the path it took.
+- **CPU-friendly, ASIC-resistant.** The bottleneck is commodity memory latency,
+  not gate count, which is the regime where a general-purpose CPU with a cache
+  hierarchy is close to the optimal machine. This narrows the hardware premium;
+  it does not abolish it, and no memory-hard function does.
+- **Work handed to a hasher cannot be redirected.** The winning digest must be
+  signed by the coinbase key, and `verifyPow` additionally requires the
+  coinbase's first output to pay the address derived from that key
+  (`node/src/block.js:45-52`). A candidate built for your public key is worthless
+  to anyone else.
 
-A currency whose net inflation sits near zero, funded by usage, is *money*: you
-lose nothing meaningful by spending today, and the network stays secure.
+### 2.3 The property it does not have
 
-### 3.4 No demurrage
-We explicitly reject holding penalties (demurrage) as user-hostile and hard to
-reason about. Mild perpetual issuance plus a usage-driven burn achieves the same
-goal — discouraging idle hoarding — without punishing savers.
+**Homefire is not a non-outsourceable puzzle.** The seed binds
+`(headerCoreHash, nonce, coinbasePubHex)` — only the coinbase *public* key
+(`node/src/pow.js:45-47`). The private key is used exactly once, *after* a nonce
+has already won, to sign the digest (`node/src/miner.js`). A pool operator can
+therefore distribute the header core together with its **own** public key,
+collect `(nonce, digest)` pairs from hashers who genuinely cannot steal the
+reward, and sign the blocks itself. Consensus does not notice and cannot.
 
----
+Making that impossible requires the private key inside the hash loop, which is a
+consensus change that forks the chain and breaks the CI-conformance-tested
+browser miner. It is a recorded open decision, not an oversight; the source says
+so at `node/src/pow.js:8-15`.
 
-## 4. Fast, cheap, private payments (P3)
+So: **pools can form on Hearth.** "No pools required" is true — solo mining on a
+laptop works and is the default configuration of `hearthd`. "Pools cannot form"
+is not a claim this paper is entitled to make.
 
-- **Base layer:** 15s blocks with a dynamic block-size limit governed by a penalty
-  function, so capacity grows with demand without unbounded bloat.
-- **Tab channels:** a lightweight payment-channel layer for instant, sub-cent
-  retail payments that settle to the base chain. Buying coffee shouldn't wait for
-  a block.
-- **Privacy by default:** one-time **stealth addresses** so amounts and recipients
-  aren't trivially linkable. Cash-like privacy is a property of money, not a
-  luxury. (Optional view keys support voluntary disclosure/auditing.)
-- **Fees:** a small predictable base fee (burned) plus an optional tip to
-  prioritize. Typical fee target: well under one US cent.
+### 2.4 The parameters are dev-tuned, and mainnet must change them
 
----
-
-## 5. Fair launch & the Commons (P5)
-
-- **No premine, no ICO, no founder coin allocation.** The genesis block holds no
-  special balance. Everyone starts by mining or receiving EMBER.
-- **Commons treasury:** 10% of every block reward is minted to an on-chain
-  treasury. Spending is decided by **on-chain governance** using a hybrid of
-  coin-weighted voting and one-node-one-vote to blunt plutocracy. This funds
-  development, audits, and infrastructure **without** selling the network to
-  investors.
-- **Open by default:** MIT-licensed, reproducible builds, open specs.
+`POW_SCRATCH_KIB` is 64 and `POW_WALK_STEPS` is 256 (`node/src/params.js:51-52`),
+chosen so a single laptop produces a lively local chain in seconds. The comment
+alongside records the intended production sizes — roughly 2 GiB and 2,048+
+steps. A 64 KiB pad fits in L2 cache and is *not* meaningfully memory-hard
+against dedicated hardware. Raising it is a hard fork and must happen before
+mainnet, not after. Until then, the ASIC-resistance argument above is an argument
+about the construction, not a measured property of the running testnet.
 
 ---
 
-## 6. Usability as a first-class feature (P6)
+## 3. Fair distribution
 
-Decentralization that only experts can use recentralizes onto custodians. So
-Hearth treats UX as consensus-critical:
+This is the thesis, and it is the one part of the design that is fully verifiable
+today rather than in prospect.
 
-- **One process.** `hearthd` is a full node, wallet and miner at once. The Tauri
-  desktop shell around it is scaffolding today, not a shipped app; light-client
-  mode for phones is a design.
-- **Web everything.** A browser **web wallet** (keys stay client-side, sealed at
-  rest with AES-256-GCM), a **browser miner** running the same Homefire the node
-  does and conformance-tested against it in CI, and a public **block explorer**
-  with transaction search and block detail.
-- **Hearth Pay** *(mockup)*. `web/assets/hearth-pay-demo.js` renders the merchant
-  button a real SDK would render and **simulates** its settlement locally. There
-  is no SDK yet: no wallet handoff, no node subscription, no payment. The design
-  is a payment button that opens the shopper's wallet and fires a callback on
-  settlement — no custodian, no chargebacks, no card fees.
-- **Great graphics.** The interface is built around a warm, living *hearth* that
-  grows as you mine — a deliberately human, anti-industrial identity (see
-  [`branding/brand.md`](branding/brand.md)).
+### 3.1 What "fair" means here
+
+Not "everyone gets some". It means: **at the moment the chain starts, nobody
+holds anything, and the only way to acquire the asset is to do the same work
+anybody else can do.** No allocation, no sale, no vesting schedule, no
+foundation wallet, no "ecosystem fund" that turns out to be 20% of supply.
+
+### 3.2 The three things that make it real
+
+1. **Zero supply at genesis.** The genesis coinbase pays amount `0` to the
+   Commons address and creates no spendable output (`node/src/chain.js:55-70`).
+2. **The only issuance path is a mined block.** `_validate` recomputes the
+   expected subsidy for every block from height alone and rejects any coinbase
+   that mints one spark more than `subsidy + tips`
+   (`node/src/chain.js:304-315`). There is no other mint.
+3. **The puzzle runs on hardware people already own.** A CPU is competitive by
+   construction; a browser tab is a working miner
+   (`web/mine.html`, digest-conformance-tested against the node in CI at
+   `node/test/browser-pow.js`).
+
+### 3.3 Check it yourself
+
+```bash
+git clone https://github.com/cloudsforge-online/hearth && cd hearth/node
+node -e "const {Chain}=require('./src/chain');const c=new Chain(require('fs').mkdtempSync('/tmp/h-')).load();
+         console.log('height',c.height,'supply',c.supply())"
+# → height 0 supply 0
+```
+
+That is the whole claim. It is one line and it is falsifiable.
+
+**The caveat that matters:** the genesis above is the *UTXO-era* genesis. The
+account-model chain gets a new genesis (`docs/evm-spec.md` — "This is a new
+chain, not an upgrade"), and the no-premine property must be re-verified against
+that genesis when it exists. It has not been written yet. If you are evaluating
+Hearth, the genesis state root of the mainnet chain is the artifact to check, and
+this paper will not claim it until it exists.
+
+### 3.4 The Commons treasury
+
+10% of every block subsidy is minted to an on-chain address
+(`node/src/params.js:22`, address at `:127`, enforced at
+`node/src/chain.js:306-313`). It funds development, audits and infrastructure so
+that the network does not have to be sold to investors to be built.
+
+Two honest notes. First, the Commons is a *mint*, not a premine: it accrues block
+by block at the same rate as the miner's share, and holds nothing at genesis.
+Second, **the governance that is supposed to spend it does not exist.** No
+proposal mechanism, no voting, no multisig, no spend path of any kind is
+implemented. The treasury today is an address that accumulates and cannot pay
+out. Earlier drafts described hybrid coin-weighted/one-node-one-vote governance
+as though it were a mechanism; it is a design sketch. Full accounting is in
+[`docs/tokenomics.md`](docs/tokenomics.md).
 
 ---
 
-## 7. Architecture summary
+## 4. Difficulty
 
-| Layer | Choice | Rationale |
-|---|---|---|
-| Node (`hearthd`) | JS today, Rust intended | JS runs the network; the Rust crate is not yet a node |
-| PoW | Homefire (memory-hard; RandomX-class VM designed) | CPU-fair |
-| Ledger | UTXO + stealth addresses | privacy, parallel validation |
-| Retail | Tab payment channels | instant, sub-cent payments |
-| Governance | on-chain Commons treasury | capture-resistant funding |
-| Desktop app | Tauri (Rust + web UI) | small, cross-platform, great graphics |
-| Web | web wallet · browser miner · explorer | zero-install access |
+Difficulty retargets **every block** with a 60-block linearly-weighted moving
+average (`node/src/chain.js:212-235`, window at `node/src/params.js:16`). Each
+solve time is clamped to `[1, 6 × TARGET_BLOCK_TIME]` before it enters the
+average, so a single timestamp outlier cannot swing the target. The target is a
+continuous 256-bit value, and the expected target is recomputed and compared
+exactly on every block including the fork path (`chain.js:265`, `:349`) — the
+retarget rule *is* consensus, not a heuristic.
 
-Full detail: [`docs/architecture.md`](docs/architecture.md).
+Per-block retargeting is what makes small miners viable. A chain that retargets
+every 2,016 blocks punishes whoever is mining when hashrate leaves; a chain that
+retargets every block absorbs a departure in about a minute.
 
----
-
-## 8. Threat model & honest limitations
-
-- **You can't fully stop someone buying many CPUs.** Memory-hardness removes the
-  *super-linear* farm advantage; it does not make Hearth Sybil-proof. The goal is
-  *proportional, decentralized* mining, not literal one-person-one-vote.
-- **Pools are currently possible.** See §2.2. This is the largest gap between
-  what this paper argues for and what the chain enforces.
-- **RandomX-class VMs are complex** and a real attack surface; the production
-  algorithm needs audits and a spec freeze before mainnet.
-- **Privacy has trade-offs** with scalability and regulatory acceptance; Hearth
-  chooses default privacy with optional disclosure.
-- **Governance can still be gamed;** the hybrid voting model reduces, not
-  eliminates, plutocracy. This is an area of active design.
-
-This paper describes a design and a working proof-of-concept, not a finished
-network. See the [roadmap](docs/roadmap.md).
+`MIN_TARGET` — the *hardest* the chain is allowed to become — is
+`0000000000000000ffff…`, about 2⁻⁶⁴, or ~1.8×10¹⁹ attempts per block
+(`node/src/params.js:80`). This is not decoration. The previous value, ~2⁻²⁰,
+bound at roughly 300–500 CPU cores; past that the clamp fires, blocks arrive
+faster than the 15-second target, and **emission permanently accelerates**,
+because the schedule is indexed by height and not by time. For a coin whose whole
+thesis is that ordinary people mine it, a ceiling that binds at a few hundred
+CPUs was a launch blocker. `node/test/unit.js:105-113` pins the property rather
+than the literal.
 
 ---
 
-## 9. Prior art & influences
+## 5. Emission
 
-Bitcoin (PoW, UTXO), Monero (RandomX, tail emission, stealth addresses),
-Ethereum (EIP-1559 fee burn, on-chain governance experiments), and the
-non-outsourceable puzzles line of research. Hearth's contribution is the
-*combination*, tuned end-to-end for one goal: **money that ordinary people mine
-and spend.**
+```
+reward(0)              = 6 EMBER
+half-life              = 2 years  (4,207,680 blocks at 15 s)
+tail                   = 0.3 EMBER/block, perpetual
+commons share          = 10% of the subsidy
+```
+
+`node/src/params.js:19-22`; the schedule itself is `params.js:140-151`.
+
+Consensus cannot use floating point, so the reward is a **deterministic integer
+schedule**: it halves each two-year epoch, linearly interpolated inside the
+epoch, so the curve is continuous with no cliff and reproduces bit-for-bit on any
+engine. The reward reaches the 0.3 EMBER tail at height 18,513,792 — about year
+8.8 — and stays there forever.
+
+There is **no hard cap**. Supply rises indefinitely at a fixed 631,152 EMBER per
+year once the tail binds, which is a falling *percentage* of supply forever
+without reaching zero. This is deliberate: a perpetual tail means the security
+budget never depends on a fee market that has not been demonstrated to exist.
+
+Every number, with derivations from `params.js`, is in
+[`docs/tokenomics.md`](docs/tokenomics.md). **Do not use the tables in
+[`docs/coinnomics.md`](docs/coinnomics.md)** — they are generated from a smooth
+exponential model, not from the integer schedule consensus actually runs, and
+they differ by about 3.5% in the first year.
+
+---
+
+## 6. The account model and the EVM
+
+### 6.1 Why
+
+Hearth was a UTXO chain with Ed25519 signatures and `ember1…` bech32 addresses.
+That design is defensible and it is being replaced anyway, for one reason: **a
+chain nobody can build on is a chain nobody uses.**
+
+The concrete cost of being bespoke is not philosophical. It is that MetaMask
+cannot add the network, ethers and viem cannot talk to it, Hardhat and Foundry
+cannot deploy to it, no block explorer renders it, no hardware wallet derives its
+addresses, no audited contract can be reused, and every exchange integration is a
+bespoke engineering project rather than a config entry. Each of those is a
+separate multi-week piece of work for somebody else, and the sum of them is the
+reason most independent chains have no ecosystem.
+
+Speaking the Ethereum RPC dialect converts all of that from work into
+configuration.
+
+### 6.2 What changes
+
+Per [`docs/evm-spec.md`](docs/evm-spec.md):
+
+| | Before | After |
+| --- | --- | --- |
+| State model | UTXO | accounts `{nonce, balance, storageRoot, codeHash}` |
+| Address | `ember1…` bech32 | `0x…`, last 20 bytes of `keccak256(pubkey[1:])`, EIP-55 checksummed |
+| Signatures | Ed25519 | secp256k1 with public-key recovery |
+| Decimals | 8 ("sparks") | **18** — every EVM tool assumes 18 for a native asset |
+| Chain ID | none | **7411**, EIP-155 replay protection |
+| Fork semantics | n/a | **Shanghai** — PUSH0, EIP-3529 refunds, warm coinbase, initcode cap. No blobs |
+| Transactions | custom JSON | RLP legacy (type 0). EIP-1559 deferred |
+| Block gas limit | n/a | 30,000,000 |
+| Fees | flat 40,000-spark burn | gas × gasPrice **to the coinbase**; no burn in v1 |
+
+**Proof-of-work, block time and the emission schedule are unchanged.** Miners
+still receive a template and grind nonces, so the browser miner needs no EVM.
+
+### 6.3 Why implemented rather than imported
+
+The decision (owner, 2026-07-28) is that the EVM is written here — no
+`@ethereumjs/*`, no `ethers`, no `web3`. Node's built-in `crypto` is used for
+SHA-256 and randomness; Keccak-256, RLP, the trie, secp256k1 recovery, the
+interpreter and the gas schedule are ours.
+
+That is only a defensible decision because the reference vectors exist, and so
+the rule is that **every component ships against published vectors and
+conformance is CI-gating**: Keccak against the Keccak team's
+`KeccakF-1600-IntermediateValues`, RLP and the trie against `ethereum/tests`,
+secp256k1 against RFC 6979, opcodes and gas against `ethereum/legacytests`
+VMTests and GeneralStateTests. A divergence from Ethereum semantics is not a
+cosmetic bug — it means a Solidity contract behaves differently here than where
+it was audited, and somebody loses money.
+
+The harness runs 121 committed vectors offline and 20,766 against the full
+upstream corpus (`node/test/conformance/README.md`). Primitives and state pass
+today. The interpreter does not exist yet, so opcode and state-transition
+conformance is not yet claimed.
+
+One honesty note about "CI-gating": the conformance suites run under
+`npm test` (`node/package.json`), and `.github/workflows/ci.yml` currently
+invokes the legacy suites individually rather than `npm test`. So the gate is
+real in the test script and not yet real in the workflow. It is on the
+pre-mainnet list ([`docs/listing-checklist.md`](docs/listing-checklist.md) §7,
+M13).
+
+### 6.4 Two opcodes with no natural meaning here, and what they do
+
+`PREVRANDAO` (0x44) is beacon-chain randomness on Ethereum and Hearth has no
+beacon chain. It returns **the parent block's Homefire proof-of-work digest** — a
+real 256-bit hash, deterministic and verifiable by anyone. It is
+**miner-influenceable**: a miner who dislikes an outcome can discard the block
+and grind another. It must not be used for anything an adversarial miner would
+profit from biasing. Every PoW-derived randomness source has this property and it
+is stated here rather than left for a contract developer to discover.
+
+`BASEFEE` (0x48) exists because Shanghai includes EIP-3198 and removing it would
+make Shanghai-compiled Solidity fail here while working on Ethereum. v1 has no
+EIP-1559, so it pushes zero.
+
+---
+
+## 7. Where the pieces are
+
+| Directory | What it is |
+| --- | --- |
+| `node/` | The reference full node, wallet, miner, P2P and REST API. JavaScript, zero runtime dependencies. **This is the network.** |
+| `node/src/crypto`, `node/src/state`, `node/src/evm` | The EVM implementation, in progress |
+| `node/test/conformance/` | The vector harness and a committed offline subset |
+| `contracts/` | Uniswap-V2-derived AMM sources, WEMBER, Multicall3. Compile and build tests exist (`contracts/test/build.test.mjs`) but **are not wired into CI**, and nothing has ever been deployed |
+| `web/` | Static block explorer, non-custodial browser wallet, browser miner |
+| `site/` | Marketing site. Copy has been corrected against the code |
+| `rust/hearthd/` | A self-check binary and a Homefire benchmark. **Not a node, not consensus** — two known divergences, documented in `MAP.md` §2.2 |
+| `proto/` | Teaching scripts. Not consensus, not imported |
+
+[`MAP.md`](MAP.md) is the authoritative inventory: every claim in it is checked
+against source and cites `path:line`. Where this paper and `MAP.md` disagree,
+believe `MAP.md`.
+
+---
+
+## 8. Honest limitations
+
+**Retracted from v0.1 of this paper:**
+
+1. **"Non-outsourceable proof-of-work."** False. See §2.3. Pools can be built on
+   Homefire today.
+2. **"A RandomX-class VM — each nonce compiles a pseudo-random program."**
+   False. Homefire compiles nothing (§2.1).
+3. **"An EIP-1559-style base fee sized by congestion, burned"** and the net-zero
+   inflation table that followed from it. The fee today is a flat 40,000 sparks
+   plus 100 sparks per record byte (`node/src/params.js:25-29`) — not congestion
+   priced. And under the account model the fee model changes again: gas is paid
+   **to the coinbase with no burn in v1**. The "net inflation approaches zero via
+   burn" argument does not survive either fact and is withdrawn.
+4. **"Stealth addresses and view keys", "Tab payment channels", "dynamic
+   block-size limit governed by a penalty function", "warmshares", "trustless
+   mining co-ops", "on-chain governance", "light-client mode", "Hearth Pay SDK",
+   "reproducible builds".** None of these are implemented. `rust/hearthd/src/tab.rs`
+   contains a signed state machine that nothing calls. `web/pay-demo.html` is a
+   mockup that settles nothing on a 1,200 ms timer, and says so on the control.
+   They have been removed rather than restated as roadmap, because a paper that
+   lists twelve unbuilt features reads as a product.
+5. **"Mines only on AC power or when idle."** The browser miner has a real duty
+   cycle and drops to ≤15% in a background tab, and pauses on unplug **only where
+   the Battery Status API exists** — Firefox and Safari removed it. There is no
+   idle detection anywhere and a web page cannot implement one.
+
+**Standing limitations of the current design:**
+
+- **Security budget.** A new PoW chain with low hashrate is cheap to attack, and
+  a deep confirmation count does not fix that. Until hashrate is meaningful,
+  treat EMBER's settlement assurance as weak and size exposure accordingly. This
+  is the single most important honest statement in this document.
+- **Memory-hardness does not make mining Sybil-proof.** Someone who buys 10,000
+  CPUs gets 10,000 CPUs' worth of hashrate. The goal is *proportional* mining,
+  not one-person-one-vote.
+- **Dev-tuned consensus parameters ship in this tree.** Pad size, walk steps and
+  coinbase maturity (10, against a production ~100 — `params.js:95`) are all set
+  for local development. Each is a hard fork to change.
+- **Writing an EVM is a serious undertaking.** Conformance vectors make it
+  tractable, not safe. Until GeneralStateTests pass in full and an independent
+  audit has run, treat contract behaviour here as unverified.
+- **`0x06`–`0x09` (bn128, blake2f) are not implemented** and deliberately revert
+  loudly rather than being absent, because in the EVM a call to a codeless
+  address *succeeds* and returns empty — which a pairing check reads as zero.
+- **No bridges, and none planned soon.** Every bridge is a liability.
+- **No wallet recovery.** The browser wallet has one key per browser: no seed
+  phrase, no HD derivation, no hardware wallet, no passphrase recovery.
+- **No audit.** Nothing in this repository has been independently audited.
+- **The Rust crate is not a second implementation.** It has no block type, no
+  chain, no fork choice and no P2P server, and two of its modules would produce
+  wrong answers if wired up. A green Rust CI job says nothing about consensus.
+
+---
+
+## 9. AI assistance
+
+Parts of this repository were produced with AI assistance, and it seems better to
+say so than to leave it to be inferred.
+
+- **Code** — written with Claude Opus 5 and Claude Opus 4.8 (Anthropic), directed
+  and reviewed by a human, and gated on the same tests and CI as anything else
+  here.
+- **Artwork** — brand marks and icons generated with OpenAI's image models.
+
+The models were used under paid API access and the output is the project's to
+use. Nothing here is claimed to be hand-written that is not, and nothing is
+claimed to work that has not been tested. The conformance-vector discipline in
+§6.3 exists partly for this reason: an implementation is judged by whether it
+passes the reference vectors, not by who or what wrote it.
+
+---
+
+## 10. Prior art
+
+Bitcoin (proof-of-work, fork choice by cumulative work), Monero (CPU-oriented
+mining, tail emission), Zawy's LWMA difficulty algorithm, Ethereum (the account
+model, the EVM, and the reference test corpus without which reimplementing it
+would be irresponsible), and Uniswap V2 (the AMM the DeFi layer derives from).
+
+Hearth's contribution is not a new primitive. It is the combination: a fair,
+CPU-mined launch on a chain that speaks the dialect the rest of the ecosystem
+already speaks.
+
+---
+
+## Documents
+
+| | |
+| --- | --- |
+| [`MAP.md`](MAP.md) | What is actually in this repository, cited to `path:line` |
+| [`docs/evm-spec.md`](docs/evm-spec.md) | The account-model / EVM specification. Authoritative |
+| [`docs/tokenomics.md`](docs/tokenomics.md) | Supply, emission, circulating-supply methodology |
+| [`docs/exchange-integration.md`](docs/exchange-integration.md) | For exchange integration engineers |
+| [`docs/listing-checklist.md`](docs/listing-checklist.md) | What still has to exist before applying |
+| [`SECURITY.md`](SECURITY.md) | Disclosure contact, scope, response expectations |
