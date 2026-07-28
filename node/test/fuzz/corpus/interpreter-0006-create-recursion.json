@@ -1,0 +1,6 @@
+{
+  "target": "interpreter",
+  "note": "CREATE whose initcode is itself — depth is capped at 1024 and by the 63/64 gas rule, never by the JS stack.",
+  "code": "0x6000600060006000f0",
+  "gas": 5000000
+}

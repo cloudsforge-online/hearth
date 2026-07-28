@@ -1,0 +1,6 @@
+{
+  "target": "rlp",
+  "note": "0x81 0x01: a byte below 0x80 must encode as itself, never wrapped.",
+  "input": "0x8101",
+  "mustReject": true
+}

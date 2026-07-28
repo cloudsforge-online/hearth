@@ -1,0 +1,13 @@
+{
+  "target": "uint256",
+  "note": "The EVM has no traps: division by zero is defined to be zero.",
+  "op": "div",
+  "args": [
+    {
+      "$big": "1"
+    },
+    {
+      "$big": "0"
+    }
+  ]
+}

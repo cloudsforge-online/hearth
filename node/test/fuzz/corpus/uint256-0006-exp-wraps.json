@@ -1,0 +1,13 @@
+{
+  "target": "uint256",
+  "note": "2^256 wraps to zero rather than materialising a number with 2^256 bits.",
+  "op": "exp",
+  "args": [
+    {
+      "$big": "2"
+    },
+    {
+      "$big": "256"
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+{
+  "target": "rlp",
+  "note": "A list whose encoding is exactly 32 bytes — the trie embed boundary either side of which a node is inlined or hashed.",
+  "input": "0xdf9e111111111111111111111111111111111111111111111111111111111111"
+}

@@ -1,0 +1,43 @@
+{
+  "target": "trie",
+  "secure": false,
+  "note": "Keys sharing a long nibble prefix: extension nodes, and the merge when one is removed.",
+  "pairs": [
+    [
+      "0xaabbccdd00",
+      "0x11111111"
+    ],
+    [
+      "0xaabbccdd01",
+      "0x22222222"
+    ],
+    [
+      "0xaabbccdd0100",
+      "0x33333333"
+    ],
+    [
+      "0xaabbcc",
+      "0x44444444"
+    ]
+  ],
+  "orders": [
+    [
+      3,
+      2,
+      1,
+      0
+    ],
+    [
+      1,
+      3,
+      0,
+      2
+    ],
+    [
+      2,
+      0,
+      3,
+      1
+    ]
+  ]
+}

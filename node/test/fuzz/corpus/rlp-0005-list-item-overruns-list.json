@@ -1,0 +1,6 @@
+{
+  "target": "rlp",
+  "note": "A list declaring 1 payload byte whose item claims 2. The item is inside the buffer but outside its list.",
+  "input": "0xc182aabb",
+  "mustReject": true
+}

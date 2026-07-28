@@ -1,0 +1,6 @@
+{
+  "target": "interpreter",
+  "note": "A program with zero gas. Every path must still return a result object.",
+  "code": "0x60016002015b600056",
+  "gas": 0
+}

@@ -1,0 +1,6 @@
+{
+  "target": "interpreter",
+  "note": "LOG4 with an attacker-sized data range: the per-byte charge must precede the allocation.",
+  "code": "0x600060006000600067ffffffffffffffff6000a4",
+  "gas": 1000000
+}

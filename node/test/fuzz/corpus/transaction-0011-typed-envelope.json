@@ -1,0 +1,6 @@
+{
+  "target": "transaction",
+  "note": "EIP-2718 reserved 0x00-0x7f as type envelopes. v1 is legacy-only and must say so rather than let RLP fail obscurely.",
+  "raw": "0x02f80000",
+  "mustReject": true
+}

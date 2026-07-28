@@ -1,0 +1,6 @@
+{
+  "target": "rlp",
+  "note": "The empty byte string is not an encoding of anything.",
+  "input": "0x",
+  "mustReject": true
+}

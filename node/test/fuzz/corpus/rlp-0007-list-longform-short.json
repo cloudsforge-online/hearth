@@ -1,0 +1,6 @@
+{
+  "target": "rlp",
+  "note": "A list whose 1-byte payload is written with the long form.",
+  "input": "0xf80100",
+  "mustReject": true
+}

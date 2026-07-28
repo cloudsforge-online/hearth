@@ -1,0 +1,6 @@
+{
+  "target": "rlp",
+  "note": "0xbf + 8 length bytes naming 2^64-1 bytes, with none present.",
+  "input": "0xbfffffffffffffffff",
+  "mustReject": true
+}

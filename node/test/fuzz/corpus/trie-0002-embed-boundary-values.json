@@ -1,0 +1,43 @@
+{
+  "target": "trie",
+  "secure": false,
+  "note": "Values either side of 32 bytes: the node is embedded in its parent below the boundary and replaced by its hash at or above it.",
+  "pairs": [
+    [
+      "0x01",
+      "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    ],
+    [
+      "0x02",
+      "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    ],
+    [
+      "0x03",
+      "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    ],
+    [
+      "0x04",
+      "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    ],
+    [
+      "0x05",
+      "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    ]
+  ],
+  "orders": [
+    [
+      4,
+      3,
+      2,
+      1,
+      0
+    ],
+    [
+      2,
+      0,
+      4,
+      1,
+      3
+    ]
+  ]
+}

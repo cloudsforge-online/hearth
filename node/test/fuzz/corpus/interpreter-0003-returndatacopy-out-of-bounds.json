@@ -1,0 +1,6 @@
+{
+  "target": "interpreter",
+  "note": "RETURNDATACOPY reading past the return buffer — an exceptional halt, priced at pricing time (EIP-211).",
+  "code": "0x6020600060003e",
+  "gas": 100000
+}

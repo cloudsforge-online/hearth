@@ -1,0 +1,6 @@
+{
+  "target": "interpreter",
+  "note": "SELFDESTRUCT naming its own address (pre-EIP-6780 semantics, per spec).",
+  "code": "0x30ff",
+  "gas": 100000
+}

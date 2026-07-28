@@ -1,0 +1,6 @@
+{
+  "target": "transaction",
+  "note": "s replaced by n-s. Verifies over the same message, so accepting it gives every transaction two hashes (EIP-2).",
+  "raw": "0xf86e098504a817c800825208943535353535353535353535353535353535353535880de0b6b3a764000080823a0aa0450f25cb83e2bf822e5dd3820097d94572884447391aa8fbfb8ae16cb7fe4f8ea0dbcd2470cd129a87f912976f566169e3ad6601bae5cb06ad589cecc04bbf00df",
+  "mustReject": true
+}

@@ -1,0 +1,6 @@
+{
+  "target": "interpreter",
+  "note": "MCOPY with overlapping source and destination — the case a naive memmove gets wrong.",
+  "code": "0x6020600060105e",
+  "gas": 100000
+}

@@ -1,0 +1,6 @@
+{
+  "target": "interpreter",
+  "note": "A JUMPDEST byte that is PUSH immediate data, not an instruction. Jumping there must be refused — the jumpdest analysis is what makes this safe.",
+  "code": "0x6002567f5b00",
+  "gas": 100000
+}

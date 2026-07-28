@@ -1,0 +1,36 @@
+{
+  "target": "trie",
+  "secure": false,
+  "note": "Keys whose nibble paths differ in parity — hex-prefix rule 1, where a wrong flag still answers every get and still gets every root wrong.",
+  "pairs": [
+    [
+      "0x10",
+      "0x61"
+    ],
+    [
+      "0x12",
+      "0x62"
+    ],
+    [
+      "0x1230",
+      "0x63"
+    ],
+    [
+      "0x1234",
+      "0x64"
+    ],
+    [
+      "0x123450",
+      "0x65"
+    ]
+  ],
+  "orders": [
+    [
+      4,
+      3,
+      2,
+      1,
+      0
+    ]
+  ]
+}

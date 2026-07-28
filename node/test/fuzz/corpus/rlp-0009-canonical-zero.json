@@ -1,0 +1,5 @@
+{
+  "target": "rlp",
+  "note": "0x80 is the canonical zero/empty string and must round-trip to itself.",
+  "input": "0x80"
+}
