@@ -1,0 +1,9 @@
+# solc drags in tmp@0.0.33, which has a path-traversal advisory (GHSA: unsanitized
+# prefix/postfix escapes the temp directory) and a symlink advisory below 0.2.4.
+# solc only uses it to stage a compiler input file, so the exposure here is a build
+# tool on a developer's machine rather than anything reachable at runtime — but it is
+# a one-line fix and there is no reason to carry a known advisory in a lockfile.
+#
+# 0.2.x is API-compatible for solc's usage. Remove this once solc ships a newer tmp.
+overrides:
+  tmp: '^0.2.7'
