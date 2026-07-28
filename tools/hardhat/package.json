@@ -1,0 +1,19 @@
+{
+  "name": "hearth-hardhat-template",
+  "private": true,
+  "version": "0.1.0",
+  "description": "A Hardhat project preconfigured for Hearth (chain id 7411, EMBER, Shanghai, legacy gas)",
+  "license": "MIT",
+  "scripts": {
+    "compile": "hardhat compile",
+    "deploy": "hardhat run scripts/deploy.js --network hearth",
+    "interact": "hardhat run scripts/interact.js --network hearth",
+    "swap": "hardhat run scripts/swap.js --network hearth",
+    "check": "hardhat run scripts/check-network.js --network hearth"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-ethers": "^3.0.8",
+    "ethers": "^6.13.0",
+    "hardhat": "^2.22.0"
+  }
+}
