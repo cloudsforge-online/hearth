@@ -145,9 +145,12 @@ mkBlock(0, [], []);
       { address: ADDR_TOKEN, topics: [T_TRANSFER, T_ALICE, T_BOB], data: pad32('64'),
         blockNumber: 1n, blockHash: h32('block:1'), transactionHash: tx1.hash,
         transactionIndex: 0n, logIndex: 0n, removed: false },
-      // deliberately missing its block/transaction context, to exercise the
-      // fill-from-receipt path a lenient phase-5 implementation will lean on
-      { address: ADDR_TOKEN2, topics: [T_APPROVAL, T_ALICE], data: Buffer.alloc(0) },
+      // Deliberately missing its block/transaction context, to exercise the
+      // fill-from-receipt path a lenient phase-5 implementation will lean on.
+      // logIndex is NOT optional though — it counts across the block, so one
+      // receipt cannot derive it, and the formatter refuses rather than
+      // inventing a per-receipt number that collides with the next receipt's.
+      { address: ADDR_TOKEN2, topics: [T_APPROVAL, T_ALICE], data: Buffer.alloc(0), logIndex: 1n },
     ],
   };
   const r2 = {

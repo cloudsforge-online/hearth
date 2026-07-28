@@ -434,7 +434,25 @@ function formatReceipt(r) {
     gasUsed: H.encodeQuantity(r.gasUsed, 'receipt.gasUsed'),
     effectiveGasPrice: H.encodeQuantity(r.effectiveGasPrice, 'receipt.effectiveGasPrice'),
     contractAddress: r.contractAddress ? H.encodeAddress(r.contractAddress, 'receipt.contractAddress') : null,
-    logs: (r.logs || []).map((l, i) => formatLog(l, { ...ctx, logIndex: pick(l.logIndex, BigInt(i)) })),
+    // logIndex is the log's position within the BLOCK, not within this receipt.
+    // The old fallback numbered from zero per receipt, so a block whose first
+    // transaction logs twice and whose second logs once produced 0, 1, 0 — and
+    // (blockHash, logIndex) is the key every indexer dedupes on, so the third
+    // log silently overwrites the first.
+    //
+    // There is no honest fallback here: a single receipt cannot know how many
+    // logs preceded it in its block. So the chain must supply it, which the
+    // interface at the top of this file already says it does, and an absent
+    // value fails loudly rather than inventing a plausible wrong one.
+    logs: (r.logs || []).map((l, i) => {
+      if (l.logIndex === undefined || l.logIndex === null) {
+        throw new TypeError(
+          `receipt.logs[${i}].logIndex is missing — the chain must number logs across the block, ` +
+          'and this layer cannot derive it from one receipt',
+        );
+      }
+      return formatLog(l, { ...ctx, logIndex: l.logIndex });
+    }),
     logsBloom: H.encodeBloom(r.logsBloom, 'receipt.logsBloom'),
     // A reverted transaction is a mined transaction: the RPC call succeeds and
     // the receipt says 0x0. Returning an error here is a classic own goal —
