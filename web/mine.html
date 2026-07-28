@@ -24,6 +24,8 @@
 <script src="assets/obs.js"></script>
 <style>
   .hide { display:none !important; }
+  .hero-art { width:100%; height:auto; max-height:300px; object-fit:cover;
+              border-radius:.6rem; display:block; margin:18px 0 }
   .duty { width:100%; accent-color: var(--cf-accent) }
   .found { border-left:3px solid var(--ok); padding-left:.7rem; margin:.5rem 0 }
   .warn-box { padding:.7rem .9rem; border-radius:.45rem; background:rgba(255,90,30,.08);
@@ -52,6 +54,15 @@
       signed by the key the reward pays. There is no pool to join, because work
       handed to you is worth nothing to anyone else. Your key stays in this
       browser — only the signature ever leaves it.</p>
+
+    <!-- webp first: the same picture is 75 KB as webp against 239 KB as jpeg.
+         The 2 MB master lives in web/art and is never served. -->
+    <picture>
+      <source srcset="assets/mine-hero.webp" type="image/webp">
+      <img class="hero-art" src="assets/mine-hero.jpg" width="1400" height="933"
+           alt="A laptop on a kitchen table at night, its screen glowing ember-orange across the room"
+           loading="lazy" decoding="async">
+    </picture>
 
     <!-- key -->
     <div class="card" style="margin:20px 0" id="keyCard">
