@@ -1,0 +1,16 @@
+{
+  "name": "@cloudsforge/hearth-contracts",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Hearth's DeFi layer — WEMBER, a Uniswap V2 port, and Multicall3",
+  "license": "GPL-3.0-or-later",
+  "type": "module",
+  "scripts": {
+    "compile": "node scripts/compile.mjs",
+    "test": "node test/build.test.mjs"
+  },
+  "devDependencies": {
+    "solc": "0.8.26"
+  },
+  "engines": { "node": ">=18" }
+}
