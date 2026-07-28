@@ -1,0 +1,15 @@
+{
+  "name": "@cloudsforge/hearth-explorer-api",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Etherscan-compatible /api shim and address index for Hearth — zero dependencies, plain node:http",
+  "license": "MIT",
+  "type": "commonjs",
+  "main": "src/index.js",
+  "bin": { "hearth-explorer-api": "src/index.js" },
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node test/explorer-api.test.js"
+  },
+  "engines": { "node": ">=22" }
+}

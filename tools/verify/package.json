@@ -1,0 +1,15 @@
+{
+  "name": "@cloudsforge/hearth-verify",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Contract source verification for Hearth — zero npm dependencies, plain node:http",
+  "license": "MIT",
+  "type": "commonjs",
+  "main": "src/index.js",
+  "bin": { "hearth-verify": "src/index.js" },
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node test/verify.test.js"
+  },
+  "engines": { "node": ">=22" }
+}
