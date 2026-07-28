@@ -279,7 +279,9 @@ function decode(raw, { chainId = CHAIN_ID } = {}) {
  * to catch: everything on the node's own path agreed with itself.
  */
 function isNormalized(tx) {
-  return typeof tx.nonce === 'bigint' && Buffer.isBuffer(tx.data);
+  return typeof tx.nonce === 'bigint'
+    && Buffer.isBuffer(tx.data)
+    && (tx.to === null || Buffer.isBuffer(tx.to));
 }
 
 /** Intrinsic gas, straight from the Shanghai schedule — see evm/gas.js. */

@@ -301,7 +301,8 @@ group('ethereum/tests GeneralStateTests — every blake2f input they carry');
     }
   }
   if (missing) {
-    skipped++;
+    // No counter here on purpose: a skipped optional corpus is not a check that
+    // passed. It says so on stdout and the suite's total stays honest.
     console.log('  … SKIPPED: the corpus is not fetched. Run node/scripts/fetch-vectors.sh.');
   } else {
     let structural = 0, exact = 0, priced = 0;
