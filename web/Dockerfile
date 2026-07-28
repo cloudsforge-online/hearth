@@ -11,5 +11,13 @@
 # nginx.conf is only here for the log format and a real 404 — see that file.
 FROM nginx:alpine@sha256:4a73073bd557c65b759505da037898b61f1be6cbcc3c2c3aeac22d2a470c1752
 COPY . /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+# nginx.conf goes in as a TEMPLATE so the node upstream is deployment config
+# rather than a baked-in hostname. The base image runs envsubst over
+# /etc/nginx/templates/*.template at boot; NGINX_ENVSUBST_FILTER keeps it to our
+# own variables, because without it envsubst would also eat $host, $uri and
+# every other nginx runtime variable in the file.
+COPY nginx.conf /etc/nginx/templates/default.conf.template
+ENV NGINX_ENVSUBST_FILTER=HEARTH_
+ENV HEARTH_RPC_UPSTREAM=hearth-testnet-seed:8645
 EXPOSE 80

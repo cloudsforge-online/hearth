@@ -18,7 +18,11 @@
 <meta name="twitter:image" content="https://hearth.cloudsforge.online/og-hearth.png">
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
 <link rel="manifest" href="site.webmanifest">
-<meta name="hearth-rpc" content="http://localhost:8645">
+<!-- No hearth-rpc pin: the node is same-origin /rpc, proxied by nginx.
+     This used to be hardcoded to http://localhost:8645, which meant the
+     deployed explorer asked the VISITOR'S OWN machine for the chain,
+     always failed, and fell back to sample data. Set this meta only to
+     point a page at a node on a different origin. -->
 <link rel="stylesheet" href="assets/vendor/cf-tokens.css">
 <link rel="stylesheet" href="assets/vendor/cf-ui.css">
 <link rel="stylesheet" href="assets/styles.css">
