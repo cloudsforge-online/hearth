@@ -16,14 +16,35 @@ const isHash = s => typeof s === 'string' && /^[0-9a-f]{64}$/.test(s);
 // would otherwise name no peer at all
 const peerName = sock => (sock.remoteAddress ? `${sock.remoteAddress}:${sock.remotePort}` : 'closed');
 
-function isBlock(b) {
-  if (!b || typeof b !== 'object') return false;
-  const h = b.header;
-  if (!h || typeof h !== 'object') return false;
-  if (!isHash(h.prevHash)) return false;
-  if (!Number.isInteger(h.height) || h.height < 1) return false;
-  return Array.isArray(b.txs) && b.txs.length > 0 && b.txs.length <= P.MAX_BLOCK_TXS;
-}
+/**
+ * The three things this file needs to know about a block, and the only three.
+ *
+ * Everything else here — the locator, the orphan pool, the verification budget,
+ * the page limits — is about branches and sockets and is identical whatever a
+ * block contains. So gossip is written against this seam rather than duplicated
+ * for the account model: `src/evmnode.js` supplies its own `wire`, and the two
+ * chains share one tested implementation of the part that is hard.
+ *
+ * The UTXO defaults are below. Note `txs.length > 0`: a UTXO block always has a
+ * coinbase transaction, so an empty one is malformed. On the account model the
+ * reward is credited straight to an account and an EMPTY BLOCK IS NORMAL — which
+ * is precisely the kind of assumption that would have been silently inherited.
+ */
+const UTXO_WIRE = {
+  isBlock(b) {
+    if (!b || typeof b !== 'object') return false;
+    const h = b.header;
+    if (!h || typeof h !== 'object') return false;
+    if (!isHash(h.prevHash)) return false;
+    if (!Number.isInteger(h.height) || h.height < 1) return false;
+    return Array.isArray(b.txs) && b.txs.length > 0 && b.txs.length <= P.MAX_BLOCK_TXS;
+  },
+  blockId(b) { return BLOCK.blockId(b); },
+  acceptTx(node, tx) {
+    if (!tx || typeof tx !== 'object' || typeof tx.id !== 'string') return { ok: false };
+    return node.mempool.add(tx);
+  },
+};
 
 class P2P {
   constructor(node) {
@@ -36,6 +57,7 @@ class P2P {
     this.stopped = false;
     this._loc = null;         // memoized locator
     this._down = new Set();   // peers we have already reported as unreachable
+    this.wire = node.wire || UTXO_WIRE;
   }
 
   listen(port) {
@@ -88,6 +110,9 @@ class P2P {
     // evaluation, so an unmetered peer buys a core with a stream of junk.
     sock.cfVerify = { tokens: P.P2P_BLOCK_VERIFY_BURST, at: Date.now() };
     sock.cfInvalid = 0;
+    // …and the same for transactions, which had no budget at all. See _txFrom.
+    sock.cfTxVerify = { tokens: P.P2P_TX_VERIFY_BURST, at: Date.now() };
+    sock.cfInvalidTx = 0;
     // a misbehaving peer must not be able to write the log as fast as it can
     // write the socket, so each fault is reported once per connection
     const said = new Set();
@@ -125,8 +150,27 @@ class P2P {
   }
 
   _send(sock, msg) {
-    try { sock.write(JSON.stringify(msg) + '\n'); }
-    catch (e) { this.node.debug('p2p send failed', { peer: peerName(sock), t: msg && msg.t, err: String(e && e.message || e) }); }
+    this._sendText(sock, JSON.stringify(msg), msg && msg.t);
+  }
+
+  /** Write a frame that is already serialized — see the `getblocks` handler, which
+   *  builds one block at a time so it can stop before the frame gets too big. */
+  _sendText(sock, text, what) {
+    try { sock.write(text + '\n'); }
+    catch (e) { this.node.debug('p2p send failed', { peer: peerName(sock), t: what, err: String(e && e.message || e) }); }
+  }
+
+  /**
+   * Take a token from a per-peer bucket, refilling it at `perSecond`.
+   * Returns false when the peer is over budget.
+   */
+  _spend(bucket, burst, perSecond) {
+    const now = Date.now();
+    bucket.tokens = Math.min(burst, bucket.tokens + ((now - bucket.at) / 1000) * perSecond);
+    bucket.at = now;
+    if (bucket.tokens < 1) return false;
+    bucket.tokens -= 1;
+    return true;
   }
 
   broadcast(msg, except) {
@@ -181,7 +225,7 @@ class P2P {
 
   // ---- orphans ------------------------------------------------------------
   _orphan(b) {
-    const id = BLOCK.blockId(b);
+    const id = this.wire.blockId(b);
     if (this.orphans.has(id)) return;
     if (this.orphans.size >= P.P2P_MAX_ORPHANS) this.orphans.delete(this.orphans.keys().next().value);
     this.orphans.set(id, b);
@@ -240,20 +284,13 @@ class P2P {
    */
   _acceptFrom(sock, b) {
     const v = sock.cfVerify;
-    if (v) {
-      const now = Date.now();
-      v.tokens = Math.min(P.P2P_BLOCK_VERIFY_BURST,
-        v.tokens + ((now - v.at) / 1000) * P.P2P_BLOCK_VERIFY_PER_S);
-      v.at = now;
-      if (v.tokens < 1) {
-        if (!v.said) {
-          v.said = true;
-          this.node.warn('p2p peer throttled: block verification budget exhausted',
-            { peer: peerName(sock), invalid: sock.cfInvalid });
-        }
-        return null;
+    if (v && !this._spend(v, P.P2P_BLOCK_VERIFY_BURST, P.P2P_BLOCK_VERIFY_PER_S)) {
+      if (!v.said) {
+        v.said = true;
+        this.node.warn('p2p peer throttled: block verification budget exhausted',
+          { peer: peerName(sock), invalid: sock.cfInvalid });
       }
-      v.tokens -= 1;
+      return null;
     }
     const r = this._accept(b);
     const wasted = !r.ok && r.err !== 'known' && r.err !== 'unknown parent';
@@ -264,6 +301,44 @@ class P2P {
     if (++sock.cfInvalid >= P.P2P_MAX_INVALID_BLOCKS) {
       this.node.warn('p2p peer dropped: too many invalid blocks',
         { peer: peerName(sock), invalid: sock.cfInvalid });
+      this.peers.delete(sock);
+      sock.destroy();
+      return null;
+    }
+    return r;
+  }
+
+  /**
+   * Accept a transaction a specific peer sent us, charging that peer for the work.
+   *
+   * The metering is the block path's, for the same reason and with the same refund
+   * rule: validating a transaction costs a signature verification per input, the
+   * read loop drains a whole frame in one synchronous event, and this message had
+   * NO budget of any kind — one 4 MiB frame of `{"t":"tx","tx":{…}}` was as much
+   * event loop as an anonymous peer cared to take.
+   *
+   * A token is refunded when the transaction is accepted or already known, so
+   * honest relay — which is almost entirely one or the other — never touches the
+   * limiter. Junk keeps its token and also counts toward a disconnect budget.
+   */
+  _txFrom(sock, tx) {
+    const bucket = sock.cfTxVerify;
+    if (bucket && !this._spend(bucket, P.P2P_TX_VERIFY_BURST, P.P2P_TX_VERIFY_PER_S)) {
+      if (!bucket.said) {
+        bucket.said = true;
+        this.node.warn('p2p peer throttled: transaction budget exhausted',
+          { peer: peerName(sock), invalidTx: sock.cfInvalidTx });
+      }
+      return null;
+    }
+    const r = this.wire.acceptTx(this.node, tx) || { ok: false };
+    if (r.ok || r.err === 'known') {
+      if (bucket) bucket.tokens = Math.min(P.P2P_TX_VERIFY_BURST, bucket.tokens + 1);
+      return r;
+    }
+    if (++sock.cfInvalidTx >= P.P2P_MAX_INVALID_TXS) {
+      this.node.warn('p2p peer dropped: too many invalid transactions',
+        { peer: peerName(sock), invalidTx: sock.cfInvalidTx });
       this.peers.delete(sock);
       sock.destroy();
       return null;
@@ -297,9 +372,22 @@ class P2P {
           const e = chain.store.get(id);
           if (e && chain.chainIndex[e.height] === id) { from = e.height + 1; break; }
         }
-        const out = [];
-        for (let h = from; h <= chain.height && out.length < P.P2P_MAX_BLOCKS; h++) out.push(chain.getBlock(h));
-        this._send(sock, { t: 'blocks', blocks: out });
+        /* Bounded by BYTES as well as by count. P2P_MAX_BLOCKS alone contradicts
+         * the receiver's P2P_MAX_LINE the moment blocks average more than about
+         * 20.5 KB: the frame is then over 4 MiB, the receiver drops us for an
+         * oversized frame, asks again, and sync never completes. Blocks are
+         * serialized one at a time so the page can stop at the right place, and
+         * the pieces are joined rather than re-stringified. At least one block
+         * always goes, or a chain of large blocks stalls just as permanently. */
+        const parts = [];
+        let frameBytes = 0;
+        for (let h = from; h <= chain.height && parts.length < P.P2P_MAX_BLOCKS; h++) {
+          const one = JSON.stringify(chain.getBlock(h));
+          if (parts.length && frameBytes + one.length > P.P2P_MAX_FRAME_BYTES) break;
+          parts.push(one);
+          frameBytes += one.length;
+        }
+        this._sendText(sock, '{"t":"blocks","blocks":[' + parts.join(',') + ']}', 'blocks');
         break;
       }
       case 'getblock': {
@@ -315,7 +403,7 @@ class P2P {
         if (!Array.isArray(blocks) || blocks.length > P.P2P_MAX_BLOCKS) break;
         let progress = false;
         for (const b of blocks) {
-          if (!isBlock(b)) continue;
+          if (!this.wire.isBlock(b)) continue;
           const r = this._acceptFrom(sock, b);
           if (!r) break;               // over budget, or the peer just got dropped
           if (r.ok) progress = true;
@@ -331,7 +419,7 @@ class P2P {
       }
       case 'block': {
         const b = msg.block;
-        if (!isBlock(b)) break;
+        if (!this.wire.isBlock(b)) break;
         const r = this._acceptFrom(sock, b);
         if (!r) break;
         if (r.ok) this.broadcast({ t: 'block', block: b }, sock);
@@ -342,14 +430,12 @@ class P2P {
         break;
       }
       case 'tx': {
-        const tx = msg.tx;
-        if (!tx || typeof tx !== 'object' || typeof tx.id !== 'string') break;
-        const r = this.node.mempool.add(tx);
-        if (r.ok) this.broadcast({ t: 'tx', tx }, sock);
+        const r = this._txFrom(sock, msg.tx);
+        if (r && r.ok) this.broadcast({ t: 'tx', tx: msg.tx }, sock);
         break;
       }
     }
   }
 }
 
-module.exports = { P2P };
+module.exports = { P2P, UTXO_WIRE };

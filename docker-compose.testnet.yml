@@ -6,12 +6,39 @@
 # all joined on the dedicated `hearth-testnet` network (HEARTH_NETWORK) so they
 # can never gossip with, or replay txs against, the default `hearth` network.
 #
-# Host RPC ports:
-#   :8645  — seed
-#   :8647  — miner1
-#   :8649  — miner2
+# THIS TESTNET RUNS THE ACCOUNT MODEL (`HEARTH_EVM=1`, docs/evm-spec.md): 0x
+# addresses, secp256k1, an EVM and the Ethereum JSON-RPC surface. `docker-compose.yml`
+# still runs the UTXO chain, because it also serves the browser wallet and the
+# browser miner, and both are still Ed25519.
+#
+# Each node serves TWO protocols on TWO ports (evm-spec.md §6):
+#
+#   host        container   what
+#   :8545/7/9   :8545 /     Ethereum JSON-RPC 2.0 — point Hardhat, Foundry or
+#                           MetaMask at http://localhost:8545
+#   :8645/7/9   :8645       the REST API — /info, /supply, /mempool, /mining/*
+#
+# 8546 is deliberately unused: it is reserved for the v2 WebSocket endpoint.
+#
+# CHAIN ID 7412, NOT 7411. `HEARTH_NETWORK=hearth-testnet` selects it
+# (params.js), and the separation is mandatory: EIP-155 is the only thing keeping
+# a testnet transaction from replaying on mainnet, so sharing an id would make a
+# faucet a way to drain the account it funds. The genesis differs too — its
+# extraData is `hearth-testnet/7412` — because an EMPTY block carries no
+# transactions and no chain id, and would otherwise be valid on both.
+#
+# Tools default to 7411. Point Hardhat at this with `--network` overridden, or
+# `HEARTH_CHAIN_ID`-style config, or it will refuse with a chain-id mismatch.
+#
+# All three write the SAME genesis, because none of them is given one and the
+# default is fixed rather than "now" — a genesis whose timestamp were the moment
+# a node first started would give every node a different genesis hash and no
+# peers. There is no premine, so nothing is spendable until a miner earns it.
 #
 # Try:  curl -s localhost:8645/info
+#       curl -s -X POST -H 'content-type: application/json' \
+#            -d '{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}' \
+#            http://localhost:8545/
 
 services:
   hearth-testnet-seed:
@@ -19,10 +46,13 @@ services:
     container_name: hearth-testnet-seed
     environment:
       HEARTH_NETWORK: "hearth-testnet"
+      HEARTH_EVM: "1"
       HEARTH_RPC: "8645"
+      HEARTH_JSONRPC: "8545"
       HEARTH_P2P: "8646"
     ports:
-      - "8645:8645"   # RPC/HTTP exposed to the host
+      - "8545:8545"   # Ethereum JSON-RPC
+      - "8645:8645"   # REST
       - "8646:8646"   # P2P
     volumes:
       - testnet-seed-data:/data
@@ -33,12 +63,15 @@ services:
     environment:
       HEARTH_NETWORK: "hearth-testnet"
       HEARTH_PEERS: "hearth-testnet-seed:8646"
+      HEARTH_EVM: "1"
       HEARTH_MINE: "1"
       HEARTH_THROTTLE: "0.6"
       HEARTH_RPC: "8645"
+      HEARTH_JSONRPC: "8545"
       HEARTH_P2P: "8646"
     ports:
-      - "8647:8645"   # miner1 RPC on host :8647
+      - "8547:8545"   # miner1 Ethereum JSON-RPC on host :8547
+      - "8647:8645"   # miner1 REST on host :8647
     depends_on: [hearth-testnet-seed]
     volumes:
       - testnet-miner1-data:/data
@@ -49,12 +82,15 @@ services:
     environment:
       HEARTH_NETWORK: "hearth-testnet"
       HEARTH_PEERS: "hearth-testnet-seed:8646"
+      HEARTH_EVM: "1"
       HEARTH_MINE: "1"
       HEARTH_THROTTLE: "0.6"
       HEARTH_RPC: "8645"
+      HEARTH_JSONRPC: "8545"
       HEARTH_P2P: "8646"
     ports:
-      - "8649:8645"   # miner2 RPC on host :8649
+      - "8549:8545"   # miner2 Ethereum JSON-RPC on host :8549
+      - "8649:8645"   # miner2 REST on host :8649
     depends_on: [hearth-testnet-seed]
     volumes:
       - testnet-miner2-data:/data

@@ -53,8 +53,16 @@ const secp = require('../crypto/secp256k1');
 const gas = require('../evm/gas');
 const P = require('../params');
 
-/** Chain id, spec §1. EIP-155 replay protection binds signatures to it. */
-const CHAIN_ID = 7411;
+/**
+ * The EIP-155 chain id, spec §1 — 7411 on mainnet, 7412 on the testnet.
+ *
+ * READ FROM params, NEVER DECLARED HERE. It used to be a literal, and the two
+ * networks would then have shared one id: every testnet transaction replayable on
+ * mainnet and back, same key, same nonce, the same bytes valid on both. The UTXO
+ * scheme this replaces put the network id inside the signed body, so it had that
+ * protection structurally; EIP-155 concentrates it into this single number.
+ */
+const CHAIN_ID = P.CHAIN_ID;
 
 const TX_TYPE_LEGACY = 0;
 

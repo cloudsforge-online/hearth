@@ -136,11 +136,66 @@ be tested in isolation during the transition (`docs/evm-spec.md` §5).
 | `src/wallet.js` | Local keys, coin selection, tx building |
 | `src/box.js` | X25519 → HKDF → AES-256-GCM sealed boxes |
 | `src/apps/chat.js` | An application built entirely out of records + sealed boxes |
-| `bin/hearthd.js` · `bin/hearth-cli.js` · `bin/hearth-chat.js` | node, wallet CLI, chat CLI |
+| `bin/hearthd.js` | Node entrypoint — **`--evm` selects the account-model chain instead**, see §2.1.1 |
+| `bin/hearth-cli.js` | Wallet/query CLI |
+| `bin/hearth-chat.js` | Encrypted chat CLI |
 
 `bin/hearth.js` and `bin/hearth-cli.js` are **two tools for two chains** and are
 deliberately not merged — merging them would mean one address format silently
 accepting the other's addresses (`node/bin/hearth.js:19-22`).
+
+### 2.1.1 The account-model chain (`hearthd --evm`)
+
+A **second, separate chain** lives in the same package: 0x addresses, secp256k1,
+an EVM, Shanghai semantics and the `eth_*` JSON-RPC surface
+(`docs/evm-spec.md`). It shares **no consensus code** with the UTXO chain — a
+different state model, different addresses, a different genesis — and the two
+will not talk to each other. `--evm` chooses; the UTXO chain is still the
+default because the browser wallet, the browser miner and Forge Pay are written
+against it.
+
+| File | Responsibility |
+|---|---|
+| `src/chain/header.js` | Header v2, block RLP, the block id, `verifyPow` |
+| `src/chain/genesis.js` | The `hearth-genesis/1` file, the alloc, block 0 |
+| `src/chain/blockchain.js` | Storage, validation, fork choice, reorganisation |
+| `src/chain/mempool.js` | Per-sender nonce ladders, priced between senders |
+| `src/chain/miner.js` | Block production, and `/mining/template` for remote miners |
+| `src/chain/rpcadapter.js` | The chain interface `src/jsonrpc/methods.js` documents |
+| `src/evmnode.js` | Wires it together and serves both HTTP surfaces |
+| `src/chain/{statetransition,transaction,receipt,bloom}.js` | Phase 4; unchanged here |
+
+What differs from §3, and each difference is consensus:
+
+- **There is no coinbase transaction.** The reward is credited straight to the
+  coinbase account after the last transaction, so **an empty block is normal**
+  (`blockchain.js` `_creditReward`). The UTXO shape check requires a first
+  transaction, which is why `p2p.js` now takes its block shape from the node
+  (`UTXO_WIRE` there is the default).
+- **`coinbasePub` is a 65-byte secp256k1 key** and `powSig` is a 65-byte
+  secp256k1 signature over the digest. Homefire itself is untouched — the same
+  `powSeed(coreHash, nonce, coinbasePubHex)`, the same pad, the same walk.
+- **Header timestamps are seconds**, enforced rather than assumed: a value past
+  `MAX_TIMESTAMP` (≈ year 5138) is refused, which every millisecond value
+  exceeds.
+- **Fork choice is cumulative difficulty**, `Σ 2^256/(target+1)`, stored per
+  block rather than recomputed. Ties keep the incumbent.
+- **State is content-addressed**, so switching branches is opening a StateDB at
+  another root rather than replaying from genesis, and every historical state is
+  readable. Nothing is pruned.
+- **18 decimals.** `subsidyWei(h)` is `subsidy(h) × 1e10` exactly, so the
+  emission curve is the same one in EMBER terms (`params.js`).
+- **The Commons share defaults to the zero address**, i.e. burned, because a 0x
+  Commons address has not been chosen. It is a genesis field.
+
+Two HTTP surfaces: **port 8545 path `/`** is Ethereum JSON-RPC 2.0, and port
+8645 is a small REST API (`/info`, `/supply`, `/mempool`, `/mining/*`,
+`/events`). They are separate servers precisely because `rpc.js:152` owns
+`POST /rpc` with a different protocol.
+
+Tested by `node/test/evmchain.js` (consensus, 157 checks), `node/test/evm-rpc.js`
+(the `eth_*` surface over real HTTP, 104) and `node/test/evm-p2p-fork.js` (two
+real nodes, partition, reorg, 33).
 
 Published to npm as `@cloudsforge/hearth-node`, currently **0.2.0**
 (`node/package.json:3`), exporting `.`, `./crypto`, `./chain`, `./tx`, `./wallet`
@@ -875,6 +930,15 @@ only externally reachable caller is the unauthenticated `/mining/template`.
   (`getinfo`/`getbalance`/`getblockcount`/`sendtx`) has no in-repo client.
   `/mempool` is read by no current page — the explorer is `eth_*`-only now, so
   records and the mempool have no explorer surface.
+- **The `eth_*` JSON-RPC server mounts on port 8545, path `/`** — settled, and
+  implemented by `node/src/evmnode.js` for `hearthd --evm` (`docs/evm-spec.md`
+  §6). It is a different PORT from the REST API, not a different path, because
+  `node/src/rpc.js:152` owns `POST /rpc` with the legacy `{method:'getinfo'}`
+  shape. **The explorer still defaults to same-origin `/rpc/`**
+  (`web/assets/explorer/rpc.js`), which `web/nginx.conf:63` proxies to the
+  node's root — so a deployment must now point that proxy at 8545 rather than
+  8645, or the explorer gets the legacy shape and correctly reports "answered,
+  but not with JSON-RPC 2.0".
 - **`web/pay-demo.html` is a mockup, and says so on the control.**
   `web/assets/hearth-pay-demo.js` builds a real `hearth:` URI and then **simulates**
   settlement on a 1,200 ms timer; the txid is deliberately not 64 hex characters so
@@ -962,6 +1026,9 @@ the consensus numbers and is the file to use.
 
 ```bash
 cd node && node bin/hearthd.js --mine          # one UTXO node, mining
+cd node && node bin/hearthd.js --evm --mine    # the account-model EVM chain
+                                               #   eth_* JSON-RPC on :8545/
+                                               #   REST on :8645
 npm test                                        # see the caveat in §11
 node test/dex.js                                # needs contracts/out — §4.4
 docker compose up --build                       # seed + 2 miners + web on :8080

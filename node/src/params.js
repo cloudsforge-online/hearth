@@ -5,10 +5,56 @@
 
 const SPARKS_PER_EMBER = 100_000_000;          // 1e8, smallest unit = "spark"
 
+const NETWORK = process.env.HEARTH_NETWORK || 'hearth';
+
+/* EIP-155 CHAIN IDS, PER NETWORK — and the separation is mandatory, not tidy.
+ *
+ * The retired UTXO scheme put a `net` field INSIDE the signed transaction body
+ * (`tx.js` `txBody`), so a testnet signature was structurally invalid on mainnet:
+ * different bytes, different txid, no replay. EIP-155 replaces that protection
+ * with exactly one number. If both networks declare 7411 then every testnet
+ * transaction is replayable on mainnet and back — same key, same nonce, the same
+ * bytes valid on both — and a faucet becomes a way to drain the account it funds.
+ *
+ * So the id follows the network the node is running as, the way every other
+ * parameter here does. An unknown network is a hard error rather than a default:
+ * a node that GUESSES its chain id signs transactions that are valid somewhere it
+ * did not intend, and ForgeKeyvault resolves the expected id when it signs, so a
+ * mismatch surfaces as `403 binding_mismatch` with no obvious cause. Set
+ * HEARTH_CHAIN_ID explicitly for a private network.
+ *
+ * These go into ethereum-lists/chains alongside the RPC URL and are fixed at
+ * publication. docs/evm-spec.md §1.
+ */
+const CHAIN_IDS = Object.freeze({
+  hearth: 7411,
+  'hearth-testnet': 7412,
+});
+
+function resolveChainId(network) {
+  if (process.env.HEARTH_CHAIN_ID) {
+    const n = Number(process.env.HEARTH_CHAIN_ID);
+    if (!Number.isSafeInteger(n) || n <= 0) throw new Error('params: HEARTH_CHAIN_ID must be a positive integer');
+    return n;
+  }
+  const id = CHAIN_IDS[network];
+  if (id === undefined) {
+    throw new Error(
+      `params: no chain id is registered for network "${network}". `
+      + `Known: ${Object.keys(CHAIN_IDS).join(', ')}. `
+      + 'Set HEARTH_CHAIN_ID for a private network — a node must never guess, '
+      + 'or its signatures are replayable somewhere it did not intend.');
+  }
+  return id;
+}
+
 module.exports = {
-  NETWORK: process.env.HEARTH_NETWORK || 'hearth',
+  NETWORK,
   COIN: 'EMBER',
   SPARKS_PER_EMBER,
+  CHAIN_IDS,
+  /** The EIP-155 chain id for THIS node's network. Nothing else may hardcode it. */
+  CHAIN_ID: resolveChainId(NETWORK),
 
   // ---- timing ----
   TARGET_BLOCK_TIME: 15,                        // seconds (production & dev)
@@ -78,7 +124,24 @@ module.exports = {
   // testnets has ever run. Wipe the volumes (`docker compose down -v`) and mine
   // a fresh genesis. Doing this before launch is free; doing it after is a fork.
   MIN_TARGET: '0000000000000000ffffffffffffffffffffffffffffffffffffffffffffffff',
-  MAX_TARGET: '03ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+  // The EASIEST target the retarget may reach — the difficulty FLOOR.
+  //
+  // It must never be easier than GENESIS_TARGET, and it used to be: at
+  // 03ffff… it was four times easier than the 00ffff… the chain launches at.
+  // That is not a slack constant, it is a free branch. Simulating the LWMA
+  // recurrence, a miner feeding its own side branch closely-spaced timestamps
+  // walks the target to this clamp within three blocks and then pins there at
+  // 1-in-64 — about 0.44 s of work per block — while every block it produces is
+  // valid, is stored, is persisted, is relayed, and refunds its verification
+  // token because `_acceptFrom` counts it as useful work. Meanwhile the honest
+  // side pays O(L²) to `_stateAt` for a branch that cost O(L) to make.
+  //
+  // Pinning the floor at GENESIS_TARGET means difficulty can never fall below
+  // what the chain launched at, so the cheapest block anyone can ever make is a
+  // genesis-difficulty block. The invariant is asserted below rather than left
+  // to a reader to notice, because the two constants are eight lines apart and
+  // a future retune of one is exactly how this came about.
+  MAX_TARGET: '00ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
 
   // ---- safety limits (consensus + DoS) ----
   MAX_MONEY: 90_000_000 * SPARKS_PER_EMBER, // sane per-output ceiling
@@ -121,16 +184,123 @@ module.exports = {
   P2P_BLOCK_VERIFY_BURST: 200,              // wasted proofs a peer may buy back-to-back
   P2P_BLOCK_VERIFY_PER_S: 25,               // …then this many per second, sustained
   P2P_MAX_INVALID_BLOCKS: 16,               // invalid blocks before the peer is dropped
+  // The same metering for TRANSACTIONS, which had none at all: `tx` messages were
+  // gated on `typeof tx.id === 'string'` and nothing else. Validating one costs a
+  // signature verification per input, the p2p read loop drains every newline in a
+  // frame in ONE synchronous event, and a 4 MiB frame holds ~107,000 of them — so
+  // an anonymous peer could hold the event loop for as long as it liked.
+  //
+  // Metered the same way blocks are, and for the same reason: the token is REFUNDED
+  // when a transaction turns out to be useful (accepted) or free (already known),
+  // so honest relay never touches the limiter and only junk is charged. 200/s
+  // sustained is far above any real relay rate and far below what hurts.
+  P2P_TX_VERIFY_BURST: 1_000,               // wasted validations a peer may buy back-to-back
+  P2P_TX_VERIFY_PER_S: 200,                 // …then this many per second, sustained
+  P2P_MAX_INVALID_TXS: 128,                 // invalid txs before the peer is dropped
+  // A getblocks page is bounded by COUNT and now also by BYTES. It was only
+  // bounded by count, and the two limits contradicted each other: 200 blocks
+  // averaging over 20.5 KB is a frame larger than the receiver's own
+  // P2P_MAX_LINE, so the receiver drops the sender for an oversized frame and
+  // then asks again — an honest chain that reaches that average size can never
+  // finish syncing, and nothing in the logs says why. 3 MiB leaves a megabyte of
+  // headroom under P2P_MAX_LINE for the envelope and for a partially-buffered
+  // next frame; one block may still be MAX_BLOCK_BYTES, so a page always carries
+  // at least one whatever its size.
+  P2P_MAX_FRAME_BYTES: 3 * 1024 * 1024,
   MEMPOOL_MAX_TXS: 50_000,                  // cap pending txs (DoS)
 
   // ---- special addresses ----
   COMMONS_ADDRESS: 'ember1commons00000000000000000000000000cmns',
 
   // ---- ports ----
-  DEFAULT_RPC_PORT: 8645,                       // HTTP REST + JSON-RPC + SSE
+  DEFAULT_RPC_PORT: 8645,                       // HTTP REST + legacy JSON-RPC + SSE
   DEFAULT_P2P_PORT: 8646,                       // TCP peer gossip
 
+  /* THE ETHEREUM JSON-RPC ENDPOINT — settled (docs/evm-spec.md §6).
+   *
+   *   port 8545, path `/`.
+   *
+   * 8545 is the port the ecosystem already defaults to: MetaMask's localhost
+   * default, and what every Hardhat and Foundry tutorial assumes, so a
+   * developer's first guess is correct. The REST API stays on 8645 exactly as
+   * it is, because `rpc.js:152` answers `POST /rpc` with the legacy
+   * `{method:'getinfo'}` shape and mounting eth_* alongside it would hand a
+   * client a 200 that is not JSON-RPC 2.0 — which reads as an empty chain
+   * rather than as a misconfiguration. Two ports, two protocols, no ambiguity.
+   *
+   * This is published in `ethereum-lists/chains` and cached by MetaMask in
+   * every user's saved networks, so it cannot be changed afterwards without
+   * stranding all of them at once.
+   *
+   * 8546 IS RESERVED and must not be taken: it is the paired convention for the
+   * WebSocket endpoint (`eth_subscribe`), which is v2. */
+  DEFAULT_JSONRPC_PORT: 8545,
+  RESERVED_WS_PORT: 8546,
+
+  // ==========================================================================
+  // THE ACCOUNT MODEL (docs/evm-spec.md). Everything above this line belongs to
+  // the UTXO chain and is untouched, because both have to run side by side
+  // until the ecosystem — browser wallet, browser miner, Forge Pay — is ported.
+  // ==========================================================================
+
+  /* 18 DECIMALS, AND WHY THE EMISSION NUMBERS DO NOT MOVE.
+   *
+   * Every EVM tool assumes 18 decimals for a native asset (spec §1), so the
+   * account model's smallest unit is a wei, not a spark. `SPARKS_PER_EMBER`
+   * above stays 1e8 because it is the UTXO chain's consensus and changing it
+   * would rewrite that chain's history; the account model simply uses a
+   * different unit for the same coin.
+   *
+   * The conversion is exact — 1 spark = 1e10 wei — so `subsidyWei` is
+   * `subsidy` scaled, not re-derived. THE EMISSION CURVE IS UNCHANGED: every
+   * figure in docs/tokenomics.md that is denominated in EMBER (6 at genesis,
+   * the 2-year half-life, the 0.3 tail, the 10% Commons share, the ~90M cap)
+   * is still exactly right. What moves is only the smallest-unit column: a
+   * figure quoted in *sparks* describes the UTXO chain, and its account-model
+   * equivalent is that number times 1e10. Nothing in that document has to
+   * change except the unit name where it appears.
+   */
+  WEI_PER_EMBER: 10n ** 18n,
+  WEI_PER_SPARK: 10n ** 10n,
+
+  /** Spec §1. Fixed in v1; the header carries it so a later fork can move it. */
+  EVM_BLOCK_GAS_LIMIT: 30_000_000,
+
+  /* The Commons sink on the account model. `COMMONS_ADDRESS` above is a bech32
+   * string that has no meaning here, and docs/tokenomics.md:253-254 records
+   * that a 0x address HAS NOT BEEN CHOSEN. That is a governance decision, not
+   * one a node can make, so the default is the zero address — universally
+   * rendered as a burn — and the 10% is destroyed rather than paid to a key
+   * somebody invented. It is consensus: it lives in genesis.json as
+   * `commonsAddress` and every node on a network must agree on it. Set it
+   * before a network that matters is launched; changing it afterwards forks. */
+  EVM_COMMONS_ADDRESS: process.env.HEARTH_COMMONS_ADDRESS || '0x0000000000000000000000000000000000000000',
+
+  /* Mempool POLICY, not consensus: a block containing a cheaper transaction is
+   * perfectly valid and this node will accept it from a peer. It is the price
+   * below which this node will not relay or mine one. 1 gwei matches what
+   * tools/hardhat/hardhat.config.js pins and what eth_gasPrice suggests. */
+  EVM_MIN_GAS_PRICE: 1_000_000_000n,
+
+  /** Pending transactions one sender may occupy, so one funded key cannot fill
+   *  the pool with a nonce ladder nobody will ever mine. */
+  EVM_MEMPOOL_PER_SENDER: 64,
+
+  /** How far above an account's current nonce a pending transaction may sit. */
+  EVM_MEMPOOL_NONCE_GAP: 256,
+
+  /** Replacement rule: a same-nonce transaction must beat the pooled one by
+   *  this many percent, or a free re-broadcast loop evicts it forever. */
+  EVM_REPLACE_BUMP_PERCENT: 10,
+
+  /** Subsidy in WEI at a given height — the identical schedule, scaled. */
+  subsidyWei(height) {
+    return BigInt(this.subsidy(height)) * this.WEI_PER_SPARK;
+  },
+
   // Subsidy in sparks at a given height.
+  //
+  // (See the invariant assertion at the foot of this file.)
   //
   // DETERMINISTIC integer schedule (no floating point in consensus): the reward
   // halves every half-life epoch, interpolated *linearly* within the epoch so the
@@ -150,3 +320,16 @@ module.exports = {
     return Math.max(TAIL, reward);
   },
 };
+
+/* The three targets are a single ordered relationship, and each of them is one
+ * hex literal that a retune could edit in isolation. Hardest ≤ launch ≤ easiest,
+ * asserted at load: a node with an inconsistent difficulty ladder should refuse
+ * to start rather than mine a chain nobody else will accept.
+ */
+{
+  const n = (h) => BigInt('0x' + h);
+  const m = module.exports;
+  if (!(n(m.MIN_TARGET) <= n(m.GENESIS_TARGET) && n(m.GENESIS_TARGET) <= n(m.MAX_TARGET))) {
+    throw new Error('params: difficulty ladder is inconsistent — require MIN_TARGET <= GENESIS_TARGET <= MAX_TARGET');
+  }
+}

@@ -72,6 +72,21 @@ say so, not to skip it.
 | Emission | existing subsidy schedule | unchanged |
 | Fees | paid to the block's coinbase | no burn in v1 |
 
+**The two networks MUST NOT share a chain id.** The retired UTXO scheme carried a
+`net` field *inside* the signed transaction body, so a testnet signature was
+structurally invalid on mainnet. EIP-155 replaces that with one number: if both
+networks declare 7411 then every testnet transaction is replayable on mainnet and
+back — same key, same nonce, the same bytes valid on both. The id is therefore
+derived from `HEARTH_NETWORK` in `node/src/params.js` and read from there by
+`node/src/chain/transaction.js`; **nothing else may hardcode it**, and an
+unregistered network is a hard error rather than a default, because a node that
+guesses signs transactions that are valid somewhere it did not intend.
+
+An **empty block** carries no transactions and so the chain id cannot separate one
+either. Ethereum's answer, which is ours, is a divergent genesis: the default
+genesis `extraData` is `<network>/<chainId>`, so no block on one network descends
+from an ancestor on the other.
+
 `decimals: 8 → 18` is deliberate. ERC-20 tooling, wallets and DEX maths all assume 18 for a
 native asset. Keeping 8 would produce subtly wrong displays everywhere and cost more than the
 migration does — and the chain is being reset regardless.
@@ -177,11 +192,16 @@ surfaced six fields clients require that nothing here provides. Phase 5 must add
 | `nonce` | 8 bytes, from the PoW proof |
 | `mixHash` | the Homefire digest — the same value `PREVRANDAO` returns |
 
-**`timestamp` must be seconds, and the v1 header stores milliseconds.** This is a one-word change
-with a wide blast radius: a millisecond timestamp makes every explorer render dates in the year
-57,000 and breaks every Solidity `deadline` comparison, including Uniswap V2's Router, which
+**`timestamp` must be seconds.** A millisecond timestamp makes every explorer render dates in the
+year 57,000 and breaks every Solidity `deadline` comparison, including Uniswap V2's Router, which
 rejects any swap whose deadline has "passed". Convert at the header, not at the RPC boundary, so
 there is one representation on the chain.
+
+*Correction (phase 5): this section previously said "the v1 header stores milliseconds". It does
+not — `node/src/miner.js:88` divides by 1000 and genesis is `1750000000`, so v1 is already in
+seconds. The requirement stands and is now enforced rather than assumed: `header.js` refuses any
+timestamp past `MAX_TIMESTAMP` (≈ the year 5138), which every millisecond value exceeds today, so a
+producer that forgets to divide fails on its first block instead of silently.*
 
 **The proof-of-work algorithm is unchanged — but the key it binds is not.** §2 moves accounts to
 secp256k1, and the coinbase has to *receive* the block reward and the fees, so it must be an
@@ -227,6 +247,19 @@ chain/
   bloom.js            logs bloom
 rpc/
   eth.js           the eth_* JSON-RPC surface
+```
+
+**As built, phase 5 added** (the `rpc/eth.js` above landed as `jsonrpc/` in phase 6's layer):
+
+```
+chain/
+  header.js       header v2, block encoding, the block id, verifyPow
+  genesis.js      the `hearth-genesis/1` file, the alloc, block 0
+  blockchain.js   storage, validation, fork choice, reorganisation
+  mempool.js      per-sender nonce ladders, priced between senders
+  miner.js        block production + `/mining/template` for remote miners
+  rpcadapter.js   the chain interface jsonrpc/methods.js documents
+evmnode.js        wires it together; `hearthd --evm`
 ```
 
 ### Design notes that matter
@@ -341,40 +374,39 @@ win available here.
 - **No mempool visibility.** `eth_getBlockByNumber('pending')` returns null by design and there is no
   `txpool_content`, so a pending transaction can only be found if you already know its hash.
 
-### Where it mounts — settled
+### Where it mounts — settled (owner, 2026-07-28)
 
-**Port 8545, root path `/`.** Owner decision: use the port the ecosystem already defaults to.
+**The Ethereum JSON-RPC server is port 8545, path `/`.** The public form is
+`rpc.<apex>` → 8545.
 
-That is MetaMask's localhost default, what every Hardhat and Foundry tutorial assumes, and what a
-developer tries before reading anything. Verified free across the whole composed stack — nothing
-had to be moved to take it.
-
-The REST API **stays on 8645**, untouched. It serves the explorer and the SSE feed, and
-`node/src/rpc.js:152` answers `POST /rpc` with the legacy `{method:'getinfo'}` shape. Mounting the
-Ethereum RPC there would have collided with it, and a client would have received a 200 that is not
-JSON-RPC 2.0 — which reads as an empty chain rather than a misconfiguration. Two ports, two
-protocols, no ambiguity.
-
-| | REST + SSE | Ethereum JSON-RPC |
+| node | REST | Ethereum JSON-RPC (host) |
 | --- | --- | --- |
-| container port | 8645 | **8545** |
-| path | `/info`, `/address/:a`, `/block/:id`, `/tx/:id`, `/supply`, `/events` | `/` |
-| host: seed | 8645 | **8545** |
-| host: miner1 | 8647 | 8547 |
-| host: miner2 | 8649 | 8549 |
+| seed | 8645 | **8545** |
+| miner1 | 8647 | 8547 |
+| miner2 | 8649 | 8549 |
 
-Inside its container every node listens on 8545; the host ports differ only so three nodes can run
-side by side, mirroring the existing 8645/8647/8649 pattern. **8546 is reserved** for the WebSocket
-endpoint (`eth_subscribe`) in v2, because that is the paired convention and taking it for anything
-else now would be awkward to undo.
+Every node listens on 8545 **inside its own container**; the host ports differ only so three can
+run side by side. **8546 is reserved** — it is the paired convention for the WebSocket
+(`eth_subscribe`) endpoint in v2 and taking it now would be awkward to undo.
 
-Publicly this is one hostname — `rpc.<apex>` → 8545 — and that URL goes into
-`ethereum-lists/chains` and `chainid.network`, where MetaMask caches it, exchanges hardcode it and
-dapps bake it into configs. **It cannot be changed after publication without stranding all of them
-at once**, which is why it is written down here rather than left to whoever wires the server.
+8545 is the port the ecosystem already defaults to: MetaMask's localhost default, and what every
+Hardhat and Foundry tutorial assumes, so a developer's first guess is correct.
+`tools/hardhat/hardhat.config.js:26` already defaults to `http://127.0.0.1:8645` and needs its one
+line changed. **The REST API stays on 8645, untouched**, because `node/src/rpc.js:152` answers
+`POST /rpc` with the legacy `{method:'getinfo'}` shape and mounting eth_* alongside it hands a
+client a 200 that is not JSON-RPC 2.0 — which reads as an empty chain rather than as a
+misconfiguration. Two ports, two protocols, no ambiguity.
 
-Served alongside the existing REST API, which stays for the explorer and Forge Pay. Hex quantity
-encoding must be exact — `0x0` not `0x00`, no leading zeros — because clients are strict.
+This URL goes into `ethereum-lists/chains` and `chainid.network`, where MetaMask caches it in every
+user's saved networks and exchanges hard-code it, so it cannot be changed after publication without
+stranding all of them at once.
+
+Implemented in `node/src/evmnode.js`; `DEFAULT_JSONRPC_PORT` is in `node/src/params.js`, overridable
+with `--jsonrpc` or `HEARTH_JSONRPC`. The REST port on the account-model node answers a `POST /` that
+looks like JSON-RPC with a 404 naming the right port, rather than with `{"err":"no route"}`.
+
+Hex quantity encoding must be exact — `0x0` not `0x00`, no leading zeros — because clients are
+strict.
 
 ---
 
@@ -421,7 +453,7 @@ a genuine head start over a new chain with no price feed.
 | **2. State** | trie, statedb | TrieTests pass |
 | **3. Execution** | interpreter, gas, opcodes, precompiles | VMTests pass |
 | **4. Transition** | tx application, receipts, bloom, header v2 | GeneralStateTests pass |
-| **5. Consensus** | block production and validation on the new state model | testnet produces and reorgs |
+| **5. Consensus** | block production and validation on the new state model | testnet produces and reorgs ✅ |
 | **6. RPC** | `eth_*` surface | MetaMask connects; Hardhat deploys |
 | **7. DeFi** | WEMBER, Factory, Pair, Router, Multicall3 | a swap succeeds end to end |
 | **8. Ecosystem** | EVM-aware explorer, faucet, verified sources, docs | a stranger can deploy unaided |

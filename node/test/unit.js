@@ -109,7 +109,50 @@ group('chain');
 {
   const work = (1n << 256n) / (BigInt('0x' + P.MIN_TARGET) + 1n);
   ok(work > (1n << 40n), 'difficulty ceiling leaves headroom well past a planet of CPUs');
-  ok(BigInt('0x' + P.MAX_TARGET) > BigInt('0x' + P.GENESIS_TARGET), 'easiest target is easier than genesis');
+  /* THE FLOOR MUST NOT BE EASIER THAN THE LAUNCH DIFFICULTY, and this assertion
+   * used to require the opposite — it read "easiest target is easier than genesis"
+   * and passed, which is how a four-times-free side branch survived review. The
+   * LWMA walks a self-fed branch down to MAX_TARGET within about three blocks, and
+   * every block it then produces is valid, stored, persisted and relayed while
+   * costing a quarter of what an honest one does. */
+  ok(BigInt('0x' + P.MAX_TARGET) <= BigInt('0x' + P.GENESIS_TARGET),
+    'the difficulty FLOOR is no easier than the genesis target');
+  ok(BigInt('0x' + P.MIN_TARGET) <= BigInt('0x' + P.GENESIS_TARGET),
+    'and the ceiling is no harder than it');
+}
+
+// ---- the mempool must not buy an O(UTXO-set) copy per message ---------------
+{
+  const { Mempool, UtxoView } = require('../src/mempool');
+  const base = new Map([['spent:0', { address: 'a', amount: 5 }]]);
+  const view = new UtxoView(() => base);
+  ok(view.get('spent:0').amount === 5, 'a view reads through to the live UTXO map');
+  view.delete('spent:0');
+  ok(view.get('spent:0') === undefined, 'a delete is visible through the view');
+  ok(base.get('spent:0').amount === 5, 'and does NOT touch the chain\'s own map');
+  view.set('new:0', { address: 'b', amount: 7 });
+  ok(view.get('new:0').amount === 7 && !base.has('new:0'), 'nor does a create');
+
+  /* The base is read through a FUNCTION because `chain.utxo` is replaced whole on
+   * a reorg (chain.js `_activate`); a view holding the old Map would validate
+   * against a chain that no longer exists. */
+  let live = new Map([['x:0', { amount: 1 }]]);
+  const following = new UtxoView(() => live);
+  live = new Map([['x:0', { amount: 2 }]]);
+  ok(following.get('x:0').amount === 2, 'the view follows a reorg that replaces the map');
+
+  // and the pool itself never copies: 1,000 junk messages against a large set
+  const utxo = new Map();
+  for (let i = 0; i < 200_000; i++) utxo.set('u' + i + ':0', { address: 'a', amount: 1, height: 1 });
+  const pool = new Mempool({ utxo, height: 1 });
+  const started = Date.now();
+  for (let i = 0; i < 1000; i++) pool.add({ id: String(i).padStart(64, '0'), inputs: [], outputs: [] });
+  const ms = Date.now() - started;
+  ok(pool.size === 0, 'a transaction with no inputs is refused');
+  /* 1,000 of them used to be 1,000 copies of the UTXO set — ~75 ms at this size
+   * and 354 ms EACH at a million. The bound is deliberately loose; it is here to
+   * fail if the copy ever comes back, not to measure a machine. */
+  ok(ms < 1000, `1,000 junk transactions cost ${ms} ms against a 200k-UTXO set, not a copy each`);
 }
 
 group('wallet');
