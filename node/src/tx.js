@@ -5,9 +5,36 @@
 const C = require('./crypto');
 const P = require('./params');
 
-/** Canonical body used for txid and for signing (excludes input signatures). */
+/** The records of a tx, in the shape the body commits to. */
+function txRecords(tx) {
+  return (tx.records || []).map(r => ({ app: r.app, key: r.key || '', data: r.data }));
+}
+
+/** Payload bytes a record carries. `data` is hex, so two chars per byte. */
+function recordBytes(r) {
+  return Math.ceil(String(r.data || '').length / 2);
+}
+
+/** Total payload bytes across a tx. Priced, and bounded, by this. */
+function txRecordBytes(tx) {
+  return txRecords(tx).reduce((n, r) => n + recordBytes(r), 0);
+}
+
+/** Fee a tx must burn: the flat base, plus the bytes it asks everyone to store. */
+function requiredFee(tx) {
+  return P.BASE_FEE_SPARKS + txRecordBytes(tx) * P.FEE_PER_RECORD_BYTE_SPARKS;
+}
+
+/**
+ * Canonical body used for txid and for signing (excludes input signatures).
+ *
+ * `records` is omitted when empty, which is what keeps every transaction ever
+ * signed before records existed hashing to the same id. Adding the key
+ * unconditionally would change the body of every historical tx and invalidate
+ * the whole chain on replay.
+ */
 function txBody(tx) {
-  return {
+  const body = {
     // network id binds signatures to this chain (cross-network replay defense)
     net: P.NETWORK,
     version: tx.version || 1,
@@ -17,6 +44,42 @@ function txBody(tx) {
     // coinbase carries the height so identical rewards get distinct ids
     height: tx.height,
   };
+  const records = txRecords(tx);
+  if (records.length) body.records = records;
+  return body;
+}
+
+/**
+ * Shape and size rules for application records.
+ *
+ * Called from validateNormal, so these are consensus: a node that skipped them
+ * would accept a transaction its peers reject. `spendHeight` gates activation —
+ * before it, a record is not a small record, it is an invalid transaction.
+ */
+function validateRecords(tx, spendHeight) {
+  const records = txRecords(tx);
+  if (!records.length) return { ok: true };
+  if (spendHeight != null && spendHeight < P.RECORDS_ACTIVATION_HEIGHT)
+    return { ok: false, err: 'records not active at this height' };
+  if (records.length > P.MAX_TX_RECORDS) return { ok: false, err: 'too many records' };
+  let total = 0;
+  for (const r of records) {
+    if (!P.APP_NS_RE.test(r.app || '')) return { ok: false, err: 'bad record app namespace' };
+    if (r.key !== '' && !P.RECORD_KEY_RE.test(r.key)) return { ok: false, err: 'bad record key' };
+    if (typeof r.data !== 'string' || !/^[0-9a-f]*$/.test(r.data) || r.data.length % 2)
+      return { ok: false, err: 'record data must be hex' };
+    const n = recordBytes(r);
+    if (n === 0) return { ok: false, err: 'empty record' };
+    if (n > P.MAX_RECORD_BYTES) return { ok: false, err: 'record too large' };
+    total += n;
+  }
+  if (total > P.MAX_TX_RECORD_BYTES) return { ok: false, err: 'tx record data too large' };
+  return { ok: true };
+}
+
+/** Serialized size of a tx, measured the one way every node agrees on. */
+function txSize(tx) {
+  return Buffer.byteLength(C.canonical(txBody(tx)));
 }
 
 function txid(tx) {
@@ -60,6 +123,9 @@ function validateNormal(tx, utxo, spendHeight) {
   if (!tx.outputs || tx.outputs.length === 0) return { ok: false, err: 'no outputs' };
   if (tx.inputs.length > P.MAX_TX_INPUTS) return { ok: false, err: 'too many inputs' };
   if (tx.outputs.length > P.MAX_TX_OUTPUTS) return { ok: false, err: 'too many outputs' };
+  const rec = validateRecords(tx, spendHeight);
+  if (!rec.ok) return rec;
+  if (txSize(tx) > P.MAX_TX_BYTES) return { ok: false, err: 'tx too large' };
   const msg = Buffer.from(C.canonical(txBody(tx)));
   let inSum = 0;
   const seen = new Set();
@@ -83,9 +149,10 @@ function validateNormal(tx, utxo, spendHeight) {
     outSum += o.amount;
   }
   const fee = inSum - outSum;
-  if (fee < P.BASE_FEE_SPARKS) return { ok: false, err: 'fee below base fee' };
+  const required = requiredFee(tx);
+  if (fee < required) return { ok: false, err: 'fee below required fee' };
   if (txid(tx) !== tx.id) return { ok: false, err: 'txid mismatch' };
-  return { ok: true, fee };
+  return { ok: true, fee, required };
 }
 
 /** Apply a tx to a UTXO map in place (spend inputs, create outputs).
@@ -98,4 +165,7 @@ function applyToUtxo(tx, utxo, blockHeight) {
   }));
 }
 
-module.exports = { txBody, txid, coinbase, signInputs, validateNormal, applyToUtxo };
+module.exports = {
+  txBody, txid, coinbase, signInputs, validateNormal, applyToUtxo,
+  txRecords, txRecordBytes, requiredFee, validateRecords, txSize,
+};
