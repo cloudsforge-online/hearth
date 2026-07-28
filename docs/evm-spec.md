@@ -28,6 +28,8 @@ tractable because the reference tests exist.
 | Merkle Patricia Trie | `ethereum/tests` TrieTests |
 | EVM opcodes & gas | **`ethereum/legacytests`** VMTests — *moved; cloning `ethereum/tests` gets RLP and trie only* |
 | State transition | **`ethereum/legacytests`** GeneralStateTests |
+| bn128 (`0x06`–`0x08`) | EIP-196 / EIP-197, plus go-ethereum `core/vm/testdata/precompiles/bn256{Add,ScalarMul,Pairing}.json` — which carry the expected GAS as well as the output. *`ethereum/tests` `stZeroKnowledge`/`stZeroKnowledge2` publish only a post-state root, so they cannot be executed until phase 4 lands; until then `node/test/bn128.js` lifts every precompile input out of them and checks the accept/reject decision against what each fixture's own name asserts.* |
+| blake2f (`0x09`) | EIP-152's eight vectors — four of which assert FAILURE — plus a full BLAKE2b-512 built on the precompile and differentiated against OpenSSL's, which is the only thing that exercises multi-block chaining and the byte counter |
 
 Four things about the corpus that a naive runner gets silently wrong, all found by running the
 full 3,425-file set and all now guarded by the harness self-test:
@@ -200,7 +202,9 @@ evm/
   gas.js           Shanghai schedule, memory expansion, EIP-2929 warm/cold
   opcodes.js       the instruction table
   interpreter.js   execution loop, call frames, depth 1024, revert semantics
-  precompiles.js   0x01–0x05 in v1
+  bn128.js         alt_bn128 curve, tower field and pairing
+  blake2f.js       BLAKE2b compression (EIP-152)
+  precompiles.js   0x01–0x09
 chain/
   statetransition.js  apply a transaction, produce a receipt
   bloom.js            logs bloom
@@ -239,18 +243,28 @@ everything appears to work until someone crafts a non-canonical transaction.
 storage, balance, nonce and code changes to a snapshot, while gas already consumed stays consumed.
 Model it as an ordered journal with checkpoint markers.
 
-**EIP-2929 pre-warms `0x01`–`0x09`, and so do we — even though only `0x01`–`0x05` are
-implemented.** The warm set is a gas rule, not a capability claim: Ethereum warms all nine, the
-GeneralStateTests assume it, and treating an address as cold that Ethereum treats as warm costs
-2,500 gas per access. That is consensus, so the warm set follows Ethereum exactly.
+**EIP-2929 pre-warms `0x01`–`0x09`, and so do we.** The warm set is a gas rule, not a capability
+claim: Ethereum warms all nine, the GeneralStateTests assume it, and treating an address as cold
+that Ethereum treats as warm costs 2,500 gas per access. That is consensus, so the warm set follows
+Ethereum exactly. **All nine are now implemented**, so warmed and implemented coincide; the
+interpreter keeps the machinery to fail an address that is warmed and unimplemented, because a fork
+can pull the two apart again and a call to an address with no code *succeeds* and returns empty.
 
-**`0x06`–`0x09` must therefore fail loudly rather than be absent.** In the EVM a call to an address
-with no code *succeeds* and returns empty — so if bn128 is simply omitted, a contract calling the
-pairing check receives "success, no output", reads it as zero, and computes something wrong without
-ever erroring. That is the worst available failure mode for a financial contract. Until they are
-implemented properly, `0x06`–`0x09` consume all forwarded gas and revert, so anything depending on
-them breaks visibly and immediately. Implement them for real before mainnet: zk verification is the
-main thing DeFi will eventually want that we would otherwise lack.
+**Precompiles have two opposite failure conventions, and both are consensus.** `0x01`–`0x05` answer
+a malformed input with EMPTY output and a SUCCESSFUL call — Solidity's `ecrecover()` maps that empty
+return to `address(0)`, which is what every `require(signer != address(0))` in every permit
+implementation is testing, so getting it wrong breaks Uniswap V2's permit path. `0x06`–`0x09` do the
+opposite: a coordinate outside the field, a point off the curve, a G2 point outside the r-torsion, a
+pairing input whose length is not a multiple of 192, a blake2f block that is not exactly 213 bytes
+or whose final flag is neither 0 nor 1 — each FAILS the call and burns every drop of forwarded gas.
+A zk verifier that read "success, no output" as a zero would accept a forged proof.
+
+`run(input)` therefore returns `null` to mean "fail this call", and only `0x06`–`0x09` ever do.
+**The validity checks live in `run`, never in `gas`**, and that placement is a security property
+rather than a style choice: `gas` is consulted before the interpreter tests affordability, so any
+work it does is work an attacker buys for the ~130 gas a CALL costs. A 192 KB pairing input
+validated inside `gas` would let one contract burn minutes of node CPU per block. `gas` is O(1) in
+the input — length only — exactly as go-ethereum's `RequiredGas` is.
 
 **Gas is consensus.** A wrong gas cost is a chain split. The Shanghai schedule including EIP-2929
 access lists (cold 2600 / warm 100 for accounts, cold 2100 / warm 100 for storage) is mandatory,
@@ -362,9 +376,6 @@ hard bugs stay hidden. It happens to also be the tool contract developers want m
 ## 9. What is explicitly out of scope for v1
 
 - EIP-1559, blob transactions, account abstraction.
-- Full implementations of precompiles `0x06`–`0x09` (bn128 add/mul/pairing, blake2f) — no v1 use
-  case, since Uniswap V2 needs only `ecrecover`. **But see the warming rule below: they are not
-  simply absent.**
 - State pruning, snapshot sync, archive nodes.
 - Lending, stablecoins, anything beyond the AMM.
 - Bridges. Every bridge is a liability; not until the chain has proven itself.

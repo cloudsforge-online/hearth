@@ -72,6 +72,7 @@ const ERR = Object.freeze({
   COLLISION: 'contract address collision',
   NONCE_OVERFLOW: 'nonce overflow',
   UNSUPPORTED_PRECOMPILE: 'precompile not implemented on this chain',
+  PRECOMPILE_FAILED: 'precompile rejected its input',
 });
 
 // ---------------------------------------------------------------------------
@@ -277,19 +278,25 @@ class EVM {
         state.addBalance(to, value);
       }
 
-      /* Spec §5: 0x06–0x09 are warmed like the rest but not implemented. They must
-       * fail LOUDLY. An address with no code succeeds trivially in the EVM, so a
-       * contract calling the pairing check would read "success, empty" as zero and
-       * compute something wrong — the worst available failure mode. */
+      /* Reserved for a fork that warms an address it does not implement. Nothing is
+       * in that state today — all nine of Shanghai's precompiles exist — but an
+       * address with no code succeeds trivially in the EVM, so anything warmed and
+       * unimplemented has to fail LOUDLY rather than look like an empty success. */
       if (unsupported) return this._fail(snapshot, logMark, ERR.UNSUPPORTED_PRECOMPILE, 0n);
 
       if (pre) {
         const input = toBuf(m.data || EMPTY);
         const need = pre.gas(input);
         if (need > gasIn) return this._fail(snapshot, logMark, ERR.OUT_OF_GAS, 0n);
-        // A precompile that cannot parse its input returns EMPTY and SUCCEEDS; see
-        // the failure convention at the top of precompiles.js.
-        return result(null, gasIn - need, pre.run(input));
+        const out = pre.run(input);
+        /* The two failure conventions, which are opposites — see the top of
+         * precompiles.js. 0x01-0x05 report a malformed input as an EMPTY buffer and
+         * a SUCCESSFUL call (Solidity's `ecrecover() == address(0)` depends on it).
+         * 0x06-0x09 report it as null, and that FAILS the call and burns everything
+         * forwarded, because a zk verifier reading "success, no output" as a zero
+         * would accept a forged proof. */
+        if (out === null) return this._fail(snapshot, logMark, ERR.PRECOMPILE_FAILED, 0n);
+        return result(null, gasIn - need, out);
       }
 
       // `m.code` overrides what the account holds. Used by `eth_call` state
@@ -894,10 +901,16 @@ class EVM {
   }
 }
 
-/** 0x06–0x09: warmed by EIP-2929, deliberately unimplemented here. Spec §5. */
+/* Addresses EIP-2929 warms that this chain does not implement. EMPTY today: 0x01-0x09
+ * are all real now that bn128 and blake2f have landed, and 0x0a upwards are ordinary
+ * accounts under Shanghai. The mechanism stays because "warmed" and "implemented" are
+ * separate facts a fork can pull apart again — and when one does, the gap must fail
+ * LOUDLY, since an address with no code succeeds trivially in the EVM. */
+const RESERVED_PRECOMPILES = new Set();
+
 function isReservedPrecompile(addr) {
   for (let i = 0; i < 19; i++) if (addr[i] !== 0) return false;
-  return addr[19] >= 6 && addr[19] <= 9;
+  return RESERVED_PRECOMPILES.has(addr[19]);
 }
 
 module.exports = {

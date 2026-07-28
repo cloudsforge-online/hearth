@@ -1,28 +1,50 @@
 'use strict';
-/* Ember EVM — precompiled contracts 0x01 to 0x05.
+/* Ember EVM — precompiled contracts 0x01 to 0x09.
  *
- * Five, self-contained. 0x06-0x09 (bn128, blake2f) are out of scope for v1 and are
- * deliberately absent rather than stubbed: a stub that returns zeros is worse than a
- * missing address, because a missing address is just an account with no code and
- * calling it succeeds trivially, which is exactly what Ethereum does for 0x0a and up.
+ * All nine of Ethereum's Shanghai set. The curve arithmetic for 0x06-0x08 lives in
+ * bn128.js and the compression function for 0x09 in blake2f.js; this file is the
+ * gas schedule, the input framing and the table.
  *
- * THE FAILURE CONVENTION, which is unlike anything else in the EVM: a precompile that
- * cannot make sense of its input does not throw and does not revert. It returns EMPTY
- * output, the CALL reports success, and the gas is consumed regardless. `ecrecover`
- * with a malformed signature is the case that matters — Solidity's `ecrecover()` maps
- * that empty return to address(0), which is why every `require(signer != address(0))`
- * in every permit implementation exists. Getting this wrong turns those checks into
- * reverts and breaks Uniswap V2's permit path.
+ * THERE ARE TWO FAILURE CONVENTIONS AND THEY ARE OPPOSITES. Which one a precompile
+ * uses is consensus, not taste, and mixing them up is silent.
+ *
+ *   0x01-0x05 FAIL SOFT. A precompile that cannot make sense of its input returns
+ *   EMPTY output, the CALL reports SUCCESS, and the gas is consumed. `ecrecover`
+ *   with a malformed signature is the case that matters — Solidity's `ecrecover()`
+ *   maps that empty return to address(0), which is why every
+ *   `require(signer != address(0))` in every permit implementation exists. Getting
+ *   this wrong turns those checks into reverts and breaks Uniswap V2's permit path.
+ *
+ *   0x06-0x09 FAIL HARD. A coordinate that is not in the field, a point that is not
+ *   on the curve, a G2 point outside the r-torsion, a pairing input whose length is
+ *   not a multiple of 192, a blake2f block that is not 213 bytes or whose final flag
+ *   is neither 0 nor 1 — every one of those FAILS the CALL and burns everything
+ *   forwarded to it. `run` reports that by returning null. There is no soft option
+ *   here: a verifier contract that reads "success, no output" as a zero would accept
+ *   a forged proof.
  *
  * Each precompile exposes:
- *   gas(input) -> bigint     charged whether or not the call "succeeds"
- *   run(input) -> Buffer     the output; empty on a failure of the kind described above
+ *   gas(input) -> bigint            charged whether or not the call succeeds
+ *   run(input) -> Buffer | null     output; null ONLY from 0x06-0x09, and only ever
+ *                                   meaning "fail this CALL"
  *
- * `run` is only reached once `gas` has been paid, so it may assume it is not being
- * asked to do unbounded work. modexp guards that assumption anyway.
+ * WHY THE VALIDITY CHECKS ARE IN `run` AND NOT IN `gas`. It is tempting to have
+ * `gas` reject a bad input by pricing it out of reach, which needs no cooperation
+ * from the interpreter. It is also a denial of service: `gas` runs BEFORE the
+ * affordability test, so a contract can call 0x08 with a 192 KB input and one gas,
+ * pay ~130 gas for the CALL, and still make the node do the work. The G2 subgroup
+ * check alone is ~2 ms a point. So `gas` stays O(1) in the input — length only,
+ * exactly as go-ethereum's `RequiredGas` does — and everything expensive happens
+ * after the gas is paid.
+ *
+ * `run` is therefore only reached once `gas` has been paid and may assume it is not
+ * being asked to do unbounded work. modexp guards that assumption anyway.
  */
 
 const crypto = require('crypto');
+
+const bn128 = require('./bn128');
+const { blake2f, rounds: blake2fRounds } = require('./blake2f');
 
 const EMPTY = Buffer.alloc(0);
 
@@ -293,11 +315,50 @@ function modexpRun(input) {
 }
 
 // ---------------------------------------------------------------------------
+// 0x06 / 0x07 / 0x08 — bn128 add, scalar mul, pairing check
+// ---------------------------------------------------------------------------
+
+/* EIP-196 defines 0x06 and 0x07, EIP-197 the pairing check; EIP-1108 (Istanbul)
+ * repriced all three downwards, and those are the prices Shanghai charges:
+ *
+ *     ecAdd       150            was 500
+ *     ecMul     6,000            was 40,000
+ *     ecPairing  45,000 + 34,000·k   was 100,000 + 80,000·k
+ *
+ * 0x06 and 0x07 read a fixed 128 and 96 bytes with the usual zero padding, so
+ * their gas does not depend on the input at all. 0x08 does NOT pad: EIP-197 makes
+ * a length that is not a multiple of 192 an outright failure. Note that the gas is
+ * still computed from the truncating division for such an input and still charged
+ * in full — the call fails afterwards, which is what go-ethereum does. */
+
+const ECADD_GAS = 150n;
+const ECMUL_GAS = 6000n;
+const ECPAIRING_BASE_GAS = 45000n;
+const ECPAIRING_PER_PAIR_GAS = 34000n;
+
+function bn128AddGas() { return ECADD_GAS; }
+function bn128MulGas() { return ECMUL_GAS; }
+function bn128PairingGas(input) {
+  return ECPAIRING_BASE_GAS + ECPAIRING_PER_PAIR_GAS * BigInt(Math.floor(input.length / 192));
+}
+
+// ---------------------------------------------------------------------------
+// 0x09 — blake2f (EIP-152)
+// ---------------------------------------------------------------------------
+
+/* One gas per round, and the round count is the caller's first four bytes, so the
+ * gas is whatever the caller asks to be charged. An input of the wrong length has
+ * no round count to read, so it costs nothing and then fails — the same two-step
+ * go-ethereum performs, and the reason `rounds()` returns 0 rather than throwing. */
+
+function blake2fGas(input) { return BigInt(blake2fRounds(input)); }
+
+// ---------------------------------------------------------------------------
 // The table
 // ---------------------------------------------------------------------------
 
 /* Calldata reaches here as whatever the interpreter's memory happens to hand over.
- * Normalising once at the boundary means none of the five has to care whether it was
+ * Normalising once at the boundary means none of the nine has to care whether it was
  * given a Buffer, a Uint8Array or nothing at all. */
 const wrap = (fn) => (input) => fn(Buffer.isBuffer(input) ? input : Buffer.from(input || []));
 
@@ -310,16 +371,20 @@ const PRECOMPILES = Object.freeze({
   3: entry(3, 'ripemd160', ripemd160Gas, ripemd160Run),
   4: entry(4, 'identity', identityGas, identityRun),
   5: entry(5, 'modexp', modexpGas, modexpRun),
+  6: entry(6, 'bn128Add', bn128AddGas, bn128.ecAdd),
+  7: entry(7, 'bn128Mul', bn128MulGas, bn128.ecMul),
+  8: entry(8, 'bn128Pairing', bn128PairingGas, bn128.ecPairing),
+  9: entry(9, 'blake2f', blake2fGas, blake2f),
 });
 
 const LOWEST = 1;
-const HIGHEST = 5;
+const HIGHEST = 9;
 
 /**
  * Normalise an address to its precompile index, or null.
  *
  * Accepts a 20-byte Buffer or a hex string with or without the 0x prefix. An address
- * is a precompile only if its first 19 bytes are zero and the last is 1..5 — checking
+ * is a precompile only if its first 19 bytes are zero and the last is 1..9 — checking
  * only the last byte would make 0x...0101 a precompile, which it is not.
  */
 function precompileIndex(address) {
@@ -348,7 +413,7 @@ function precompileAt(address) {
   return idx === null ? null : PRECOMPILES[idx];
 }
 
-/** Whether an address is one of the five. */
+/** Whether an address is one of the nine. */
 function isPrecompile(address) { return precompileIndex(address) !== null; }
 
 module.exports = {
@@ -358,6 +423,7 @@ module.exports = {
   isPrecompile,
   SECP256K1_N,
   MODEXP_MAX_LEN,
+  ECADD_GAS, ECMUL_GAS, ECPAIRING_BASE_GAS, ECPAIRING_PER_PAIR_GAS,
   // exported for tests and for reuse by the interpreter's own zero-padded reads
   getData,
   modPow,

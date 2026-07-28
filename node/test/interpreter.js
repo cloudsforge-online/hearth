@@ -566,10 +566,55 @@ group('precompiles');
   const ID = '602a600052' + '6020' + '6000' + '6020' + '6000' + '6000' + '6004' + '61ffff' + 'f1' + '5060206000f3';
   const p = run(ID);
   ok(U.fromBuffer(p.r.returnData) === 42n, 'the identity precompile at 0x04 echoes its input');
-  // Spec §5: 0x06–0x09 are warmed but unimplemented, and must fail LOUDLY rather
-  // than look like an empty account that succeeds.
-  const bn = run('60006000600060006000' + '6006' + '61ffff' + 'f1' + '600052' + '60206000f3');
-  ok(U.fromBuffer(bn.r.returnData) === 0n, 'a call to bn128 add (0x06) reports failure rather than a silent empty success');
+  /* 0x06–0x09 are implemented now, and this is where the two opposite failure
+   * conventions meet. 0x01–0x05 answer a malformed input with an empty buffer and a
+   * SUCCESSFUL call; 0x06–0x09 fail the call outright and burn everything forwarded.
+   * Inside the EVM is the only place that difference is observable, and it is the
+   * difference between a zk verifier refusing a forged proof and accepting it. */
+
+  // CALL(gas, addr, value, argsOff, argsLen, retOff, retLen) — pushed in reverse.
+  const CALLp = (addr, argsLen, gasHex = '61ffff') =>
+    '6000' + '6000' + argsLen + '6000' + '6000' + '60' + addr + gasHex + 'f1';
+  const STORE_FLAG = '600052' + '60206000f3';     // the success flag, returned
+
+  // 0x06 with no input at all. Zero-padding makes that O + O, a perfectly good
+  // answer, so the call SUCCEEDS — the padding rule is consensus, not leniency.
+  const bnOk = run(CALLp('06', '6000') + STORE_FLAG);
+  ok(U.fromBuffer(bnOk.r.returnData) === 1n,
+    'bn128 add (0x06) on zero-padded input succeeds — short input is padded, not rejected');
+
+  // …and it returned a full 64-byte point, not the nothing an empty account returns.
+  const bnSize = run(CALLp('06', '6000') + '50' + '3d' + STORE_FLAG);
+  ok(U.fromBuffer(bnSize.r.returnData) === 64n, 'and its output is 64 bytes, not empty');
+
+  // 0x08 with 191 bytes. EIP-197 rejects any length that is not a multiple of 192.
+  const pairBad = run(CALLp('08', '60bf') + STORE_FLAG, { gas: 400000n });
+  ok(U.fromBuffer(pairBad.r.returnData) === 0n,
+    'a 191-byte pairing check (0x08) reports FAILURE, not a silent empty success');
+
+  // 0x09 with a final flag of 2. EIP-152 allows 0 and 1 and nothing else.
+  const b2Bad = run('6002' + '60d4' + '53' + CALLp('09', '60d5') + STORE_FLAG, { gas: 400000n });
+  ok(U.fromBuffer(b2Bad.r.returnData) === 0n,
+    'blake2f (0x09) with a final flag of 2 fails the call');
+
+  /* A failed precompile is an exceptional halt, not a REVERT: it consumes every
+   * drop of gas forwarded to it. Asserted straight at the EVM boundary, because
+   * from inside a frame the 63/64 rule makes the number hard to pin down. */
+  {
+    const db = new StateDB(new MemoryDB());
+    db.commit(); db.beginTransaction();
+    const evm = new EVM({ state: db, block: { gasLimit: 30000000n }, tx: {} });
+    const at = (n) => { const b = Buffer.alloc(20); b[19] = n; return b; };
+    const bad = evm.call({ caller: addr(0xca), to: at(8), data: Buffer.alloc(191), gas: 100000n });
+    ok(bad.exception === ERR.PRECOMPILE_FAILED && bad.gasLeft === 0n && bad.returnData.length === 0,
+      'a rejected precompile input is an exceptional halt: all gas gone, no return data');
+    const good = evm.call({ caller: addr(0xca), to: at(8), data: Buffer.alloc(0), gas: 100000n });
+    ok(good.exception === null && good.gasLeft === 55000n,
+      'a valid empty pairing costs exactly the 45,000 base and returns the rest');
+    const poor = evm.call({ caller: addr(0xca), to: at(8), data: Buffer.alloc(0), gas: 44999n });
+    ok(poor.exception === ERR.OUT_OF_GAS,
+      '…and one gas short of the base is an ordinary out-of-gas, before any work is done');
+  }
 }
 
 // ---- SSTORE metering -------------------------------------------------------
