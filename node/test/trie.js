@@ -27,7 +27,7 @@
  * and drop the vendored copy.
  */
 
-const { Trie, MemoryDB, EMPTY_TRIE_ROOT, hpEncode, hpDecode, toNibbles } = require('../src/state/trie');
+const { Trie, MemoryDB, OverlayDB, EMPTY_TRIE_ROOT, hpEncode, hpDecode, toNibbles } = require('../src/state/trie');
 const RLP = require('../src/crypto/rlp');
 
 let pass = 0, fail = 0;
@@ -714,6 +714,57 @@ group('secure variant', () => {
     let missing = false;
     try { new Trie(new MemoryDB(), Buffer.alloc(32, 0xaa)).get('x'); } catch { missing = true; }
     ok(missing, 'opening at a root the store does not have fails loudly, not silently empty');
+  }
+});
+
+// ---- the overlay store -----------------------------------------------------
+/* The store speculative execution runs against. The property under test is not
+ * "it works like a Map" — it is that a trie built on it is INDISTINGUISHABLE
+ * from one built on the base store while it runs, and leaves NOTHING in the
+ * base store when it is dropped. Both halves have to hold at once: a store that
+ * only satisfies the second is a trie that cannot read its own writes back, and
+ * an SSTORE followed by an SLOAD of the same slot would return zero. */
+group('overlay store', () => {
+  {
+    const base = new MemoryDB();
+    const seeded = new Trie(base, EMPTY_TRIE_ROOT, { secure: false });
+    for (let i = 0; i < 64; i++) seeded.put('key' + i, 'value-' + i);
+    const root = seeded.root();
+    const sealed = base.size;
+    ok(sealed > 1, 'the base store holds a real trie to overlay');
+
+    const overlay = new OverlayDB(base);
+    const spec = new Trie(overlay, root, { secure: false });
+    ok(spec.get('key7').toString() === 'value-7', 'a read falls through to the base store');
+
+    for (let i = 0; i < 64; i++) spec.put('key' + i, 'rewritten-' + i);
+    const specRoot = spec.root();
+    ok(specRoot.toString('hex') !== root.toString('hex'), 'the speculative writes changed the root');
+    ok(spec.get('key7').toString() === 'rewritten-7', 'and the trie reads its own writes back');
+    ok(base.size === sealed, 'while the base store gained NOT ONE node');
+    ok(overlay.size > 0, 'the nodes went to the overlay, which the caller drops');
+
+    // The base store is still openable at the old root and still says the old
+    // thing — the whole point, since that root is what a block header commits to.
+    const after = new Trie(base, root, { secure: false });
+    ok(after.get('key7').toString() === 'value-7', 'the base trie at the sealed root is untouched');
+    let orphaned = false;
+    try { new Trie(base, specRoot, { secure: false }).get('key7'); } catch { orphaned = true; }
+    ok(orphaned, 'and the speculative root is not resolvable against the base store at all');
+  }
+  {
+    const base = new MemoryDB();
+    const k = Buffer.alloc(32, 0x11);
+    base.put(k, Buffer.from('base'));
+    const overlay = new OverlayDB(base);
+    ok(overlay.has(k), 'has() sees a key that only the base store holds');
+    const fresh = Buffer.alloc(32, 0x22);
+    ok(!overlay.has(fresh), 'and is false for a key neither holds');
+    overlay.put(fresh, Buffer.from('spec'));
+    ok(overlay.has(fresh) && !base.has(fresh), 'a put is visible through the overlay and not below it');
+    overlay.put(k, Buffer.from('shadow'));
+    ok(overlay.get(k).toString() === 'shadow', 'the overlay shadows the base store for the same key');
+    ok(base.get(k).toString() === 'base', 'without changing what the base store says');
   }
 });
 

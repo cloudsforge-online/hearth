@@ -60,6 +60,24 @@ function resolveChainId(network) {
   return id;
 }
 
+/**
+ * A positive-integer operator knob from the environment.
+ *
+ * Refuses zero, a negative and anything unparseable rather than falling back to
+ * the default: these bound what a stranger can make this node do, and a typo in
+ * a compose file that silently restores the unbounded behaviour is precisely the
+ * accident they exist to prevent. Absent is not a typo, and takes the default.
+ */
+function rpcBudget(name, fallback) {
+  const raw = process.env[name];
+  if (raw === undefined || raw === '') return fallback;
+  const n = Number(raw);
+  if (!Number.isSafeInteger(n) || n <= 0) {
+    throw new Error(`params: ${name} must be a positive integer, got ${JSON.stringify(raw)}`);
+  }
+  return n;
+}
+
 module.exports = {
   NETWORK,
   COIN: 'EMBER',
@@ -105,8 +123,11 @@ module.exports = {
   RECORD_KEY_RE: /^[0-9a-z._-]{1,72}$/,
 
   // ---- Proof of work (Homefire) ----
-  // dev sizes keep local mining snappy; production ≈ 2 GiB / thousands of steps.
-  // On a test network the PAD and the WALK shrink — this is the lever that
+  // These sizes keep local mining snappy, and — see the long note below — they
+  // are also the sizes mainnet launches with, because the "production" ones this
+  // comment used to promise were measured and cannot be verified in time.
+  // On a test network the PAD and the WALK shrink further — this is the lever
+  // that
   // actually makes tests fast, and the obvious alternative does not work.
   //
   // Making the difficulty TARGET easier buys nothing: LWMA drives blocks toward
@@ -122,8 +143,41 @@ module.exports = {
   //
   // It does change the PoW function, so a test chain's digests are its own —
   // which is correct, and consistent with it having its own chain id and genesis.
-  POW_SCRATCH_KIB: IS_TEST_NETWORK ? 1 : 64,    // (dev)  production: ~2,097,152 (2 GiB)
-  POW_WALK_STEPS: IS_TEST_NETWORK ? 8 : 256,    // (dev)  production: ~2048+
+  //
+  // THE "PRODUCTION" SIZES THIS COMMENT USED TO NAME ARE NOT REACHABLE, and
+  // that is a measured statement now rather than an opinion. It said
+  // "production: ~2,097,152 (2 GiB) / ~2048+ steps", six other documents
+  // repeated it, and listing-checklist M1 called it raising two constants
+  // before launch. `test/pow-params.js` evaluated the function at increasing
+  // pad sizes and found what the construction implies: Homefire's cost is
+  // O(pad) with nothing amortised between attempts — every attempt fills the
+  // whole pad with chained SHA-256 — so a 2 GiB pad costs ~32,768x a 64 KiB
+  // one, which on the machine that measured it is minutes per evaluation
+  // against a 15 s block interval. A validator pays one full evaluation per
+  // block received. The numbers are in docs/pow-parameters.md.
+  //
+  // So the memory-hardness argument cannot be strengthened by editing these
+  // two numbers. It needs an epoch-cached or otherwise amortised dataset —
+  // Ethash's shape, where the expensive part is paid once per epoch and an
+  // attempt is O(1) against it — which is a redesign of this file's PoW, of
+  // web/assets/mining/homefire.js and of rust/hearthd/src/pow.rs, not a retune.
+  POW_SCRATCH_KIB: IS_TEST_NETWORK ? 1 : 64,    // (dev)  and see POW_MAX_SCRATCH_KIB
+  POW_WALK_STEPS: IS_TEST_NETWORK ? 8 : 256,    // (dev)  the walk IS raisable — it is the cheap half
+  // The ceiling this file refuses to start above, and the reason it exists is a
+  // specific foreseeable mistake: somebody reads listing-checklist M1 the day
+  // before a mainnet genesis, edits POW_SCRATCH_KIB to 2,097,152, runs the test
+  // suite — which passes, because every suite mines on `hearth-test` where the
+  // pad is 1 KiB — and cuts a genesis for a chain whose blocks nobody can
+  // validate inside a block interval. Nothing anywhere would have said no.
+  //
+  // 4,096 KiB (4 MiB) is 64x the current pad and about 40 ms of evaluation on
+  // the machine in docs/pow-parameters.md — still under 1% of the 15 s interval
+  // once a validator's other per-block work is counted, and comfortably above
+  // any value anyone has a reason to set deliberately. It is a backstop against
+  // a documented plan being executed literally, not a tuning recommendation:
+  // raising the pad within this ceiling buys very little hardness, and raising
+  // it past the ceiling buys an unvalidatable chain.
+  POW_MAX_SCRATCH_KIB: 4_096,
   // genesis difficulty target (32-byte big-endian threshold, as hex).
   // Easy on purpose so the first blocks come in ~seconds on one machine.
   // ~8 leading zero bits ⇒ ≈1/256 chance/hash ⇒ a block every ~1–2s at dev hashrate
@@ -183,7 +237,15 @@ module.exports = {
   // still fits one frame.
   MAX_TX_BYTES: 100_000,
   MAX_BLOCK_BYTES: 2_000_000,
-  COINBASE_MATURITY: 10,                    // (dev) coinbase unspendable until N deep; prod ~100
+  // UTXO-ERA ONLY, and worth saying because a checklist item asks for it to be
+  // raised to ~100 before mainnet. On the account model — the chain actually
+  // being launched — there is no maturity at all: `_creditReward`
+  // (chain/blockchain.js) adds the subsidy straight to the balance, spendable in
+  // the next block. This constant is read by tx.js, wallet.js, rpc.js and
+  // chain.js, all of which belong to the retired UTXO path, so raising it
+  // changes nothing about the launch chain. Whether the account model SHOULD
+  // have a maturity rule is a real and open question; it is not this constant.
+  COINBASE_MATURITY: 10,                    // coinbase unspendable until N deep (UTXO path only)
   MAX_FUTURE_DRIFT_S: 7200,                 // reject timestamps >2h in the future (Bitcoin-like)
   MEDIAN_TIME_SPAN: 11,                     // median-time-past window
   P2P_MAX_LINE: 4 * 1024 * 1024,            // drop peers that send >4MiB without a newline
@@ -310,6 +372,51 @@ module.exports = {
    * tools/hardhat/hardhat.config.js pins and what eth_gasPrice suggests. */
   EVM_MIN_GAS_PRICE: 1_000_000_000n,
 
+  /* THE RPC EXECUTION BUDGET — POLICY, NOT CONSENSUS, AND FAIL-CLOSED.
+   *
+   * `eth_call` and `eth_estimateGas` are the only unauthenticated way to make
+   * this process run EVM code, and the process is single-threaded: mining, p2p
+   * gossip, the REST API and the /info healthcheck compose polls all share the
+   * loop that a speculative run holds. Two bounds, because neither is enough
+   * alone:
+   *
+   *   GAS bounds the WORK a caller may buy. A third of the block gas limit is
+   *   far more than anything the estate actually asks for — the fattest thing
+   *   anyone deploys through this node is an ERC-20, at under 2M — and a call
+   *   that genuinely needs more than a third of a whole block is asking about a
+   *   transaction no sane block would carry. geth calls this --rpc.gascap and
+   *   defaults it to 50M; it can afford to, because its EVM is not a BigInt
+   *   interpreter.
+   *
+   *   TIME bounds the WORK PER UNIT OF GAS, which gas cannot, because the spread
+   *   between the cheapest and dearest gas in this implementation is 135x
+   *   (docs/robustness-review.md §6). 10M gas of PUSH/ADD is 160 ms; the same
+   *   10M gas of blake2f is 3.5 s, and 30M of it is 10.7 seconds of a node that
+   *   answers nothing and mines nothing. One second is comfortably above
+   *   every honest call — a whole 30M-gas block of ordinary compute validates in
+   *   0.48 s — and short enough that the miner and the healthcheck never notice.
+   *
+   * Both may be raised for a private or metered endpoint. There is deliberately
+   * no value meaning "unlimited": that is what the defect was.
+   */
+  EVM_RPC_GAS_CAP: rpcBudget('HEARTH_RPC_GAS_CAP', 10_000_000),
+  EVM_RPC_TIME_BUDGET_MS: rpcBudget('HEARTH_RPC_TIME_BUDGET_MS', 1_000),
+
+  /* Whether this node serves `eth_feeHistory` and `eth_maxPriorityFeePerGas`.
+   *
+   * OFF, and the argument is written out where the methods are, in
+   * jsonrpc/methods.js. In short: v1 has no fee market, nothing that works today
+   * calls either method — ethers, viem, Hardhat and MetaMask all decide from the
+   * ABSENCE of `baseFeePerGas` on the block — and the one toolchain that does
+   * call it, Foundry, is better served by the error. Given zero base fees it
+   * signs a type-2 transaction this chain cannot execute, trading "try adding
+   * --legacy" at signing time for a refusal at broadcast that names no remedy.
+   * Measured in docs/network-config.md §5 against Foundry 1.7.1.
+   *
+   * Turn it on for a private endpoint feeding a gas dashboard, or on the day the
+   * fee market lands in v2 — the implementation and its tests are already here. */
+  EVM_RPC_FEE_HISTORY: process.env.HEARTH_RPC_FEE_HISTORY === '1',
+
   /** Pending transactions one sender may occupy, so one funded key cannot fill
    *  the pool with a nonce ladder nobody will ever mine. */
   EVM_MEMPOOL_PER_SENDER: 64,
@@ -359,5 +466,26 @@ module.exports = {
   const m = module.exports;
   if (!(n(m.MIN_TARGET) <= n(m.GENESIS_TARGET) && n(m.GENESIS_TARGET) <= n(m.MAX_TARGET))) {
     throw new Error('params: difficulty ladder is inconsistent — require MIN_TARGET <= GENESIS_TARGET <= MAX_TARGET');
+  }
+  /* And the PoW pad, for the reason written at POW_MAX_SCRATCH_KIB: the failure
+   * this guards is not a typo, it is a documented instruction ("raise
+   * POW_SCRATCH_KIB from 64 to the production ~2 GiB") that no test would have
+   * refused. Fail at require() time, so it is impossible to reach a genesis
+   * with it — every entry point loads params before it does anything else.
+   */
+  if (!Number.isInteger(m.POW_SCRATCH_KIB) || m.POW_SCRATCH_KIB < 1) {
+    throw new Error('params: POW_SCRATCH_KIB must be a positive integer number of KiB');
+  }
+  if (m.POW_SCRATCH_KIB > m.POW_MAX_SCRATCH_KIB) {
+    throw new Error(
+      `params: POW_SCRATCH_KIB ${m.POW_SCRATCH_KIB} exceeds POW_MAX_SCRATCH_KIB ${m.POW_MAX_SCRATCH_KIB}. `
+      + 'Homefire pays the whole pad on every attempt and a validator pays one full evaluation per '
+      + 'block received, so a pad this size cannot be verified inside TARGET_BLOCK_TIME. '
+      + 'See docs/pow-parameters.md — the fix is an amortised dataset, not a larger constant.');
+  }
+  // The walk is the affordable parameter (test/pow-params.js measures why), but
+  // it is still one SHA-256 per step inside the same per-block budget.
+  if (!Number.isInteger(m.POW_WALK_STEPS) || m.POW_WALK_STEPS < 1 || m.POW_WALK_STEPS > 1_048_576) {
+    throw new Error('params: POW_WALK_STEPS must be a positive integer at most 1,048,576');
   }
 }

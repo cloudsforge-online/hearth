@@ -1,19 +1,23 @@
 /* The JSON-RPC client. One transport, one place where an error becomes a type.
  *
- * ENDPOINT RESOLUTION — and a thing phase 5/6 still has to settle.
+ * ENDPOINT RESOLUTION.
  *
- *   ?rpc=<url>  →  <meta name="hearth-eth-rpc">  →  same-origin /rpc/  →  :8545
+ *   ?rpc=<url>  →  <meta name="hearth-eth-rpc">  →  same-origin /eth-rpc/  →  :8545
  *
- * The same-origin default matches web/nginx.conf, which proxies `location /rpc/`
- * to the node and is the reason the deployed explorer talks to the origin it
- * loaded from rather than to a second hostname the CSP would have to allow. What
- * is NOT settled is where `JsonRpcServer` (node/src/jsonrpc/server.js) gets
- * mounted inside the node: it accepts POST at whatever path it is given, and
- * node/src/rpc.js already answers `POST /rpc` with the older
- * `{method: 'getinfo'}` shape. Those two must not collide. This client sends
- * `POST <base>` with an eth_* body and reads a JSON-RPC 2.0 envelope; a node
- * that answers the legacy shape produces `MalformedResponse`, which the UI
- * reports as exactly that rather than as an empty chain.
+ * The same-origin default matches web/nginx.conf, which proxies
+ * `location /eth-rpc/` to the node's JSON-RPC port and is the reason the
+ * deployed explorer talks to the origin it loaded from rather than to a second
+ * hostname the CSP would have to allow.
+ *
+ * IT IS `/eth-rpc/`, NOT `/rpc/`, AND THE DIFFERENCE IS THE WHOLE POINT. The
+ * node runs two servers: REST + SSE on 8645 (`/info`, `/events`, `/mining/*`,
+ * which assets/api.js and assets/mining/miner.js reach through the `/rpc/`
+ * proxy) and Ethereum JSON-RPC on 8545, which is the only one that answers
+ * eth_*. This client used to default to `/rpc/`, so every call landed on the
+ * REST server, which replies HTTP 404 with `{"err": "this is the REST API — the
+ * Ethereum JSON-RPC endpoint is a different port"}`. That parses as JSON and
+ * carries neither `result` nor `error`, so `unwrap` raised MalformedResponse and
+ * the whole explorer read as a dead chain while the chain was healthy.
  *
  * Three failure modes, three types, because the UI has to tell them apart:
  *   RpcUnreachable  — no answer at all: node down, wrong port, CSP refusal
@@ -34,12 +38,17 @@ export class MalformedResponse extends Error {
 /** JSON-RPC code 3 is `execution reverted`, and `data` carries the revert payload. */
 export const EXECUTION_REVERTED = 3;
 
-export function resolveEndpoint(search = location.search) {
-  const q = new URLSearchParams(search).get('rpc');
+/**
+ * `loc` is injectable so the resolution order can be asserted under node, where
+ * there is no `location` at all — see selftest.js. It is the same object shape
+ * `window.location` has: `{ search, protocol, origin }`.
+ */
+export function resolveEndpoint(search, loc = typeof location === 'undefined' ? null : location) {
+  const q = new URLSearchParams(search ?? loc?.search ?? '').get('rpc');
   if (q) return q.replace(/\/$/, '') || '/';
-  const m = document.querySelector('meta[name="hearth-eth-rpc"]');
+  const m = typeof document === 'undefined' ? null : document.querySelector('meta[name="hearth-eth-rpc"]');
   if (m && m.content) return m.content.replace(/\/$/, '') || '/';
-  if (location.protocol === 'http:' || location.protocol === 'https:') return location.origin + '/rpc/';
+  if (loc && (loc.protocol === 'http:' || loc.protocol === 'https:')) return loc.origin + '/eth-rpc/';
   return 'http://localhost:8545';
 }
 

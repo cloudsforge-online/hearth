@@ -5,20 +5,38 @@ guess and nobody has to ask.
 
 > ### Status, before anything else
 >
-> **There is no public Hearth endpoint. As of this document there is no live
-> account-model chain at all.**
+> **There is no public Hearth endpoint.** There is a chain: it produces blocks,
+> it reorgs, and it serves these methods. Nobody has published it.
 >
-> Phases 1–4 of [`evm-spec.md`](evm-spec.md) §8 are built and gated on published
-> vectors; the `eth_*` JSON-RPC layer (`node/src/jsonrpc/`) is written and
-> tested against an in-memory fake. **Phase 5 — consensus on the new state
-> model — has not landed**, so nothing produces blocks and nothing serves these
-> methods over a real chain yet.
+> Those are two different statements and this document used to run them
+> together. Precisely:
 >
-> Everything below is therefore the **specification you configure against**, not
-> a description of a running network. The chain id, the decimals, the encodings
-> and the shapes are frozen and correct. The URLs are not, because they do not
-> exist. Every field that cannot be filled in today is marked
-> **`⬜ does not exist yet`** rather than given a plausible-looking placeholder.
+> - **The chain runs.** `node/src/evmnode.js` builds the blockchain, the miner
+>   and the JSON-RPC server and mounts it on 8545 (`evmnode.js:186`).
+>   `hearthd --evm --mine` is a one-command account-model chain on your own
+>   machine, and [`../docker-compose.testnet.yml`](../docker-compose.testnet.yml)
+>   runs three of them on `hearth-testnet`, chain id **7412**, with the genesis
+>   hash published in [`../TESTNET.md`](../TESTNET.md).
+> - **It is proven under test, to a stated depth.** `node/test/evmchain.js`
+>   (191 checks) covers block production and validation; `node/test/evm-rpc.js`
+>   (170) drives the `eth_*` surface over real HTTP against that chain; and
+>   `node/test/evm-p2p-fork.js` (51) runs **two real nodes over real sockets** —
+>   they partition, mine divergent branches, reorg onto the heavier one, agree
+>   on state roots byte for byte, and a restarted node replays its disk to the
+>   same tip. What that does **not** prove is written down in
+>   [`testing.md`](testing.md) §4, and it is not a short list: no long-range
+>   reorg, no sustained load, and **no run at production PoW parameters**
+>   ([`pow-parameters.md`](pow-parameters.md)).
+> - **Nothing is deployed.** Every port in the compose file binds
+>   `127.0.0.1`. There is no HTTPS endpoint, no hostname, no faucet and no
+>   explorer anyone else can reach.
+>
+> So everything below is **both** the specification you configure against and,
+> where marked **[LOCAL]**, a description of something you can run in a
+> terminal in the next five minutes. Fields that genuinely do not exist are
+> still marked **`⬜ does not exist yet`** rather than given a
+> plausible-looking placeholder — but that mark now means *unpublished*, not
+> *unbuilt*.
 
 ---
 
@@ -27,7 +45,7 @@ guess and nobody has to ask.
 | Field | Value | Source |
 | --- | --- | --- |
 | Chain name | Hearth | [`evm-spec.md`](evm-spec.md) §1 |
-| **Chain ID (decimal)** | **`7411`** mainnet · **`7412`** testnet | `node/src/chain/transaction.js:57` declares 7411 as a constant; it must become per-network configuration ([`evm-spec.md`](evm-spec.md) §1) |
+| **Chain ID (decimal)** | **`7411`** mainnet · **`7412`** testnet | resolved per network in `node/src/params.js` (`CHAIN_IDS`); `node/src/chain/transaction.js` reads it and never declares it ([`evm-spec.md`](evm-spec.md) §1) |
 | **Chain ID (hex)** | **`0x1cf3`** · testnet `0x1cf4` | the same numbers |
 | Native currency name | Ember | [`listing-checklist.md`](listing-checklist.md) §1.1 — **and see §6, the name is not finally decided** |
 | Native currency symbol | `EMBER` | |
@@ -41,10 +59,10 @@ guess and nobody has to ask.
 | Block gas limit | 30,000,000 | |
 | Consensus | proof-of-work (Homefire), heaviest-cumulative-work | |
 | Finality | probabilistic, **unbounded reorg depth** | [`exchange-integration.md`](exchange-integration.md) §4 |
-| RPC URL | ⬜ does not exist yet. **The port and path are settled** — 8545, root path — see §3 | [`evm-spec.md`](evm-spec.md) §6 |
-| WebSocket URL | ⬜ not in v1 at all (`eth_subscribe` is v2) | [`evm-spec.md`](evm-spec.md) §6 |
-| Block explorer URL | ⬜ not deployed against a chain. The **explorer is built** and is `0x`-native (`web/index.html`) — it has nothing to read | [`listing-checklist.md`](listing-checklist.md) §3 |
-| Faucet URL | ⬜ not deployed — the service is built, at [`../tools/faucet`](../tools/faucet) | |
+| RPC URL | ⬜ nothing **published**. **[LOCAL]** `http://127.0.0.1:8545` — `hearthd --evm`, or `docker compose -f docker-compose.testnet.yml up`, serves it today. The port and path are settled: 8545, root path — see §3 | [`evm-spec.md`](evm-spec.md) §6 |
+| WebSocket URL | ⬜ not in v1 at all (`eth_subscribe` is v2). Port **8546 is reserved** for it and deliberately left unbound; poll `eth_newFilter`/`eth_getFilterChanges` meanwhile (`node/src/jsonrpc/filters.js`) | [`evm-spec.md`](evm-spec.md) §6 |
+| Block explorer URL | ⬜ nothing published. The **explorer is built** and is `0x`-native (`web/index.html`), and the Etherscan-compatible `/api` behind it now runs against a real chain in CI ([`../tools/explorer-api`](../tools/explorer-api)) | [`listing-checklist.md`](listing-checklist.md) §3 |
+| Faucet URL | ⬜ nothing published — the service is built and tested, at [`../tools/faucet`](../tools/faucet) | |
 | Multicall3 | ⬜ not deployed. See §7 | |
 | SLIP-44 coin type | ⬜ unregistered. Derive under coin type **60** (Ethereum) meanwhile | [`listing-checklist.md`](listing-checklist.md) §1.2 |
 
@@ -99,25 +117,31 @@ fixed-width and zero-padded. Clients enforce this; so does Hearth.
 It is MetaMask's localhost default and what every Hardhat and Foundry tutorial
 assumes, so a developer's first guess is correct.
 
-**The allocation below is planned, not built.** Nothing serves 8545 yet, and
-**no compose file, nginx config or Dockerfile in this repository mentions 8545,
-8547 or 8549** — grep for them and you will find nothing. The REST column is
-real and running today; the JSON-RPC column is what phase 5 has to create.
+**The allocation below is built and bound.** Both columns are served today:
+`node/src/evmnode.js` constructs the JSON-RPC server and listens on 8545
+(`evmnode.js:186`), and `docker-compose.testnet.yml` publishes all three host
+ports. This paragraph used to say the opposite — "nothing serves 8545 yet, grep
+and you will find nothing" — and it was true when it was written.
 
-| | REST + SSE (**today**) | **Ethereum JSON-RPC** (planned) |
+| | REST + SSE | **Ethereum JSON-RPC** |
 | --- | --- | --- |
 | container port | 8645 | 8545 |
 | path | `/info`, `/address/:a`, `/block/:id`, `/tx/:id`, `/supply`, `/events` | `/` |
 | host: seed | 8645 | 8545 |
-| host: miner1 | 8647 (`docker-compose.testnet.yml:41`) | 8547 |
-| host: miner2 | 8649 (`docker-compose.testnet.yml:57`) | 8549 |
+| host: miner1 | 8647 | 8547 |
+| host: miner2 | 8649 | 8549 |
 
-The REST host ports come from `docker-compose.testnet.yml`; the plain
-`docker-compose.yml` exposes only the seed's 8645/8646 and gives the miners no
-host ports at all. Under the plan every node would listen on 8545 inside its
-container, with host ports differing only so three can run side by side, and
-**8546 reserved** for the v2 WebSocket endpoint (`eth_subscribe`), because that is
-the paired convention.
+The host ports come from `docker-compose.testnet.yml`. Every node listens on
+8545 inside its container; the host ports differ only so three can run side by
+side. **8546 is reserved** for the v2 WebSocket endpoint (`eth_subscribe`) and
+is deliberately left unbound rather than given to something else, because that
+is the paired convention and reclaiming it later would break every client that
+guessed.
+
+**These are loopback bindings.** `127.0.0.1:8545` is a chain you can point
+Hardhat at; it is not an endpoint anyone else can reach, and nothing in this
+repository or in the estate's tunnel configuration routes it. That is the whole
+of the "no public endpoint" claim — deployment, not capability.
 
 Publicly this is one hostname — `rpc.<apex>` → 8545 — and that URL goes into
 `ethereum-lists/chains` and `chainid.network`, where MetaMask caches it, exchanges
@@ -156,15 +180,24 @@ A 200 that is not JSON-RPC 2.0 reads to a client as an **empty chain** rather th
 as a misconfiguration, which is the worst available failure mode. Two ports, two
 protocols, no ambiguity.
 
-### What is still true: nothing serves it
+### What now serves it
 
-`node/src/jsonrpc/server.js` exists, is tested, and passes 301 checks — but
-**nothing constructs it.** No code in `node/bin/` or `node/src/node.js` starts it,
-because there is no account-model chain for it to read. Mounting it on 8545 is
-phase 5's job ([`roadmap.md`](roadmap.md)).
+`node/src/jsonrpc/server.js` is constructed by `node/src/evmnode.js` and mounted
+on 8545 over a real account-model chain. Two commands reach it:
 
-Until then, `tools/rpc-probe/stub.js` serves the same method surface over a chain
-with no state, and it is the thing to point your tooling at.
+```bash
+node node/bin/hearthd.js --evm --mine          # one node, your machine
+docker compose -f docker-compose.testnet.yml up -d    # three, chain id 7412
+```
+
+The surface is 41 methods (43 with `HEARTH_RPC_FEE_HISTORY=1`), tested at 422
+checks against a fake chain and 170 against a real one over HTTP.
+
+`tools/rpc-probe/stub.js` still exists and is still useful, but its job has
+narrowed: it serves the same method surface over a chain with **no state**, so
+it proves your wiring, your encodings and your chain id without mining
+anything. It is no longer the only thing to point tooling at, and a deployment
+should never point at it.
 
 ---
 
@@ -180,10 +213,10 @@ The short version:
 | MetaMask field | Value |
 | --- | --- |
 | Network name | `Hearth` |
-| New RPC URL | ⬜ does not exist yet |
-| Chain ID | `7411` — MetaMask's UI takes **decimal** |
+| New RPC URL | ⬜ nothing published. **[LOCAL]** `http://127.0.0.1:8545` works today |
+| Chain ID | `7411` — MetaMask's UI takes **decimal**. The local testnet is **`7412`** |
 | Currency symbol | `EMBER` |
-| Block explorer URL | ⬜ does not exist yet (optional field) |
+| Block explorer URL | ⬜ nothing published (optional field) |
 
 ### 4.2 ethers v6
 
@@ -370,6 +403,19 @@ execute — trading a loud, actionable error at signing time for a silent
 rejection at the node. Leaving it unimplemented and documenting `--legacy` is
 the correct trade until the fee market lands in v2.
 
+**Re-examined when the rest of the method surface landed, and upheld.** The
+method and `eth_maxPriorityFeePerGas` are now written and tested
+(`node/src/jsonrpc/methods.js`, `test/jsonrpc.js`) but **registered only when
+`HEARTH_RPC_FEE_HISTORY=1`**, so a default node still answers `-32601` and
+Foundry still prints its own remedy. The rejection at the node is not silent —
+`chain/transaction.js` refuses it as *"transaction type 0x2 — v1 accepts legacy
+(type 0) only"* — but it names the cause and not the fix, which is one step
+worse than the message above and one step later. The flag exists for a private
+endpoint feeding a gas dashboard, which wants `gasUsedRatio` history and is not
+running `forge create` through it, and so that v2 is a flag rather than a
+project. The measurement in the table above was **not** re-run for this change:
+Foundry is not installed here, and nothing about its fee logic changed.
+
 ---
 
 ## 6. Names that are not yet settled
@@ -401,8 +447,12 @@ which is mainnet.
 
 ## 7. Contract addresses
 
-Nothing is deployed. Not on a testnet, not anywhere — there is no chain to
-deploy to.
+Nothing is deployed to a **persistent** chain. The contracts deploy and run —
+`node/test/dex.js` puts WEMBER, the factory, the pair and the router through a
+full add-liquidity/swap/remove cycle on our own EVM — and they deploy to a local
+`hearthd --evm` node the same way. But no address below is stable, because no
+chain below is published, and an address is only worth recording once the chain
+holding it outlives the process that made it.
 
 | Contract | Address |
 | --- | --- |

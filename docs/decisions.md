@@ -158,8 +158,10 @@ with the legacy `POST /rpc` handler (`node/src/rpc.js:152`), and a client would
 have received a 200 that is not JSON-RPC 2.0 — which reads as an empty chain
 rather than as a misconfiguration. Two ports, two protocols, no ambiguity.
 
-**Nothing serves it yet.** `node/src/jsonrpc/server.js` exists and is tested, but
-no code in `node/bin/` or `node/src/node.js` constructs it; that is phase 5.
+**It is served.** `node/src/evmnode.js:186` constructs
+`node/src/jsonrpc/server.js` and listens on 8545; `hearthd --evm` is the flag
+that gets you there. 8546 stays reserved and unbound for the v2 WebSocket
+endpoint.
 
 Reasoning: [`evm-spec.md`](evm-spec.md) §6, which also reserves 8546 for the v2
 WebSocket endpoint.

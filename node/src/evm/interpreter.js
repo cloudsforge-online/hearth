@@ -37,6 +37,17 @@
  * Fork: Shanghai. SELFDESTRUCT is pre-EIP-6780 and StateDB already implements it.
  * PREVRANDAO returns the parent block's Homefire PoW digest (spec §5); BASEFEE
  * pushes zero because v1 has no EIP-1559 market.
+ *
+ * THE OPTIONAL DEADLINE IS NOT CONSENSUS AND MUST NEVER BE PASSED BY ONE. `new
+ * EVM({ deadline })` makes the loop abandon a run that outlives a wall clock, and
+ * whether a run outlives a wall clock depends on the machine, its load and the
+ * weather — so a block validated with a deadline set would be accepted here and
+ * rejected on a slower node, which is a chain split. Exactly one caller passes it,
+ * `chain/rpcadapter.js`'s speculative `_run`, whose results are answers to a
+ * stranger's question and go into no block. `chain/statetransition.js` — the one
+ * that does validate and mine — passes nothing, so `this.deadline` is null there
+ * and the loop's check compiles down to one comparison per step that is always
+ * false.
  */
 
 const { keccak256 } = require('../crypto/keccak');
@@ -73,7 +84,34 @@ const ERR = Object.freeze({
   NONCE_OVERFLOW: 'nonce overflow',
   UNSUPPORTED_PRECOMPILE: 'precompile not implemented on this chain',
   PRECOMPILE_FAILED: 'precompile rejected its input',
+  /* Reachable ONLY when a caller passed a deadline, which only the RPC path does.
+   * It is not an EVM outcome — there is no gas price at which a transaction halts
+   * for it — so nothing that builds a block can produce it. */
+  TIMEOUT: 'execution timeout',
 });
+
+/**
+ * A wall-clock budget for one speculative run, shared by every frame of it and by
+ * the two precompiles whose work is a caller-chosen loop.
+ *
+ * LATCHING on purpose: the first frame to notice sets `tripped`, and every other
+ * frame then fails immediately instead of re-reading the clock. Without that, a
+ * timed-out CALL looks to its parent like any other failed call — the parent
+ * catches it, carries on, and keeps running past the deadline until its own next
+ * check. With it, one trip unwinds the whole stack.
+ */
+class Deadline {
+  /** @param {number} ms  budget from now, in milliseconds */
+  constructor(ms) { this.at = Date.now() + ms; this.tripped = false; }
+  expired() { return this.tripped || (Date.now() > this.at && (this.tripped = true)); }
+}
+
+/* How many instructions run between two clock reads. `Date.now()` is cheap but not
+ * free, and this loop is the hottest in the node — at the measured 62 Mgas/s
+ * baseline 4096 steps is well under a millisecond, so the deadline is honoured to
+ * a far finer grain than any budget worth setting, and the check costs one integer
+ * decrement per step. */
+const DEADLINE_STEPS = 4096;
 
 // ---------------------------------------------------------------------------
 // coercions — callers hand us hex strings, Buffers and BigInts interchangeably
@@ -195,12 +233,15 @@ function result(exception, gasLeft, output, extra) {
  * @param {object}   o.tx           { origin, gasPrice }
  * @param {function} [o.onStep]     tracer; see `_trace`. Absent costs nothing.
  * @param {function} [o.blockHash]  (number: bigint) -> 32-byte Buffer | null, for BLOCKHASH
+ * @param {Deadline} [o.deadline]   RPC ONLY — see the header. Absent on every
+ *                                  consensus path, and absent costs one comparison.
  */
 class EVM {
-  constructor({ state, block = {}, tx = {}, onStep = null, blockHash = null } = {}) {
+  constructor({ state, block = {}, tx = {}, onStep = null, blockHash = null, deadline = null } = {}) {
     this.state = state;
     this.onStep = onStep || null;
     this.blockHashFn = blockHash || (() => null);
+    this.deadline = deadline || null;
     this.logs = [];
 
     this.block = {
@@ -221,6 +262,12 @@ class EVM {
 
   /** Total gas refunded by SSTORE so far; StateDB journals it, so reverts undo it. */
   getRefund() { return this.state.getRefund(); }
+
+  /** True once this run gave up on its wall clock. Always false without a deadline,
+   *  which is every consensus path. The caller reports it; the EVM only records it,
+   *  because "ran out of time" is not one of the outcomes the ERROR CONTRACT above
+   *  lets a *transaction* have. */
+  get timedOut() { return this.deadline !== null && this.deadline.tripped; }
 
   // -- message calls ---------------------------------------------------------
 
@@ -248,6 +295,9 @@ class EVM {
     const value = toBig(m.value);
 
     if (depth > MAX_DEPTH) return result(ERR.DEPTH, gasIn, EMPTY);
+    // Once tripped, start nothing further: a precompile is one uninterruptible
+    // call, so the only place to refuse it is before it begins.
+    if (this.deadline !== null && this.deadline.tripped) return result(ERR.TIMEOUT, gasIn, EMPTY);
 
     const from = toAddr(m.caller);
     const to = toAddr(m.to);
@@ -288,14 +338,22 @@ class EVM {
         const input = toBuf(m.data || EMPTY);
         const need = pre.gas(input);
         if (need > gasIn) return this._fail(snapshot, logMark, ERR.OUT_OF_GAS, 0n);
-        const out = pre.run(input);
+        /* The deadline is handed to the precompile because two of the nine —
+         * blake2f and modexp — are a single loop whose trip count the caller
+         * chooses, so a check before and after this line would not interrupt
+         * anything. They report abandoning the loop the only way the table's
+         * contract allows, as null, and are told apart from a genuinely bad
+         * input by `timedOut` below. */
+        const out = pre.run(input, this.deadline);
         /* The two failure conventions, which are opposites — see the top of
          * precompiles.js. 0x01-0x05 report a malformed input as an EMPTY buffer and
          * a SUCCESSFUL call (Solidity's `ecrecover() == address(0)` depends on it).
          * 0x06-0x09 report it as null, and that FAILS the call and burns everything
          * forwarded, because a zk verifier reading "success, no output" as a zero
          * would accept a forged proof. */
-        if (out === null) return this._fail(snapshot, logMark, ERR.PRECOMPILE_FAILED, 0n);
+        if (out === null) {
+          return this._fail(snapshot, logMark, this.timedOut ? ERR.TIMEOUT : ERR.PRECOMPILE_FAILED, 0n);
+        }
         return result(null, gasIn - need, out);
       }
 
@@ -345,6 +403,7 @@ class EVM {
     const initcode = toBuf(m.initcode || EMPTY);
 
     if (depth > MAX_DEPTH) return result(ERR.DEPTH, gasIn, EMPTY);
+    if (this.deadline !== null && this.deadline.tripped) return result(ERR.TIMEOUT, gasIn, EMPTY);
     if (state.getBalance(from) < value) return result(ERR.INSUFFICIENT_BALANCE, gasIn, EMPTY);
 
     const nonce = state.getNonce(from);
@@ -450,8 +509,22 @@ class EVM {
      * per step and never allocates an event object. */
     const trace = this.onStep;
     const depth = f.msg.depth;
+    /* -1 means "no deadline was given", which is every consensus path, and makes
+     * the test below one always-false integer comparison per step. Resolved out
+     * here for the same reason `trace` is. */
+    const deadline = this.deadline;
+    let untilCheck = deadline === null ? -1 : DEADLINE_STEPS;
 
     for (;;) {
+      if (untilCheck >= 0 && --untilCheck < 0) {
+        /* All gas, no return data — the same shape as any other exceptional halt,
+         * so nothing downstream has to learn a new one. `_run` in the rpcadapter
+         * reads `evm.timedOut` rather than this string, because a contract can
+         * catch a failed CALL and this exception must not be reportable as the
+         * callee's own revert. */
+        if (deadline.expired()) return result(ERR.TIMEOUT, 0n, EMPTY);
+        untilCheck = DEADLINE_STEPS;
+      }
       if (f.pc >= code.length) return result(null, f.gas, EMPTY);   // running off the end is STOP
 
       const op = code[f.pc];
@@ -933,6 +1006,8 @@ function isReservedPrecompile(addr) {
 module.exports = {
   EVM,
   ERR,
+  Deadline,
+  DEADLINE_STEPS,
   MAX_DEPTH,
   MAX_NONCE,
   Frame,

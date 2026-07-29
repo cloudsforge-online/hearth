@@ -37,7 +37,7 @@
 
 const { keccak256 } = require('../crypto/keccak');
 const RLP = require('../crypto/rlp');
-const { Trie, MemoryDB, EMPTY_TRIE_ROOT } = require('./trie');
+const { Trie, MemoryDB, OverlayDB, EMPTY_TRIE_ROOT } = require('./trie');
 
 /** keccak256('') — the codeHash of every account that is not a contract. */
 const EMPTY_CODE_HASH = keccak256(Buffer.alloc(0));
@@ -133,6 +133,7 @@ class StateDB {
     this.db = db;
     this._trie = new Trie(db, root);          // secure: keyed by keccak(address)
     this._acct = new Map();                   // addrHex -> account | null (absent)
+    this._dirty = new Set();                  // addrHex whose record is not yet in the trie
     this._storage = new Map();                // addrHex -> Trie
     this._code = new Map();                   // codeHashHex -> Buffer
     this._journal = [];
@@ -146,11 +147,53 @@ class StateDB {
     this._warmSlot = new Set();
     this._refund = 0n;
     this._txRoot = this._trie.root();         // root as of the start of this tx
+                                              // (nothing is dirty yet — no flush needed)
     this._committed = new Map();              // memo for originalStorage
   }
 
-  root() { return this._trie.root(); }
-  rootHex() { return this._trie.rootHex(); }
+  /**
+   * The state root — and the point at which pending account writes are pushed
+   * into the state trie. See `_write` and `_flush`.
+   */
+  root() { this._flush(); return this._trie.root(); }
+  rootHex() { return this.root().toString('hex'); }
+
+  /**
+   * Push every account whose record has changed into the state trie.
+   *
+   * WHY THIS EXISTS, because it is the difference between a chain that
+   * validates a block and one that does not. `_write` used to put straight into
+   * the state trie, so every mutation — every SSTORE, every balance change, every
+   * nonce bump — re-hashed the whole path from that account's leaf to the root:
+   * up to 64 nodes, each RLP-encoded, keccak'd and `db.put` into a node store
+   * that never prunes by design (see the note at the top of chain/blockchain.js).
+   * A transaction that fills the 30,000,000-gas block limit with SSTOREs does
+   * that ~1,500 times against a 15-second block interval, and the retained
+   * nodes are permanent whether the transaction succeeds or reverts, because
+   * `db.put` is outside the journal. docs/robustness-review.md §1 measured it;
+   * test/bench/block-execution.js gates it.
+   *
+   * Deferring is what every Ethereum client does, and here it costs nothing in
+   * correctness because the account cache — not the trie — is already the
+   * source of truth for reads (`_load` answers from it) and for undo (the
+   * journal restores records through `_write`). The trie is a serialisation of
+   * the cache, and it only has to be correct when somebody asks for the root.
+   *
+   * Storage tries are NOT deferred and do not need to be: `Trie.put` hashes the
+   * path it descends as it rebuilds it, so `st.root()` afterwards is a single
+   * keccak of the root node. It is the state-trie write per mutation that was
+   * expensive, not the storage root.
+   */
+  _flush() {
+    if (this._dirty.size === 0) return;
+    for (const hex of this._dirty) {
+      const acct = this._acct.get(hex);
+      const addr = Buffer.from(hex, 'hex');
+      if (acct === null || acct === undefined) this._trie.del(addr);
+      else this._trie.put(addr, encodeAccount(acct));
+    }
+    this._dirty.clear();
+  }
 
   // -- accounts --------------------------------------------------------------
 
@@ -162,12 +205,19 @@ class StateDB {
     return a;
   }
 
-  /** Write straight through to the trie; the journal, not a cache, is the undo. */
+  /**
+   * Record an account. The cache is the truth and the journal, not a cache, is
+   * the undo; the trie catches up at the next `_flush` (i.e. the next `root()`).
+   *
+   * A journal entry is a call to this method, so an undo re-marks the account
+   * dirty and the flush writes whatever the record ended up as. Reverting after
+   * a flush is equally fine — the trie is simply rewritten from the restored
+   * record — and reverting before one costs nothing at all, which is the common
+   * case inside a failed CALL frame.
+   */
   _write(hex, acct) {
     this._acct.set(hex, acct);
-    const addr = Buffer.from(hex, 'hex');
-    if (acct === null) this._trie.del(addr);
-    else this._trie.put(addr, encodeAccount(acct));
+    this._dirty.add(hex);
   }
 
   /**
@@ -533,7 +583,10 @@ class StateDB {
     this._warmSlot.clear();
     this._committed.clear();
     this._refund = 0n;
-    this._txRoot = this._trie.root();
+    // Through `root()`, so any account left dirty by the previous transaction
+    // is in the trie before its root is taken as this transaction's "original"
+    // view. `originalStorage` reads that root and must not see a stale one.
+    this._txRoot = this.root();
   }
 
   /**
@@ -559,7 +612,7 @@ class StateDB {
 }
 
 module.exports = {
-  StateDB, MemoryDB,
+  StateDB, MemoryDB, OverlayDB,
   EMPTY_CODE_HASH, EMPTY_TRIE_ROOT, PRECOMPILES,
   encodeAccount, decodeAccount, emptyAccount,
 };

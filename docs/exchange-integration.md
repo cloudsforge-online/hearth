@@ -28,10 +28,10 @@ honest account of what is not built yet.
 | Precompiles `0x01`–`0x09` — including bn128 and blake2f | **Built.** All nine of Shanghai's set |
 | Transactions, receipts, logs bloom | **Built. 188/188 TransactionTests pass** |
 | State transition | **Built. 20,077/20,077 GeneralStateTests pass** — the last ten fixed by EIP-7610 — see [`MAP.md`](../MAP.md) §4.3 |
-| `eth_*` JSON-RPC surface | **Built**, 301 checks — see the caveat below |
+| `eth_*` JSON-RPC surface | **Built and mounted** on 8545, 41 methods, 422 checks against a fake chain and 170 against a real one — see the caveat below |
 | AMM contracts | **Compiled, and executed on our own EVM** — a full Uniswap V2 deployment and a real swap, `node/test/dex.js`, 167/167 |
-| **Header v2 and consensus on the account model** | **Not built.** This is the blocker |
-| Public testnet on the account model | Not running |
+| **Header v2 and consensus on the account model** | **Built.** Blocks are produced, validated and reorged |
+| Public testnet on the account model | **Not published.** It runs on `127.0.0.1` and nothing routes it — this is the blocker |
 | Mainnet | Does not exist |
 
 **The caveat on the RPC row, because it is the row you care about.** The method
@@ -575,9 +575,10 @@ chain.
 with a stable RPC endpoint, a faucet, and an explorer that renders `0x`
 addresses. **The testnet chain id is decided — `7412`** ([`evm-spec.md`](evm-spec.md)
 §1), and it is deliberately distinct from mainnet's 7411 because a shared id
-would make every testnet transaction replayable on mainnet. Nothing else on that
-list is built: the explorer exists but has no chain to render, and the faucet
-service exists but has nowhere to run. Tracked in
+would make every testnet transaction replayable on mainnet. What is missing from
+that list is deployment, not code: the explorer, the faucet and the
+Etherscan-compatible `/api` all run against a local node today and none of them
+is hosted anywhere you could reach. Tracked in
 [`listing-checklist.md`](listing-checklist.md).
 
 ---
@@ -587,10 +588,12 @@ service exists but has nowhere to run. Tracked in
 The near-zero-cost claim at the top is about the *protocol surface*, and it
 holds. These are the things that are not zero:
 
-1. **There is no chain.** The `eth_*` surface itself is built and tested (§0), and
-   you can exercise it today against `tools/rpc-probe/stub.js`. What does not
-   exist is consensus on the account model, so nothing produces blocks and
-   nothing serves the RPC. This is the only item that blocks you outright.
+1. **There is no chain you can reach.** The `eth_*` surface is built, tested and
+   mounted on 8545 by `node/src/evmnode.js`, and a chain that produces and
+   reorgs blocks is one command away on your own machine (`hearthd --evm --mine`)
+   or three under `docker-compose.testnet.yml`. What does not exist is a
+   published endpoint, a persistent genesis or a mainnet. This is the only item
+   that blocks you outright, and it is a deployment, not a build.
 2. **Reorgs have no depth bound** (§4). If your ledger assumes a maximum reorg
    depth per chain, EMBER needs the general case.
 3. **Low hashrate at launch** (§4). This is a risk-desk conversation, not an

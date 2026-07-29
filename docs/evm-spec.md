@@ -87,6 +87,15 @@ either. Ethereum's answer, which is ours, is a divergent genesis: the default
 genesis `extraData` is `<network>/<chainId>`, so no block on one network descends
 from an ancestor on the other.
 
+The id the running chain actually uses is read from `<data>/genesis.json`, not from
+params — so `node/src/chain/blockchain.js` **refuses to start** when a persisted
+genesis's `chainId` or `extraData` disagrees with the node's `HEARTH_NETWORK`,
+naming both values and the file. Without that check a data directory created under
+one network and started under another advertises the file's id over `eth_chainId`
+while every signer resolves the network's, which is the replay this section forbids.
+An explicit genesis override is a deliberate statement of which chain is meant and
+is honoured.
+
 `decimals: 8 → 18` is deliberate. ERC-20 tooling, wallets and DEX maths all assume 18 for a
 native asset. Keeping 8 would produce subtly wrong displays everywhere and cost more than the
 migration does — and the chain is being reset regardless.
@@ -347,20 +356,153 @@ zero** until the fee market lands in v2.
 The highest-leverage deliverable. It is what makes MetaMask, ethers, viem, Hardhat and Foundry
 work without any of them knowing this chain is bespoke.
 
-**v1 (required):** `eth_chainId`, `eth_blockNumber`, `eth_getBalance`, `eth_getTransactionCount`,
-`eth_getCode`, `eth_getStorageAt`, `eth_call`, `eth_estimateGas`, `eth_gasPrice`,
-`eth_sendRawTransaction`, `eth_getTransactionByHash`, `eth_getTransactionReceipt`,
-`eth_getBlockByNumber`, `eth_getBlockByHash`, `eth_getLogs`, `net_version`, `web3_clientVersion`.
+### The method surface as it stands — 41 methods
 
-**v2:** filters (`eth_newFilter`, `eth_getFilterChanges`), `eth_feeHistory`, `eth_subscribe`.
+**Chain and node metadata.** `eth_chainId`, `eth_blockNumber`, `eth_gasPrice`, `eth_syncing`,
+`eth_accounts`, `eth_mining`, `eth_hashrate`, `eth_coinbase`, `net_version`, `net_listening`,
+`net_peerCount`, `web3_clientVersion`, `web3_sha3`, `txpool_status`.
 
-**Add `eth_getBlockReceipts` to v1.** `getBlockReceipts` already exists in the chain interface and
-`eth_getLogs` uses it internally, but it is not exposed as a method — so anything wanting
-per-transaction status for a block, an explorer above all, makes N round trips instead of one.
-Geth and Erigon both expose it. It is a two-line addition to the method table and the cheapest
-win available here.
+**State.** `eth_getBalance`, `eth_getTransactionCount`, `eth_getCode`, `eth_getStorageAt`.
 
-**Four things the RPC surface cannot supply, which phase 5 should decide on rather than inherit:**
+**Execution.** `eth_call`, `eth_estimateGas`, `eth_sendRawTransaction`.
+
+**Blocks, transactions, receipts.** `eth_getBlockByNumber`, `eth_getBlockByHash`,
+`eth_getBlockTransactionCountByNumber`, `eth_getBlockTransactionCountByHash`,
+`eth_getTransactionByHash`, `eth_getTransactionByBlockNumberAndIndex`,
+`eth_getTransactionByBlockHashAndIndex`, `eth_getTransactionReceipt`, `eth_getBlockReceipts`,
+`eth_getUncleCountByBlockNumber`, `eth_getUncleCountByBlockHash`,
+`eth_getUncleByBlockNumberAndIndex`, `eth_getUncleByBlockHashAndIndex`.
+
+**Logs and filters.** `eth_getLogs`, `eth_newFilter`, `eth_newBlockFilter`,
+`eth_newPendingTransactionFilter`, `eth_getFilterChanges`, `eth_getFilterLogs`,
+`eth_uninstallFilter`.
+
+**Deliberately absent, each for a reason a client can act on** — every one answers `-32601`, which
+is what lets a client fall back rather than mis-read a plausible default:
+
+| Method | Why not |
+|---|---|
+| `eth_subscribe` / `eth_unsubscribe` | needs a WebSocket transport. 8546 is reserved for it; nothing listens yet. Every filter above is the HTTP equivalent and is what ethers v6 reaches for first anyway. |
+| `eth_getProof` | needs Merkle proof extraction from `state/trie.js`, which has none. Light clients and bridges want it; nothing in this estate does yet. |
+| `debug_traceTransaction` | needs a tracer hooked into the interpreter. `tools/explorer-api` already degrades gracefully without it and says so on the internal-transactions tab. |
+| `txpool_content`, `txpool_inspect` | one request dumps the whole pool with senders — up to `MEMPOOL_MAX_TXS` (50,000) signature recoveries and a response in megabytes, unauthenticated. geth keeps the whole txpool namespace off HTTP by default for the same reason; `txpool_status` is the part that is safe. The REST `/mempool` serves the explorer. |
+| `eth_protocolVersion` | names a devp2p `eth/NN` version. Hearth's p2p is not devp2p, so any number here is a lie; geth removed the method in 1.13. |
+| `eth_getWork`, `eth_submitWork` | the mining interface is the REST `/mining/template` and `/mining/submit`, which the browser miner already speaks. |
+| `eth_sign`, `eth_sendTransaction`, `personal_*` | the node holds no keys for callers, which is why `eth_accounts` is `[]`. Wallets sign locally. |
+| `eth_feeHistory`, `eth_maxPriorityFeePerGas` | **implemented, and off by default** — see the fee-market decision below. `HEARTH_RPC_FEE_HISTORY=1` turns them on. |
+
+**Filters hold server-side state, and that state is bounded three ways.** They are the only part
+of this surface where the node remembers something between calls, on an endpoint with no auth and
+CORS `*` — so "one filter per request, kept forever" would be a memory leak with an HTTP interface
+in front of it. A filter holds a *cursor* and never accumulates results: log filters re-derive
+from the chain at poll time, pending filters index into one bounded journal the mempool keeps for
+all of them.
+
+| Bound | Default | Behaviour at the limit |
+|---|---|---|
+| lifetime after **last use** | 5 minutes (geth's `--rpc.filter-timeout`) | the id becomes `-32000 filter not found`, which is what makes a client re-subscribe |
+| filters per remote address | 32 | creation refused, naming the limit and `eth_uninstallFilter` |
+| filters on the node, total | 1,024 | creation refused — nothing is evicted, because evicting punishes the client that behaved |
+| blocks scanned per `eth_getFilterChanges` | 10,000 for logs, 1,000 hashes for blocks | the cursor advances by what it served and the caller catches up over several polls |
+
+**`eth_newFilter` is a live subscription, not a query.** `eth_getFilterChanges` returns only what
+arrived since the last poll, even when `fromBlock` names the past — history is `eth_getLogs`'s job,
+and `eth_getFilterLogs` re-runs the filter's whole declared range on demand. This is geth's
+behaviour, and it matters because every client that uses filters also queries the past separately;
+replaying it here delivers each historical log twice.
+
+**A block filter is a "the head moved" signal.** It reports canonical head hashes and re-delivers
+a height whose hash changed under it, but it holds one `(height, hash)` pair and so cannot tell
+how deep a reorg went. geth's does not either — its feed fires once for the new head. Anything
+that must not miss a reorged-out block wants receipts and `eth_getBlockByNumber`.
+
+**A log filter rewinds across a reorg, up to 12 blocks.** A cursor only walks forward, so without
+this a reorg delivers the *winning* branch's logs to nobody: the cursor is already past the
+replaced height and never goes back, and the client sees `[]`, which is indistinguishable from a
+quiet chain. So each log filter also remembers the hashes of the last `confirmations` (12) heights
+it scanned and rewinds to the deepest one that changed. Twelve is deliberately the same number as
+`confirmations` — this node already calls a block that deep `finalized`, and it is also the memory
+bound: 12 × 32 bytes per filter, so the 1,024-filter cap authorises 384 kB of it. A reorg deeper
+than that rewinds only as far as it remembers. **No `removed: true` log is emitted** for what was
+already delivered off the losing branch; geth sends those from a feed that retains every
+subscription's results, which is the grow-forever shape these bounds exist to refuse. `removed` is
+on every log this surface formats, and a client that must reconcile does it from `blockHash`, the
+same way it already must for `eth_getLogs`. Proven end to end in `test/evm-p2p-fork.js`, on two
+real nodes with a real fork: alice's nonce 2 emits one event on each branch, and the open filter
+delivers the losing one before the reorg and the winning one after it.
+
+### The EIP-1559 decision, made and written down
+
+**This chain is legacy-only in v1 and says so through the block, not through a method.** A block
+carries no `baseFeePerGas`, and that *absence* is what makes ethers, viem, Hardhat and MetaMask
+price transactions the legacy way. **`eth_feeHistory` and `eth_maxPriorityFeePerGas` are therefore
+off by default**, which is the opposite of what "a wallet that asks and gets an error looks broken"
+suggests — and the reason is that this repository measured who actually asks
+([`network-config.md`](network-config.md) §5, against `tools/rpc-probe/stub.js`):
+
+| Toolchain | Asks for `eth_feeHistory`? | With it absent | With it answering zero base fees |
+|---|---|---|---|
+| ethers 6.15 / Hardhat 2.29 | never | works, type 0 | unchanged |
+| viem, MetaMask | never | works, type 0 | unchanged |
+| Foundry 1.7.1 | **unconditionally, before pricing anything** | aborts with *"This chain might not support EIP1559, try adding `--legacy`"* | signs a **type-2 transaction this chain cannot execute**, refused at broadcast as *"transaction type 0x2 — v1 accepts legacy (type 0) only"* |
+
+The only client that asks is the one an answer makes *worse*: a message naming the remedy becomes a
+message naming only the cause, one step later. `eth_maxPriorityFeePerGas` was never called by any
+of the three, so it is paired with `eth_feeHistory` rather than served alone.
+
+**Turned on with `HEARTH_RPC_FEE_HISTORY=1`**, for a private endpoint feeding a gas dashboard, or
+on the day the fee market lands in v2 — the implementation and its tests are already here, so that
+is a flag rather than a project. When on:
+
+- `eth_feeHistory` returns `baseFeePerGas` as all zeros, which is the honest value rather than a
+  placeholder, `gasUsedRatio` from each block's own header, and — only when percentiles are asked
+  for — a `reward` distribution computed geth's way, sorted by price and weighted by gas used.
+  `blockCount` is capped at **128 blocks**, because every block in the window costs a receipt walk;
+  it accepts a JSON number, a decimal string or hex, as geth's `math.HexOrDecimal64` does, which is
+  the one deliberate relaxation of the strict hex rules below.
+- `eth_maxPriorityFeePerGas` equals `eth_gasPrice`. With no base fee the miner keeps the whole
+  price, so the priority fee *is* the gas price; returning zero would be arithmetically defensible
+  and practically a lie, since a wallet that then sends `maxPriorityFeePerGas: 0` gets a
+  transaction the mempool refuses as underpriced.
+
+**Speculative execution is sandboxed.** `eth_call` and `eth_estimateGas` are the only
+unauthenticated way to make the node run EVM code, over an endpoint that answers CORS `*` with no
+auth. The run executes against an *overlay* of the node store — reads fall through, writes land
+in a per-call map that is dropped when the call returns — so a speculative call cannot add one
+trie node to the never-pruned store §9 describes, and cannot influence consensus state at all.
+**One request cannot stop the node, and it takes four bounds to say that.** This node is
+single-threaded: an RPC execution holds the loop that also mines, gossips and answers the
+healthcheck, so the size of a request is the length of an outage. Every one of these is part of
+the surface a client sees rather than an implementation detail.
+
+| Bound | Default | Knob |
+|---|---|---|
+| `gas` clamped, both methods | 10,000,000 — a third of the block gas limit | `HEARTH_RPC_GAS_CAP` |
+| wall clock per request | 1,000 ms | `HEARTH_RPC_TIME_BUDGET_MS` |
+| batch members per POST | 1,000 (geth's own default) | `maxBatchSize` |
+| concurrent requests per address | 16 | `maxInFlightPerIp` |
+
+The `gas` field is **clamped silently**, exactly as geth's `--rpc.gascap` does: a caller asking
+for more gas than the endpoint will spend is asking about a transaction this node would not run,
+and the honest answer is what happens at the limit that applies. Omitting `gas` means the cap,
+not the block gas limit.
+
+The **wall clock is the bound that actually holds**, because gas cannot. The spread between the
+cheapest and dearest gas in this interpreter is 135× (`docs/robustness-review.md` §6): 10M gas of
+`PUSH`/`ADD` is 160 ms, the same 10M gas of `blake2f` is three and a half seconds, and a 96 kB
+`modexp` exponent is priced at 4.1M gas and runs for 3.2. A run that outlives its budget comes
+back as JSON-RPC `-32000 execution timeout` — never as a revert, which would blame the caller's
+contract, and never as a retryable error, which would invite the same request again. One budget
+covers a whole `eth_estimateGas` including its 33-probe bisection, and running out of it
+mid-bisection returns the smallest limit already proven to work rather than an error, because an
+over-estimate costs the caller nothing.
+
+**The deadline exists only here.** The same interpreter validates blocks, and a validator that
+abandoned a block because its machine was busy would fork away from one that did not, so nothing
+on a consensus path is given one — a mined transaction executes every round it paid for, however
+long that takes.
+
+**Three things the RPC surface still cannot supply, which are decisions rather than omissions:**
 
 - **No revert reason on a receipt.** It can only be recovered by replaying `eth_call` against
   *current* state, which is not the state the transaction ran in — so the answer is best-effort and
@@ -371,8 +513,13 @@ win available here.
   serve plain-decimal supply endpoints; aggregators poll exactly this.
 - **No address index, and there cannot be one cheaply.** "Transactions of an address" is a bounded
   block walk. The Etherscan-compatible `/api` shim in `docs/listing-checklist.md` is the real fix.
-- **No mempool visibility.** `eth_getBlockByNumber('pending')` returns null by design and there is no
-  `txpool_content`, so a pending transaction can only be found if you already know its hash.
+
+**Mempool visibility is now partial, deliberately.** `eth_getBlockByNumber('pending')` still returns
+null by design, and `txpool_content` is still absent for the reason in the table above — but
+`eth_newPendingTransactionFilter` announces every hash the pool admits, from `eth_sendRawTransaction`
+and from p2p gossip alike, and `txpool_status` reports the executable/stranded split. So a pending
+transaction can be *noticed* without knowing its hash first; reading it back is then
+`eth_getTransactionByHash`, which has always served pooled transactions.
 
 ### Where it mounts — settled (owner, 2026-07-28)
 
@@ -386,8 +533,21 @@ win available here.
 | miner2 | 8649 | 8549 |
 
 Every node listens on 8545 **inside its own container**; the host ports differ only so three can
-run side by side. **8546 is reserved** — it is the paired convention for the WebSocket
-(`eth_subscribe`) endpoint in v2 and taking it now would be awkward to undo.
+run side by side. **8546 is reserved and still unbuilt** — it is the paired convention for the
+WebSocket (`eth_subscribe`) endpoint and taking it for anything else would be awkward to undo.
+
+**What 8546 would cost, so it can be scheduled rather than guessed at.** It is a bigger piece than
+the whole HTTP method surface above, because it is a second *transport* and not a set of methods:
+a WebSocket framing implementation (no dependency may be added lightly — this package has zero),
+a connection registry with its own per-connection subscription cap and idle timeout, a *push* path
+where every existing method is *pull* (`newHeads`, `logs`, `newPendingTransactions` and
+`syncing` each need a hook on the chain's block event rather than a cursor a caller polls), and a
+back-pressure rule for a client that stops reading — which is the failure mode that has no
+equivalent anywhere in this file, because an HTTP response either lands or the socket dies. Call it
+two to three days including the tests, and note that ethers v6's `JsonRpcProvider` reaches for the
+filter methods above *before* it reaches for subscriptions, so nothing in this estate is blocked on
+it. What is blocked on it: a client that only speaks `WebSocketProvider`, and sub-second event
+latency for anything that cannot poll.
 
 8545 is the port the ecosystem already defaults to: MetaMask's localhost default, and what every
 Hardhat and Foundry tutorial assumes, so a developer's first guess is correct.

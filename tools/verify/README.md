@@ -279,11 +279,13 @@ checksum, the pre-0.6.0 refusal, the nightly refusal, and that a corrupted
 cached compiler is deleted rather than loaded; and the full asynchronous
 Etherscan flow including a **failed** verification travelling through it.
 
-**Not proven, because there is no chain:**
+**Not proven, because nothing has pointed this at a node:**
 
 - that a real deployment of these contracts produces the bytecode the stub is
   handed. `eth_getCode` is a stub, so the comparison is between two things this
-  process computed. Only a node closes that loop.
+  process computed. A node closes that loop and one is now a single command
+  away (`hearthd --evm --mine`) — this suite simply does not use it yet, the way
+  `tools/explorer-api/test/live-chain.test.js` does.
 - that `forge verify-contract` actually drives it. The wire format is
   reproduced from Etherscan's documented contract and exercised by tests that
   post the same form fields (misspelled `constructorArguements` included), but

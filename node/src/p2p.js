@@ -12,6 +12,9 @@ const P = require('./params');
 
 const isHash = s => typeof s === 'string' && /^[0-9a-f]{64}$/.test(s);
 
+/** How `_binding`'s fields are named in a log line an operator has to act on. */
+const BINDING = { chainId: 'chain id', commonsAddress: 'commons address' };
+
 // remoteAddress is gone once the socket is destroyed, so a close/error log
 // would otherwise name no peer at all
 const peerName = sock => (sock.remoteAddress ? `${sock.remoteAddress}:${sock.remotePort}` : 'closed');
@@ -135,6 +138,10 @@ class P2P {
             peer: peerName(sock), dir, err: String(e && e.message || e), bytes: line.length,
           });
         }
+        /* Stop draining the frame the moment we hang up on this peer. One TCP write
+         * can carry a `hello` and a block behind it, and a handshake check that
+         * refuses the peer while its blocks are still applied refuses nothing. */
+        if (sock.destroyed) { buf = ''; return; }
       }
     });
     sock.on('error', e => {
@@ -144,7 +151,8 @@ class P2P {
     sock.on('close', () => {
       if (this.peers.delete(sock)) this.node.warn('p2p peer disconnected', { peer: peerName(sock), dir, peers: this.peers.size });
     });
-    // handshake carries the network id so a testnet node can't corrupt mainnet
+    // handshake carries the network id, the genesis hash and the chain id, so a
+    // testnet node can't corrupt mainnet and two forks of one network can't pair
     this._send(sock, this._hello());
     this._startResync();
   }
@@ -177,9 +185,69 @@ class P2P {
     for (const p of this.peers) if (p !== except) this._send(p, msg);
   }
 
+  /** The hash of block 0 — the chain's identity, on either model. */
+  _genesisId() {
+    const chain = this.node.chain;
+    return chain.genesisId || chain.chainIndex[0];
+  }
+
+  /**
+   * The consensus values a shared GENESIS HASH does not prove agreement on.
+   *
+   * The account-model genesis header commits to the alloc (through the state root),
+   * the gas limit, the target, the timestamp and `extraData` — and to nothing else.
+   * `chainId` and `commonsAddress` live in `genesis.json` beside them and are just as
+   * much consensus, but block 0 does not hash them (verified: changing either leaves
+   * the genesis hash byte-identical), so they have to be compared by name:
+   *
+   *   chainId          the EIP-155 replay domain. Two nodes with one genesis and two
+   *                    chain ids will relay each other's transactions happily, and
+   *                    every one of them is valid on both — precisely what the chain
+   *                    id exists to prevent.
+   *   commonsAddress   where the 10% Commons share of every subsidy is paid, so it
+   *                    lands in the state root of block 1. `HEARTH_COMMONS_ADDRESS`
+   *                    is env-settable and params.js says "changing it afterwards
+   *                    forks"; this is that fork, named at the handshake instead of
+   *                    discovered N rejected blocks later.
+   *
+   * Undefined on the UTXO chain, which has no chain id and hashes its Commons address
+   * into the genesis coinbase, and is therefore already covered by the genesis hash.
+   */
+  _binding() {
+    const chain = this.node.chain;
+    return {
+      chainId: chain.chainId,
+      commonsAddress: chain.config ? chain.config.commonsAddress : undefined,
+    };
+  }
+
+  /**
+   * `net` is a LABEL; the genesis hash is the IDENTITY, and the handshake needs both.
+   *
+   * `genesis.loadOrCreate` pins a genesis to a data directory the first time a node
+   * starts, so a node with an old volume keeps its old genesis while a peer created
+   * after somebody changed the alloc, the gas limit or the genesis target computes a
+   * different one. Both still say `net: 'hearth-testnet'`, so they connect, and then
+   * every block one mines is `unknown parent` to the other — which the receive path
+   * treats as ordinary out-of-order sync traffic and does not even count against the
+   * peer (see `_acceptFrom`). Both halves keep mining, both heights keep climbing, and
+   * the tips never converge. The beacon's `hearth.consensus` target does go down on
+   * same-height-different-tip, so the estate is not blind; what nothing anywhere says
+   * is the word GENESIS, and that is the whole cost of this defect.
+   */
   _hello() {
     const chain = this.node.chain;
-    return { t: 'hello', net: P.NETWORK, height: chain.height, tip: chain.tipId };
+    const hello = { t: 'hello', net: P.NETWORK, genesis: this._genesisId(), height: chain.height, tip: chain.tipId };
+    for (const [k, v] of Object.entries(this._binding())) if (v !== undefined && v !== null) hello[k] = v;
+    return hello;
+  }
+
+  /** Report a peer as unwelcome and hang up. Named fields, because the operator
+   *  reading this log is trying to find out which of the two nodes is wrong. */
+  _drop(sock, why, fields) {
+    this.node.warn(why, { peer: peerName(sock), ...fields });
+    this.peers.delete(sock);
+    sock.destroy();
   }
 
   // ---- sync ---------------------------------------------------------------
@@ -353,8 +421,38 @@ class P2P {
       case 'hello': {
         // refuse peers on a different network (prevents cross-chain contamination)
         if (msg.net && msg.net !== P.NETWORK) {
-          this.node.warn('p2p peer dropped: wrong network', { peer: peerName(sock), theirs: String(msg.net).slice(0, 32), ours: P.NETWORK });
-          this.peers.delete(sock); sock.destroy(); return;
+          this._drop(sock, 'p2p peer dropped: wrong network',
+            { theirs: String(msg.net).slice(0, 32), ours: P.NETWORK });
+          return;
+        }
+        /* …and on a different CHAIN. See `_hello`: two nodes can agree on the network
+         * name and still hold genesis blocks that can never share an ancestor.
+         *
+         * FAIL CLOSED on a missing hash. Every node that speaks this protocol sends
+         * one, so a hello without it is either not this software or a peer declining
+         * to identify its chain, and both are the case this check exists for. The
+         * `net` test above is deliberately left permissive-if-absent so that its
+         * behaviour does not change here; the genesis hash makes it moot anyway. */
+        const ours = this._genesisId();
+        if (!isHash(msg.genesis)) {
+          this._drop(sock, 'p2p peer dropped: hello carries no genesis hash',
+            { ours, net: P.NETWORK });
+          return;
+        }
+        if (msg.genesis !== ours) {
+          this._drop(sock, 'p2p peer dropped: different genesis',
+            { theirs: msg.genesis, ours, net: P.NETWORK });
+          return;
+        }
+        /* Same genesis is not the same chain — see `_binding` for the two consensus
+         * values block 0 does not hash. Absent is not a mismatch: the genesis hash has
+         * already established that the peer runs this chain's software, and this
+         * software sends both whenever it has them. */
+        for (const [k, mine] of Object.entries(this._binding())) {
+          if (mine === undefined || mine === null || msg[k] === undefined || msg[k] === mine) continue;
+          this._drop(sock, `p2p peer dropped: different ${BINDING[k]}`,
+            { theirs: String(msg[k]).slice(0, 64), ours: mine, genesis: ours });
+          return;
         }
         // negotiate on ANY tip we don't hold, not just a taller one — an
         // equal-height peer on a different branch is the case that split forever

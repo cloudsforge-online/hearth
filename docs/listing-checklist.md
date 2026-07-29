@@ -4,11 +4,15 @@ This is the gap list, not a marketing document. It exists so that nobody —
 including us — mistakes intent for readiness.
 
 **Summary: EMBER is not ready to apply for a listing, and will not be until the
-chain runs.** The blocking item is not paperwork, and it is no longer the EVM
-either — the interpreter, the state transition, the receipts, the bloom and the
-`eth_*` surface are all built and gated on published vectors. **It is that
-consensus on the account model has not landed, so no block has ever been
-produced.** Everything below is downstream of that one gap.
+chain is public.** The blocking item is not paperwork, and it is no longer the
+EVM — the interpreter, the state transition, the receipts, the bloom and the
+`eth_*` surface are all built and gated on published vectors. Nor is it
+consensus any more: **blocks are produced, validated and reorged, and the RPC
+is mounted on 8545**. What blocks a listing now is that **none of it is
+published** — no endpoint anyone else can reach, no genesis that outlives a
+`docker compose down`, and no mainnet parameters that have ever been run (§7,
+and [`pow-parameters.md`](pow-parameters.md)). Everything below is downstream of
+those.
 
 **Legend:** ✅ done · 🟡 partial · ⬜ not started · 🚫 blocked on something else
 
@@ -19,14 +23,15 @@ produced.** Everything below is downstream of that one gap.
 | # | Blocker | Status |
 | --- | --- | --- |
 | B1 | EVM interpreter, state transition, receipts, logs bloom | ✅ **built and vector-gated** — 609/609 VMTests, 20,077/20,077 GeneralStateTests, 188/188 TransactionTests |
-| B2 | `eth_*` JSON-RPC surface | ✅ **built**, 301 checks — but against a chain *interface* and an in-memory fake, and **nothing mounts it** |
-| B2a | **Header v2, and consensus on the account state model** | ⬜ **the blocker.** Being built; no block has ever been produced |
-| B3 | Public account-model testnet with a stable endpoint | ⬜ blocked on B2a |
+| B2 | `eth_*` JSON-RPC surface | ✅ **built and mounted** — `node/src/evmnode.js:186` serves it on 8545. 41 methods, 422 checks against a fake chain and 170 against a real one over HTTP |
+| B2a | **Header v2, and consensus on the account state model** | ✅ **landed.** Two real nodes partition, reorg and agree state roots byte for byte (`node/test/evm-p2p-fork.js`, 51 checks); three run under `docker-compose.testnet.yml` |
+| B3 | Public account-model testnet with a stable endpoint | ⬜ **the blocker now.** The testnet exists and binds `127.0.0.1`; nothing routes it and no genesis is published |
 | B4 | Mainnet genesis, launch, and demonstrated hashrate | ⬜ |
 | B5 | Independent audit of consensus and the EVM | ⬜ |
 
-Nothing in §1–§8 should be filed before B2a–B4. An application submitted against
-a chain that does not run is a permanent mark against the project.
+Nothing in §1–§8 should be filed before B3–B4. An application submitted against
+a chain nobody outside this repository can reach is a permanent mark against the
+project — and "it runs on my machine" is not an endpoint.
 
 ---
 
@@ -119,7 +124,7 @@ minimum set:
 
 | Endpoint | Returns | Status |
 | --- | --- | --- |
-| Total supply | a plain decimal number, no JSON wrapper, no units | 🟡 — `GET /supply/total` in [`../tools/explorer-api`](../tools/explorer-api). Written; **its suite currently fails** (see below); no chain to serve |
+| Total supply | a plain decimal number, no JSON wrapper, no units | 🟡 — `GET /supply/total` in [`../tools/explorer-api`](../tools/explorer-api). Written; suite green; no *public* chain to serve |
 | Circulating supply | total minus the Commons balance, per [`tokenomics.md`](tokenomics.md) §7 | 🟡 — `GET /supply/circulating`, same service. **Refuses rather than serving total** when the Commons address is unset |
 | Rich list / holder count | | ⬜ |
 | Block explorer, `0x`-native | address, tx, block, contract pages with search | 🟡 — **built** (`web/index.html` + `web/assets/explorer/`: decoded logs, revert reasons, contract disassembly, ERC-20s, `eth_getLogs` search, 147 self-test checks). **Not deployed against a chain, because there is none** |
@@ -140,18 +145,32 @@ job that removes a large amount of downstream integration friction.
 
 **Both are now written** — [`../tools/explorer-api`](../tools/explorer-api) and
 [`../tools/verify`](../tools/verify), zero-dependency services in the shape of
-`tools/faucet`, exercised over real HTTP. Neither has ever run against a node,
-because there is not one: they are 🚫 on B2 and B3, not ⬜. Read each README's
+`tools/faucet`, exercised over real HTTP. Neither has run against a *public*
+node, because there is not one: they are 🚫 on B3, not ⬜. Read each README's
 "What is proven, and what is not" before treating any of it as operational.
 
-**They are not in the same state as each other, and this matters.**
-`tools/verify` passes **116/116**. `tools/explorer-api` **does not pass** — its
-suite throws
+`tools/verify` passes **116/116**. `tools/explorer-api` passes **177/177**
+fixture checks plus **27/27** against a chain that mined and executed the blocks
+it indexes (`test/live-chain.test.js`). It did not always: the suite threw
 `receipt.logs[0].logIndex is missing — the chain must number logs across the
-block, and this layer cannot derive it from one receipt`, both locally and in
-CI's *Developer kit* job. The shim requires `logIndex` numbered across the whole
-block and the test's fake chain does not supply it; which side is wrong has not
-been established. Do not count the `/api` row as done.
+block, and this layer cannot derive it from one receipt` on every run, locally
+and in CI's *Developer kit* job. **The question of which side owned that bug is
+settled: the test's fake chain did.** `logIndex` is per block
+([`evm-spec.md`](evm-spec.md) §6), `node/src/chain/rpcadapter.js` numbers it that
+way, and `node/src/jsonrpc/methods.js` is right to refuse a receipt that omits
+it rather than restart the count at zero — a single receipt cannot know how many
+logs preceded it in its block. The fixture omitted the field; it no longer does,
+and the ordinals are now asserted against a real node on both paths that serve
+them.
+
+**The gate for this row is `test/live-chain.test.js`, not the fixture suite.**
+A fake chain agrees with whatever its author believed, which is exactly how this
+went wrong. That suite boots a real node, mines a block with two log-emitting
+transactions, and requires `module=account&action=balance` and
+`module=logs&action=getLogs` to agree field for field with `eth_getBalance` and
+`eth_getLogs`; `HEARTH_LIVE_RPC_URL=http://127.0.0.1:8545` runs the same
+comparison against the compose testnet. Count the `/api` row as done when that
+has been run against the endpoint being listed.
 The new supply endpoints serve total and circulating as separate figures and
 **refuse to publish a circulating number they cannot compute**, which is the
 specific defect described above.
@@ -250,10 +269,10 @@ launch and free before it.
 
 | # | Item | Status |
 | --- | --- | --- |
-| M1 | **Raise `POW_SCRATCH_KIB` from 64 to the production ~2 GiB** and `POW_WALK_STEPS` from 256 to 2,048+ (`node/src/params.js:51-52`). A 64 KiB pad fits in L2 cache and is not meaningfully memory-hard | ⬜ |
-| M2 | **Raise `COINBASE_MATURITY` from 10 to ~100** (`node/src/params.js:95`) | ⬜ |
+| M1 | ~~Raise `POW_SCRATCH_KIB` from 64 to ~2 GiB~~ — **retired, measured.** One evaluation at 2 GiB is **185.7 s**; a validator pays one per block received against a 15 s interval, and a 200-block `getblocks` page is ~10 hours of one core. `params.js` now refuses to start above `POW_MAX_SCRATCH_KIB` 4096. A 64 KiB pad is still not meaningfully memory-hard, and closing that needs an amortised dataset across `pow.js`, the browser miner and the Rust core — a redesign, not a constant. [`pow-parameters.md`](pow-parameters.md) | ✅ **decided** |
+| M2 | ~~Raise `COINBASE_MATURITY` from 10 to ~100~~ — **a no-op on the launch chain.** `_creditReward` adds the subsidy straight to the balance; the constant is read only by the retired UTXO path (`tx.js`, `wallet.js`, `rpc.js`, `chain.js`). Whether the account model should have a maturity rule at all is a separate, open question | ✅ **decided** |
 | M3 | **Implement `SPARKS_PER_EMBER` → 18 decimals.** `params.js:6` still defines 1e8 | ⬜ |
-| M4 | ~~Put chain id 7411 in the code~~ | ✅ **done** — `node/src/chain/transaction.js:57`. What remains is that it is a **hardcoded constant** and must become per-network configuration, because testnet is 7412 (`evm-spec.md` §1) |
+| M4 | ~~Put chain id 7411 in the code~~ · ~~make it per-network~~ | ✅ **done** — `node/src/params.js` `CHAIN_IDS` resolves it per network (7411 mainnet, 7412 testnet, 7413 the in-process test chain) and `node/src/chain/transaction.js` reads it. An unregistered network is a hard error, not a default |
 | M5 | **Choose and fix the mainnet `NETWORK` id.** It defaults to `hearth` (`params.js:9`). Note this is the UTXO-era P2P/tx-binding id; under the account model EIP-155's chain id does that job | ⬜ |
 | M6 | **Write the account-model genesis** and publish its state root as the verifiable no-premine artifact | ⬜ |
 | M7 | **A new Commons address in `0x` form.** The current one is a non-checksummed UTXO sink (`params.js:127`) | ⬜ |

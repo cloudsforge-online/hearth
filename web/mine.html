@@ -17,6 +17,11 @@
 <meta name="twitter:image" content="https://hearth.cloudsforge.online/og-hearth.png">
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
 <link rel="manifest" href="site.webmanifest">
+<!-- WHICH CHAIN. Empty on purpose — nginx's sub_filter fills it from
+     HEARTH_CHAIN_ID; assets/chain.js falls back to its own default when it is
+     empty. This page shares keystore.js with the wallet, and a keystore file
+     records the chain it was made for. -->
+<meta name="hearth-chain-id" content="">
 <link rel="stylesheet" href="assets/vendor/cf-tokens.css">
 <link rel="stylesheet" href="assets/vendor/cf-ui.css">
 <link rel="stylesheet" href="assets/styles.css">

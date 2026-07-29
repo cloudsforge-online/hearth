@@ -67,6 +67,20 @@ class FakeChain {
     const txs = [];
     const receipts = [];
     let cumulative = 0n;
+    /* Log ordinals are numbered across the WHOLE BLOCK, continuing from one
+     * receipt into the next, because that is what the real chain does
+     * (node/src/chain/rpcadapter.js `_receiptsFor`, `logIndex: logIndex++`) and
+     * what docs/evm-spec.md §6 requires. It is declared out here, not inside
+     * the per-transaction closure, for exactly that reason.
+     *
+     * This fixture used to omit `logIndex` altogether on the belief that the
+     * node numbers logs per receipt. It does not, and it never did: a receipt
+     * cannot know how many logs preceded it in its block, so
+     * node/src/jsonrpc/methods.js `formatReceipt` refuses to invent the value
+     * and throws when the chain does not supply it. A fake chain that omits it
+     * is not a lenient fake, it is a chain the node's own RPC layer would
+     * reject — which is why this suite failed on every run. */
+    let logIndex = 0n;
 
     (spec.txs || []).forEach((t, i) => {
       const txHash = h32(`${this.branch}:tx:${number}:${i}`);
@@ -101,8 +115,18 @@ class FakeChain {
         gasUsed,
         effectiveGasPrice: tx.gasPrice,
         contractAddress: t.creates || null,
+        /* The full Log shape methods.js documents, filled in the same places
+         * the real adapter fills it: the position fields come from the
+         * containing receipt and `logIndex` from the block-wide counter above.
+         * The RPC layer would fill the first four from the receipt if they were
+         * absent; it cannot fill the fifth. */
         logs: (t.logs || []).map(l => ({
           address: l.address, topics: l.topics || [], data: l.data || Buffer.alloc(0),
+          blockNumber: number,
+          blockHash: hash,
+          transactionHash: txHash,
+          transactionIndex: BigInt(i),
+          logIndex: logIndex++,
         })),
         logsBloom: Buffer.alloc(256),
         status: t.status === undefined ? 1 : t.status,

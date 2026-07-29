@@ -16,6 +16,7 @@
 import * as rpc from './rpc.js';
 import * as C from './chaindata.js';
 import * as E from './emission.js';
+import { chainId as configuredChainId, chainName } from '../chain.js';
 import {
   el, link, blockLink, txLink, addrLink, kv, copyable, card, badge,
   table, finishTable, row, note, meter, hexBlock, tabs,
@@ -193,7 +194,9 @@ export async function home(root) {
   stats.appendChild(statTile('block height', '#' + formatInt(height),
     tipBlock ? timeAgo(toNum(tipBlock.timestamp)) : ''));
   stats.appendChild(statTile('chain id', toNum(chainId),
-    toNum(chainId) === 7411 ? 'hearth mainnet' : 'not 7411 — check which chain this is'));
+    toNum(chainId) === configuredChainId()
+      ? chainName(toNum(chainId))
+      : `not ${configuredChainId()} — check which chain this is`));
   stats.appendChild(statTile('gas price', formatGwei(toBig(gasPrice)) + ' gwei', 'suggested by the node'));
   const gasPct = tipBlock ? percent(toBig(tipBlock.gasUsed), toBig(tipBlock.gasLimit)) : 0;
   stats.appendChild(statTile('tip block fullness', gasPct.toFixed(1) + '%',

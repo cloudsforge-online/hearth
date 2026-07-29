@@ -23,15 +23,26 @@ function h(...parts) {
   return s.digest();
 }
 
-const WORDS = (P.POW_SCRATCH_KIB * 1024) / 8;
-
-/** Memory-hard hash: derive digest from the whole scratchpad. */
-function homefireHash(seedBuf) {
+/**
+ * Memory-hard hash: derive digest from the whole scratchpad.
+ *
+ * The pad size and walk length are CONSENSUS. They are read from params by
+ * default and the two extra arguments exist for exactly one caller —
+ * `test/pow-params.js`, which has to evaluate the function at sizes no network
+ * is configured for in order to measure what the intended mainnet values would
+ * actually cost (docs/pow-parameters.md). Nothing on a mining or validating
+ * path may pass them: a node that hashed at a size its peers did not would
+ * produce digests nobody else can reproduce, which is a fork with extra steps.
+ * They are positional rather than an options object so the hot loop allocates
+ * nothing per attempt.
+ */
+function homefireHash(seedBuf, scratchKiB = P.POW_SCRATCH_KIB, walkSteps = P.POW_WALK_STEPS) {
+  const WORDS = (scratchKiB * 1024) / 8;
   const pad = Buffer.allocUnsafe(WORDS * 8);
   let cur = h(seedBuf);
   for (let i = 0; i < WORDS; i++) { cur = h(cur); cur.copy(pad, i * 8, 0, 8); }
   let acc = h(seedBuf, pad.subarray(0, 64));
-  for (let s = 0; s < P.POW_WALK_STEPS; s++) {
+  for (let s = 0; s < walkSteps; s++) {
     const idx = acc.readUInt32LE(0) % WORDS;
     const off = idx * 8;
     const word = pad.readBigUInt64LE(off);

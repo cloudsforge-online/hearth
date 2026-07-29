@@ -208,6 +208,50 @@ group('0x05 modexp — EIP-198 semantics, EIP-2565 pricing (go-ethereum vectors)
   ok(p.gas(bigLen) > (1n << 100n), 'a 2^64-byte operand prices out');
 }
 
+// ---- the RPC deadline ------------------------------------------------------
+group('0x05 modexp — the optional RPC deadline (never on a consensus path)');
+{
+  const p = P.precompileAt(addr(5));
+
+  /* modexp is among the slowest gas in the machine — docs/robustness-review.md §6
+   * measures 2.6 Mgas/s at 32/32/32, and the input below is worse still — and like
+   * blake2f its cost is one loop with no instruction boundary in it: a 96 kB
+   * exponent is three quarters of a million squarings inside a single CALL. An
+   * `eth_call` can buy that, so the loop takes a deadline. Nothing on a consensus
+   * path passes one — see the note at the top of src/evm/precompiles.js — and the
+   * first two checks are what proves that costs nothing. */
+  const len = (n) => n.toString(16).padStart(64, '0');
+  const wide = buf(len(32) + len(3000 * 32) + len(32)
+    + 'ff'.repeat(32) + 'ff'.repeat(3000 * 32) + 'ff'.repeat(31) + 'fd');
+
+  eq(hex(p.run(buf(len(1) + len(1) + len(1) + '03' + '02' + '05'), null)), '04',
+    'an absent deadline is exactly the behaviour the vectors above assert');
+  eq(hex(p.run(buf(len(1) + len(1) + len(1) + '03' + '02' + '05'), { expired: () => false })), '04',
+    'and so is one that never expires');
+
+  {
+    const deadline = { at: Date.now() + 25, tripped: false, expired() { return this.tripped || (Date.now() > this.at && (this.tripped = true)); } };
+    const t0 = Date.now();
+    const out = p.run(wide, deadline);
+    const ms = Date.now() - t0;
+    /* THIS IS WHY A GAS CAP ALONE IS NOT THE FIX. EIP-2565 prices this input at
+     * 4,095,994 gas — comfortably inside the 10M RPC cap, and a seventh of a
+     * block — while it takes 3.2 s to run, three times the whole RPC budget. Gas
+     * bounds the work; only the clock bounds the time. */
+    ok(p.gas(wide) < 10_000_000n, 'this input is priced UNDER the RPC gas cap');
+    eq(out, null, '…and still abandons its square-and-multiply when the deadline expires');
+    ok(deadline.tripped, '…having tripped the deadline, which is what tells this from a bad input');
+    ok(ms < 1000, `…returning in ${ms} ms rather than the seconds it was asked for`);
+  }
+
+  {
+    const t0 = Date.now();
+    const out = p.run(wide);
+    ok(out !== null && Date.now() - t0 > 100,
+      'with no deadline the same input still computes every squaring — consensus is untouched');
+  }
+}
+
 // ---- 0x01 ecrecover --------------------------------------------------------
 group('0x01 ecrecover — gas 3000, empty output on failure');
 {

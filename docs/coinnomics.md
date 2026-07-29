@@ -174,11 +174,22 @@ address, and one has not been chosen ([`decisions.md`](decisions.md) §2.4).
 Consensus constants — block time, `R0`, half-life, tail, commons share — are
 intended to be frozen at mainnet. Stability *is* a monetary feature.
 
-Note that several constants in this tree are **dev-tuned and must change before
-mainnet**: `POW_SCRATCH_KIB` 64 against a production ~2 GiB, `POW_WALK_STEPS` 256
-against 2,048+, and `COINBASE_MATURITY` 10 against ~100
-(`node/src/params.js:50-52`, `:95`). Each is a hard fork after launch and free
-before it ([`listing-checklist.md`](listing-checklist.md) §7).
+This section used to say that `POW_SCRATCH_KIB` 64, `POW_WALK_STEPS` 256 and
+`COINBASE_MATURITY` 10 were dev-tuned values that had to be raised to ~2 GiB,
+2,048+ and ~100 before mainnet — a hard fork after launch and free before it.
+**Two of those three are wrong**, and the correction is measured rather than
+argued ([`pow-parameters.md`](pow-parameters.md)):
+
+- **2 GiB is not reachable.** One evaluation at that pad size takes 185.7 s, and
+  every node pays a full evaluation to verify every block it receives, against a
+  15 s interval. `params.js` now refuses to start above 4 MiB. Making the PoW
+  genuinely memory-hard needs an amortised dataset, which is a redesign of the
+  PoW across three implementations, not a constant.
+- **`COINBASE_MATURITY` is a no-op** on the account model — the subsidy is
+  credited straight to the balance and the constant is read only by the retired
+  UTXO path.
+- **`POW_WALK_STEPS` is genuinely raisable**: 2,048 steps costs 1.31x a 256-step
+  evaluation. It is also the parameter that buys the least.
 
 ## 9. Stress-test the model
 

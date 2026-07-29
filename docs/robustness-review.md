@@ -4,7 +4,11 @@ A read-only review of the EVM, state and chain layers, looking for places where 
 work a node performs is not proportional to the gas (or the bytes) it charges for,
 and for malformed input that escapes as a throw rather than a returned failure.
 
-Nothing in this repository was modified.
+**Nothing in this repository was modified when this review was written.** Where a
+finding has since been fixed, the fix is recorded in a subsection under it, with
+before-and-after numbers from the same machine — the original text is left
+standing because a review that quietly edits itself into agreement with the code
+cannot be audited.
 
 **Method.** Every file under `node/src/evm`, `node/src/state`, `node/src/chain`, plus
 `chain.js`, `tx.js`, `block.js`, `pow.js`, `p2p.js`, `mempool.js`, `params.js` and the
@@ -32,8 +36,10 @@ Two chains live in this tree and they are not connected to each other:
   `applyBlock` on any network path yet.
 
 So findings **2**, **3** and **5** are exploitable against a running `hearthd` now.
-Finding **1** is the most serious defect in the codebase and is not yet reachable
-from the network — it becomes reachable the day the EVM is wired to a block.
+Finding **1** was the most serious defect in the codebase and was latent only
+because nothing called `applyBlock` on a network path. That is no longer true —
+`evmnode.js` mounts the chain — and finding 1 is fixed and gated; see the
+subsection under it.
 
 ---
 
@@ -123,6 +129,51 @@ per-write keccak path and the per-write node insertion. If the write-through mod
 kept for revert simplicity, then `db.put` must at minimum be reference-counted against
 live roots, and the per-write cost has to be reflected in the SSTORE price — but
 deferring is what every other client does and is much the smaller change.
+
+### What was changed, and what it measures now
+
+**Done, and gated.** Two edits, both deferrals:
+
+- `trie.js` no longer hashes as it writes. `_put`/`_del` leave rebuilt nodes as
+  objects and `_commit` applies the hashing rules — including rule 2 — bottom-up
+  at `root()`. `_deref` already resolved an object to itself, so every read path
+  was unchanged.
+- `statedb.js` `_write` records the account in the cache and marks it dirty;
+  `_flush` puts the dirty records into the state trie, and `root()` is what calls
+  it. The cache was already the source of truth for reads and for undo, so the
+  trie only has to be correct when somebody asks for the root — which is once per
+  transaction, at `beginTransaction` and `finalize`.
+
+The same 30M-gas SSTORE transaction, same machine, before and after:
+
+| | before | after |
+| --- | --- | --- |
+| wall clock | 35.3 s | **5.2 s** |
+| retained | 212.1 MiB | **9.2 MiB** |
+| vs. an ordinary block of the same gas | 64.3x | **13.5x** |
+| 5x the state trie width | 1.31x the time | **1.00x** |
+
+`node/test/bench/block-execution.js` is that measurement as a gate: it fails
+above 25x an ordinary block or 64 MiB retained, and both bounds are crossed by
+the code as it was.
+
+**The correctness argument is the corpus.** Deferred hashing is only safe if it
+produces byte-identical roots, and nothing short of the published vectors
+establishes that: the full **GeneralStateTests corpus was re-run against the
+change — 20,077/20,077 vectors, 60,231/60,231 checks, 0 failed**, alongside all
+25 TrieTests at every insertion permutation (`test/trie.js`, 315) and the eight
+published state roots in `test/statedb.js`.
+
+**What is NOT deferred: the storage root.** `setStorage` still does
+`a.storageRoot = st.root()` on every write, which commits one storage-trie node
+per mutation — about a third of the 5.2 s above, and all 9.2 MiB of the
+retention. Deferring it too means journalling storage at the SLOT level (the
+account record's `storageRoot` can no longer stand in for the trie's contents at
+a snapshot) and reworking the reconciliation in `_storageTrie`, which is a
+change to how revert works rather than to when hashing happens. It is worth
+doing and it is not done; the dominant term — the state-trie re-root per
+mutation, which is what made the cost scale with everyone else's account count —
+is.
 
 ---
 

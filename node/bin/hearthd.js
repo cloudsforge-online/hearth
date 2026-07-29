@@ -69,9 +69,26 @@ if (opts.evm && opts.minerAddress) {
     + '  To mine to a specific account, put its key there before starting.');
   process.exit(2);
 }
-const node = opts.evm
-  ? new (require('../src/evmnode').EvmNode)(opts)
-  : new (require('../src/node').Node)(opts);
+/* A data directory whose genesis.json belongs to another network is refused by
+ * src/chain/blockchain.js. Present it as an operator error rather than a crash:
+ * under compose this is a restart loop, and a stack trace buries the one line
+ * that says which two networks disagree. Only the tagged refusal is caught —
+ * anything else is a bug and keeps its stack. */
+let node;
+try {
+  node = opts.evm
+    ? new (require('../src/evmnode').EvmNode)(opts)
+    : new (require('../src/node').Node)(opts);
+} catch (e) {
+  // Only the account-model chain has a genesis.json, and by here its module is
+  // already loaded — so this require is a cache hit, not a second chance to fail.
+  const { GENESIS_NETWORK_MISMATCH } = opts.evm ? require('../src/chain/blockchain') : {};
+  if (e && e.code && e.code === GENESIS_NETWORK_MISMATCH) {
+    console.error('hearthd: ' + e.message);
+    process.exit(2);
+  }
+  throw e;
+}
 node.start();
 
 process.on('SIGINT', () => { node.log('shutting down'); process.exit(0); });

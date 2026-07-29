@@ -53,17 +53,17 @@ here first.
 | Precompiles `0x01`–`0x09` — incl. bn128, blake2f | `node/src/evm/precompiles.js`, `bn128.js`, `blake2f.js` | ✅ **merged**, all nine implemented |
 | Transactions, receipts, logs bloom | `node/src/chain/` | ✅ **merged**, **188/188 TransactionTests** *(unverified here — see §4.3)* |
 | State transition | `node/src/chain/statetransition.js` | ✅ **merged**, **20,077/20,077 GeneralStateTests** — the last ten fixed by EIP-7610 (`c93a524`) |
-| `eth_*` JSON-RPC surface | `node/src/jsonrpc/` | ✅ **merged**, 301 checks — but written against a **fake chain**; nothing mounts it |
+| `eth_*` JSON-RPC surface | `node/src/jsonrpc/` | ✅ **merged**, 41 methods, 422 checks against a fake chain plus 170 against the real one over HTTP; mounted by `src/evmnode.js` on :8545 |
 | EVM-aware explorer | `web/index.html`, `web/assets/explorer/` | ✅ **merged**, 147 self-test checks |
 | Browser wallet on secp256k1 | `web/wallet.html`, `web/assets/wallet/` | ✅ **merged**, 141 cross-check assertions |
 | `hearth` CLI + opcode tracer | `node/bin/hearth.js`, `node/src/cli/` | ✅ **merged**, 310 checks |
 | AMM contracts (WEMBER, V2 Factory/Pair/Router, Multicall3) | `contracts/` | ✅ **compile**, and **Uniswap V2 runs on our own EVM** — see §4.4 |
 | Developer kit (faucet, Hardhat/Foundry templates, RPC probe) | `tools/` | ✅ **merged**, faucet 66 checks |
-| Etherscan-compatible `/api` + address index | `tools/explorer-api/` | 🟡 **written, tests failing** — §3.5 |
+| Etherscan-compatible `/api` + address index | `tools/explorer-api/` | ✅ **merged**, 177 fixture checks + 27 against a real chain — §3.5 |
 | Contract verification (`forge verify-contract`-compatible) | `tools/verify/` | ✅ **merged**, 116 checks |
 | Property fuzzing | `node/test/fuzz/` | ✅ **merged**, 82,481 checks; two open findings — §4.7, §11 |
-| **Consensus on the account model** | — | ⬜ **being built now. No block has ever been produced.** |
-| Public testnet, mainnet, any deployed contract | — | ⬜ does not exist |
+| **Consensus on the account model** | `node/src/chain/`, `node/src/evmnode.js` | ✅ **merged.** Blocks are produced, validated and reorged — `evmchain` 191 checks, `evm-p2p-fork` 51 across two real nodes; three run under `docker-compose.testnet.yml` |
+| Public testnet, mainnet, any deployed contract | — | ⬜ **unpublished.** The testnet runs on `127.0.0.1` and nothing routes it; no genesis outlives a `docker compose down -v` |
 | The UTXO chain (ledger, P2P, REST, reorg) | `node/src/chain.js`, `tx.js`, `p2p.js`, `rpc.js` | ✅ runs, and **is being retired** |
 | `rust/hearthd` | `rust/` | 🟡 a self-check and a benchmark. **Not a node, not consensus** — §3.3 |
 
@@ -71,14 +71,19 @@ here first.
 whole Uniswap V2 stack onto our own EVM and executes a real swap — 167/167
 checks, a swap at **112,456 gas**. §4.4.
 
-**The most important gap:** phase 5. Every "merged" row above is a component
-proved offline against vectors. None of them has ever been driven by a block.
+**The most important gap is no longer phase 5.** Blocks are produced, validated
+and reorged, and the components above have been driven by one. What remains is
+that **nothing is published** — every port binds `127.0.0.1` — and that no block
+has ever been produced at production PoW parameters, which have now been
+measured and found unreachable
+([`docs/pow-parameters.md`](docs/pow-parameters.md)).
 
-**And a "merged" row is not a "ready" row.** `StateDB` re-roots both tries on
-every mutation, which costs **443 MB and 65 seconds for a single 30M-gas
-transaction against a 15-second block time**
-([`docs/robustness-review.md`](docs/robustness-review.md) §1, measured). Phase 5
-is blocked on that, not merely unstarted. §11.
+**A "merged" row is still not a "ready" row**, but the thing that made it so is
+fixed: `StateDB` used to re-root both tries on every mutation, at **443 MB and
+65 seconds for a single 30M-gas transaction against a 15-second block time**
+([`docs/robustness-review.md`](docs/robustness-review.md) §1, measured). Writes
+are deferred to `root()` now; the same transaction measures **5.2 s and 9.2 MiB**
+and `node/test/bench/block-execution.js` fails if that regresses. §11.
 
 ---
 
@@ -115,19 +120,20 @@ be tested in isolation during the transition (`docs/evm-spec.md` §5).
 | `src/evm/memory.js` | byte-addressed, word-expanded, quadratic gas | 130 |
 | `src/evm/opcodes.js` | the instruction table, all 256 entries | 288 |
 | `src/evm/gas.js` | Shanghai schedule, memory expansion, EIP-2929 warm/cold | 565 |
-| `src/evm/interpreter.js` | execution loop, call frames, depth 1024, revert semantics | 930 |
-| `src/evm/precompiles.js` | `0x01`–`0x09`, and the two opposite failure conventions | 430 |
+| `src/evm/interpreter.js` | execution loop, call frames, depth 1024, revert semantics, the RPC-only deadline | 1,022 |
+| `src/evm/precompiles.js` | `0x01`–`0x09`, and the two opposite failure conventions | 458 |
 | `src/evm/bn128.js` | alt_bn128 curve, tower field, optimal ate pairing | 743 |
-| `src/evm/blake2f.js` | BLAKE2b compression (EIP-152) | 186 |
-| `src/state/trie.js` | Merkle Patricia Trie, secure (keccak-keyed) variant | 326 |
-| `src/state/statedb.js` | accounts, storage, code, journaling, snapshot/revert | 546 |
+| `src/evm/blake2f.js` | BLAKE2b compression (EIP-152) | 218 |
+| `src/state/trie.js` | Merkle Patricia Trie, secure (keccak-keyed) variant, and the speculative overlay | 374 |
+| `src/state/statedb.js` | accounts, storage, code, journaling, snapshot/revert | 565 |
 | `src/chain/transaction.js` | legacy (type 0) tx: encode, decode, hash, sign, recover | 396 |
 | `src/chain/receipt.js` | `[status, cumulativeGasUsed, logsBloom, logs]` | 182 |
 | `src/chain/bloom.js` | the 2048-bit logs bloom | 148 |
 | `src/chain/statetransition.js` | apply a transaction, produce a receipt; a block's worth in order | 503 |
 | `src/jsonrpc/hex.js` | the QUANTITY/DATA codec, and the RPC error type | 272 |
-| `src/jsonrpc/methods.js` | the `eth_*` method surface | 823 |
-| `src/jsonrpc/server.js` | JSON-RPC 2.0 dispatch: batches, notifications, error mapping | 212 |
+| `src/jsonrpc/methods.js` | the `eth_*` method surface — 41 methods, 43 with `HEARTH_RPC_FEE_HISTORY=1` | 1,525 |
+| `src/jsonrpc/server.js` | JSON-RPC 2.0 dispatch: batches, notifications, error mapping, and what one request may cost | 349 |
+| `src/jsonrpc/filters.js` | the filter registry — the only server-side state in the layer, and its three bounds | 176 |
 | `src/cli/trace.js` | the opcode-level tracer — the reason `hearth` exists | 878 |
 | `src/cli/abi.js` | ABI encode/decode, selectors, event and revert decoding | 578 |
 | `src/cli/{contract,wallet,watch,keystore,devnet,ui,client,args}.js` | the rest of the CLI | 1,490 |
@@ -208,9 +214,10 @@ Two HTTP surfaces: **port 8545 path `/`** is Ethereum JSON-RPC 2.0, and port
 `/events`). They are separate servers precisely because `rpc.js:152` owns
 `POST /rpc` with a different protocol.
 
-Tested by `node/test/evmchain.js` (consensus, 157 checks), `node/test/evm-rpc.js`
-(the `eth_*` surface over real HTTP, 104) and `node/test/evm-p2p-fork.js` (two
-real nodes, partition, reorg, 33).
+Tested by `node/test/evmchain.js` (consensus, 191 checks), `node/test/evm-rpc.js`
+(the `eth_*` surface over real HTTP, 170) and `node/test/evm-p2p-fork.js` (two
+real nodes, partition, reorg, 51 — including an open `eth_newFilter` that has to
+deliver the winning branch's logs after the reorg).
 
 Published to npm as `@cloudsforge/hearth-node`, currently **0.2.0**
 (`node/package.json:3`), exporting `.`, `./crypto`, `./chain`, `./tx`, `./wallet`
@@ -293,16 +300,31 @@ Node URL resolution is split by protocol, because the pages no longer all speak
 one. The miner's `/mining/*` calls and the pay mockup resolve `?rpc=` →
 `<meta name="hearth-rpc">` → same-origin `/rpc` → `:8645` (`web/assets/api.js:20-27`)
 and speak the REST API. The explorer and the wallet speak `eth_*` JSON-RPC and
-resolve `?rpc=` → `<meta name="hearth-eth-rpc">` → same-origin `/rpc/` → `:8545`
-(`web/assets/explorer/rpc.js:37-43`). nginx proxies same-origin `/rpc/`
-(`web/nginx.conf:63`).
+resolve `?rpc=` → `<meta name="hearth-eth-rpc">` → same-origin `/eth-rpc/` →
+`:8545` (`web/assets/explorer/rpc.js`).
 
-**The `:8545` default is now correct rather than a guess** —
-[`docs/evm-spec.md`](docs/evm-spec.md) §6 settles the Ethereum RPC on port 8545 at
-the root path, with the REST API staying on 8645. What has *not* happened is
-anything mounting it: `node/src/jsonrpc/server.js` is never constructed by
-`node/src/node.js` or anything in `node/bin/`. The explorer therefore has nothing
-to talk to, and says so rather than inventing data.
+**Two same-origin prefixes, because the node runs two servers.** nginx proxies
+`/rpc/` to `HEARTH_RPC_UPSTREAM` (REST + SSE, `:8645`) and `/eth-rpc/` to
+`HEARTH_ETH_RPC_UPSTREAM` (Ethereum JSON-RPC, `:8545`); both are envsubst
+variables set by the deployment (`web/Dockerfile`, and the `hearth-web` service
+in the estate's `docker-compose.yml`). The explorer used to default to `/rpc/`
+as well, so every `eth_*` call reached the REST server, which answers HTTP 404
+with `{"err":"this is the REST API — the Ethereum JSON-RPC endpoint is a
+different port"}` — a body carrying neither `result` nor `error`, which the
+client reports as `MalformedResponse`. The public explorer read as a dead chain
+while the chain was fine. Repointing `/rpc/` itself was not the fix: `mine.html`
+reads `/rpc/info`, `/rpc/events` and `/rpc/mining/*` through the same prefix.
+
+**The chain id is deployment configuration, not a constant.** `web/assets/chain.js`
+resolves `?chainid=` → `<meta name="hearth-chain-id">` → `DEFAULT_CHAIN_ID`
+(7412, hearth-testnet), and nginx templates that meta from `HEARTH_CHAIN_ID`
+with `sub_filter`. The wallet signs with it, the explorer banners on it, and
+both fixture sets report it, so the number cannot drift between them. It is
+never taken from `eth_chainId`: the pages accept a `?rpc=` override, so a node
+that chose the chain id would choose what its visitor's signature is valid on.
+
+[`docs/evm-spec.md`](docs/evm-spec.md) §6 settles the Ethereum RPC on port 8545
+at the root path, with the REST API staying on 8645.
 
 #### 3.4.1 The explorer
 
@@ -346,13 +368,20 @@ Real, runnable, and the reason a stranger can get to a deploy without asking.
 | `tools/faucet/` | A faucet service whose entire engineering problem is refusing: per-address and per-IP limits, a global payout cap, and an atomic check-and-record. **66 checks**, over real HTTP against a stub node, no dependencies |
 | `tools/hardhat/` | A working Hardhat template — `evmVersion: 'shanghai'` pinned, plus `check-network.js`, `deploy.js`, `deploy-dex.js`, `swap.js`, `interact.js` |
 | `tools/foundry/` | A working Foundry template; `--legacy` is required on every broadcasting command and the README says why |
-| `tools/explorer-api/` | The **Etherscan-compatible `/api`** and the address index behind it — `account`, `contract`, `stats`, `transaction`, `logs` and `proxy`, plus `GET /supply/total`. Zero dependencies. **Its test suite currently fails** — see below |
+| `tools/explorer-api/` | The **Etherscan-compatible `/api`** and the address index behind it — `account`, `contract`, `stats`, `transaction`, `logs` and `proxy`, plus `GET /supply/total`. Zero dependencies. **177/177 fixture checks, plus 27/27 against a real chain** — see below |
 | `tools/verify/` | Contract verification, including the API `forge verify-contract` speaks. **116/116 checks**, run |
 | `tools/metamask.md` | The add-network page |
 
-**`tools/explorer-api`'s tests do not pass**, locally or in CI
-(`node test/explorer-api.test.js`, and the *Developer kit* job on run
-[30402531669](https://github.com/cloudsforge-online/hearth/actions/runs/30402531669)):
+**`tools/explorer-api` has two suites, and the second one is the gate.**
+`test/explorer-api.test.js` (177 checks) runs the service against a fake chain
+served by `node/src/jsonrpc`. `test/live-chain.test.js` (27 checks) runs it
+against a **real node booted from `node/src`** — real proof-of-work, real signed
+transactions, real EVM execution — and requires `module=account&action=balance`
+and `module=logs&action=getLogs` to agree field for field with `eth_getBalance`
+and `eth_getLogs`. `HEARTH_LIVE_RPC_URL=http://127.0.0.1:8545` points the same
+comparison at a node someone else is running.
+
+The fixture suite used to fail, on every run, locally and in CI:
 
 ```
 RpcError: receipt for 0x47d3…aef2: internal error: receipt.logs[0].logIndex is
@@ -360,10 +389,13 @@ missing — the chain must number logs across the block, and this layer cannot
 derive it from one receipt
 ```
 
-The shim requires `logIndex` to be numbered across the whole block, and the test's
-fake chain does not supply it. Whether the defect is in the fake or in the shim's
-expectation is **not established here** — this file does not edit source. Read the
-shim as *written and not yet passing*, not as *done*.
+**The side that owned it was the fake chain.** `logIndex` is per block
+(`docs/evm-spec.md` §6), `node/src/chain/rpcadapter.js` numbers it that way, and
+`node/src/jsonrpc/methods.js` is right to refuse a receipt that omits it — one
+receipt cannot know how many logs preceded it in its block, and the plausible
+wrong answer (restart at zero) silently resolves every lookup in a multi-log
+block to the wrong log. The fixture now numbers it across the block, and the
+ordinals are asserted on both paths that serve them, against a real chain.
 
 CI parses the templates and boots the probe, asserting `eth_chainId` is `0x1cf3`
 and `net_version` is `"7411"` — the same number in two encodings, which is the one
@@ -442,7 +474,7 @@ Every one of these was executed while writing this file
 | `interpreter` | 182/182 |
 | `statetransition` | 133/133 |
 | `cli` | 310/310 |
-| `jsonrpc` | **301/301** |
+| `jsonrpc` | **422/422** |
 | `conformance --selftest` | 85/85 |
 | `fuzz --cases=2000` | **82,481/82,481**, with 3 standing observations — §4.7 |
 | `unit` / `e2e` / `records` | 32/32 · 24/24 · 49/49 |
@@ -547,10 +579,11 @@ dependencies and this one needs solc's output.
 ### 4.6 The JSON-RPC layer, and exactly what it is
 
 `node/src/jsonrpc/` implements the v1 method set of `docs/evm-spec.md` §6 and
-passes 301 checks. **It is written against an interface, not a chain.** The header
-of `node/src/jsonrpc/methods.js:1-20` is explicit: *"The chain does not exist yet,
-so this layer is written against the interface below and tested against an
-in-memory fake (test/jsonrpc.js). Phase 5 implements exactly this."*
+passes 422 checks against a fake chain plus 170 against a real one over HTTP
+(`test/evm-rpc.js`). **It is written against an interface, and a chain now
+implements that interface** — `chain/rpcadapter.js`, mounted by
+`evmnode.js:186`. The fake is still where the edge cases live, because a real
+chain will not produce a malformed receipt on demand.
 
 So "the `eth_*` surface is built" means: the method table, the QUANTITY/DATA codec,
 the JSON-RPC 2.0 transport, the error mapping and the block/receipt shapes are
@@ -788,15 +821,23 @@ repository has not yet produced a block on.
 ## 8. P2P (`node/src/p2p.js`)
 
 Plain TCP, newline-delimited JSON, no dependencies. Default port 8646
-(`params.js:131`). **UTXO-era; nothing here knows about the account model.**
+(`params.js:131`). **UTXO-era in origin**, but what a block *is* now sits behind a
+three-function `wire` seam (`p2p.js:36,63`) that `src/evmnode.js` supplies for the
+account model, so both chains gossip through this one implementation.
 
-**Messages.** `hello {net, height, tip}`, `getblocks {locator}`, `getblock {id}`,
-`blocks {blocks[]}`, `block {block}`, `tx {tx}` (`p2p.js:274-351`).
+**Messages.** `hello {net, genesis, chainId, commonsAddress, height, tip}`,
+`getblocks {locator}`, `getblock {id}`, `blocks {blocks[]}`, `block {block}`,
+`tx {tx}` (`p2p.js:413-531`).
 
-**Handshake.** `hello` carries the network id; a mismatch drops the peer
-immediately. Sync is negotiated on *any* tip the node does not hold, not merely a
-taller one — the fix for equal-height peers on different branches splitting forever
-(`p2p.js:284-287`).
+**Handshake.** `hello` carries the network id **and the chain's identity**; a
+mismatch on any of them drops the peer immediately, with a log line naming both
+values (`p2p.js:417-455`). `net` alone is a label two incompatible chains agree on
+for free — the genesis hash is the identity, and `chainId`/`commonsAddress` ride
+alongside because block 0 does not hash them (`p2p.js:212`), so a shared genesis is
+not by itself a shared chain. A hello with no genesis hash is dropped: fail closed.
+Sync is negotiated on *any* tip the node does not hold, not merely a taller one —
+the fix for equal-height peers on different branches splitting forever
+(`p2p.js:456`).
 
 **Sync.** A locator of exponentially-spaced hashes is built back from the heaviest
 *stored* branch, always ending at genesis. It is memoized on `(tipId, store.size)`
@@ -1001,11 +1042,12 @@ only externally reachable caller is the unauthenticated `/mining/template`.
   implemented by `node/src/evmnode.js` for `hearthd --evm` (`docs/evm-spec.md`
   §6). It is a different PORT from the REST API, not a different path, because
   `node/src/rpc.js:152` owns `POST /rpc` with the legacy `{method:'getinfo'}`
-  shape. **The explorer still defaults to same-origin `/rpc/`**
-  (`web/assets/explorer/rpc.js`), which `web/nginx.conf:63` proxies to the
-  node's root — so a deployment must now point that proxy at 8545 rather than
-  8645, or the explorer gets the legacy shape and correctly reports "answered,
-  but not with JSON-RPC 2.0".
+  shape. **The explorer defaults to same-origin `/eth-rpc/`**
+  (`web/assets/explorer/rpc.js`), a second nginx location proxying to
+  `HEARTH_ETH_RPC_UPSTREAM` on 8545, while `/rpc/` stays on the REST port for
+  `mine.html`. It defaulted to `/rpc/` until CF-13, which meant the deployed
+  explorer asked the REST server for `eth_*` and correctly reported "answered,
+  but not with JSON-RPC 2.0" against a perfectly healthy chain.
 - **`web/pay-demo.html` is a mockup, and says so on the control.**
   `web/assets/hearth-pay-demo.js` builds a real `hearth:` URI and then **simulates**
   settlement on a 1,200 ms timer; the txid is deliberately not 64 hex characters so
@@ -1034,16 +1076,17 @@ cloning the repository into an empty directory and running `npm test`: all 27
 suites pass, exit 0, with no corpus and no install. `blake2f` reports 43/43
 offline and 46/46 once the corpus is fetched.
 
-**The EVM cannot be wired to a block yet, and the number is measured.**
-[`docs/robustness-review.md`](docs/robustness-review.md) §1: `StateDB` re-roots
-*both* tries on every single mutation (`statedb.js:342-352`, `:266-272`,
-`:166-171`, `trie.js:163-170`), so one 30M-gas transaction costs **443 MB of
-permanently retained heap and 65 seconds of single-threaded CPU against a
-15-second block time** — 1.66 KB and 245 µs for 112 gas of `SSTORE`. It is the
-most serious defect in the codebase, it is latent only because nothing calls
-`applyBlock` on a network path, and it becomes live the day phase 5 lands.
-**No statement anywhere in this repository that the EVM is "built" should be read
-as "ready to run" until this is fixed.** That review also records findings **2**,
+**The defect that used to block wiring the EVM to a block is fixed and gated.**
+[`docs/robustness-review.md`](docs/robustness-review.md) §1 measured `StateDB`
+re-rooting *both* tries on every single mutation, so one 30M-gas transaction cost
+**443 MB of permanently retained heap and 65 seconds of single-threaded CPU
+against a 15-second block time**. `trie.js` now leaves rebuilt nodes unhashed
+until `root()` (`_commit`) and `statedb.js` writes dirty accounts into the state
+trie at the same point (`_flush`). The same transaction measures **5.2 s and
+9.2 MiB** — 13.5x an ordinary block of the same gas, against 64.3x before — and
+`node/test/bench/block-execution.js` runs in the gate and fails above 25x or
+64 MiB. What is still write-through is the STORAGE root, about a third of that
+5.2 s; the review records why deferring it is a change to how revert works. That review also records findings **2**,
 **3** and **5** as exploitable against a running `hearthd` *today* — a 39-byte
 message buying a full copy of the UTXO set, an unbudgeted `tx` gossip path, and a
 self-fed side branch that is stored and relayed forever.
@@ -1102,9 +1145,12 @@ the consensus numbers and is the file to use.
   `blockReward` is the full subsidy at height+1. Two different quantities.
 - **`/supply`'s `circulating` includes the Commons treasury.** Aggregators must
   compute `circulating − commonsTreasury` ([`docs/tokenomics.md`](docs/tokenomics.md) §7).
-- **Dev-tuned consensus parameters.** `POW_SCRATCH_KIB` 64 and `POW_WALK_STEPS` 256
-  against an intended production ~2 GiB / 2048+; `COINBASE_MATURITY` 10 against a
-  production ~100. Each is a hard fork to change.
+- **The PoW parameters are not "dev-tuned pending a raise".** `POW_SCRATCH_KIB`
+  64 is what mainnet launches with: 2 GiB was measured at 185.7 s per evaluation
+  against a 15 s block interval, and `params.js` now refuses to start above
+  `POW_MAX_SCRATCH_KIB` 4096 ([`docs/pow-parameters.md`](docs/pow-parameters.md)).
+  `COINBASE_MATURITY` 10 is read only by the retired UTXO path — the account
+  model has no maturity rule.
 - **No authentication anywhere on the RPC.** No API key, no rate limit beyond the
   body cap. The node is meant to sit behind a proxy; `web/nginx.conf` is that proxy.
 - **Persistence is an append-only NDJSON file** (`chain.js:407`), never rewritten
@@ -1160,20 +1206,25 @@ skipped case (§11).
 | Web assets | `find web/assets -name '*.js'` piped through `node --check` — **`find`, not a glob**, because the old glob was `web/assets/*.js` and silently skipped every module under `web/assets/explorer/` — plus the explorer self-test and the wallet self-test (`ci.yml:85-101`) |
 | Secret hygiene | `.env` untracked; no API tokens; a private-key matcher that requires a PEM header **followed by real base64**, so the legitimate PEM literals in `web/` do not force the check to be muted |
 | DeFi contracts | `pnpm compile` (which refuses on an init-code-hash mismatch) and the build tests |
-| Developer kit | The faucet's 66 checks; `tools/verify`'s 116; the templates and probe parse; the probe boots and answers the chain id in both encodings. Also `tools/explorer-api`, which is **why this job is red** |
+| Developer kit | The faucet's 66 checks; `tools/explorer-api`'s 177 fixture checks **and its 27-check live-chain gate**; `tools/verify`'s 116; the templates and probe parse; the probe boots and answers the chain id in both encodings. Every step carries `if: ${{ !cancelled() }}`, because one failing step used to skip every step after it |
 
-**Two CI jobs are failing on `main` right now — and they are not the two this file
-used to name.** The node job now **passes** (run
+**One CI job is still failing on `main`.** The node job **passes** (run
 [30402531669](https://github.com/cloudsforge-online/hearth/actions/runs/30402531669),
 *Node reference client (tests)*: success), because the blake2f break in §11 is
-fixed. The two that fail are:
+fixed. *Developer kit* was red on `tools/explorer-api`'s
+`receipt.logs[0].logIndex is missing` and is fixed — §3.5. What remains:
 
 | Job | Failure | Is it an implementation failure? |
 | --- | --- | --- |
 | DeFi contracts | `Error: No pnpm version is specified.` from `pnpm/action-setup@v4` — `contracts/package.json` has no `packageManager` field and the step passes no `version` | No. Tooling configuration |
-| Developer kit | `tools/explorer-api`'s suite throws on `receipt.logs[0].logIndex is missing` | **Yes.** §3.5 |
 
-Neither is fixed here.
+That one is not fixed here.
+
+**A red step used to disable the steps after it.** Actions skips the rest of a
+job at the first failure, so for as long as the explorer API step was red,
+*Contract verification*, *Templates and probe parse* and the probe-boot check
+never executed — `tools/verify`'s 116 checks had never gated a push. Every step
+in that job now carries `if: ${{ !cancelled() }}` and reports its own result.
 
 **Deploys.** `.github/workflows/pages.yml` publishes `web/` to GitHub Pages. The
 marketing site in `site/` builds separately.

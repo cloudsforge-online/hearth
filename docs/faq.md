@@ -32,14 +32,15 @@ reproduce all of that are in the [README](../README.md).
 
 ### So can I deploy a contract to it today?
 
-**No — there is no chain.** Consensus on the account model has not landed, so
-nothing produces blocks and there is no endpoint. That is the largest gap between
-what is built and something you can use — but it is not the only one, and the
-second is measured rather than guessed: `StateDB` re-roots both of its tries on
-every mutation, so a single 30M-gas transaction costs **443 MB of retained heap
-and 65 seconds of CPU against a 15-second block time**
-([`robustness-review.md`](robustness-review.md) §1). The EVM is correct and, as
-written, too slow to be driven by a block. Both have to close.
+**Not one anyone else runs.** There is a chain: `hearthd --evm --mine` produces
+and validates blocks and serves `eth_*` on 8545, and
+`docker-compose.testnet.yml` runs three nodes on chain id 7412. What does not
+exist is a **published** endpoint — every port binds `127.0.0.1` — so there is
+nothing to point a wallet at but your own machine, and no genesis that survives
+`docker compose down -v`. The throughput defect that used to be the second half
+of this answer (`StateDB` re-rooting both tries per mutation, 443 MB and 65 s for
+one 30M-gas transaction) is fixed and gated at 5.2 s and 9.2 MiB
+([`robustness-review.md`](robustness-review.md) §1).
 
 What you *can* do today is run `node tools/rpc-probe/stub.js`, which serves the
 real `eth_*` method surface over a chain with no state. It will not execute
@@ -164,9 +165,10 @@ Conformance vectors make writing an EVM tractable. They do not make it audited.
 
 ### Where do I start contributing?
 
-Consensus on the account model — nothing else matters until a block exists, and
-the first thing standing in its way is measured: `StateDB` re-roots both tries on
-every mutation ([`robustness-review.md`](robustness-review.md) §1). After that,
-`tools/explorer-api` — the Etherscan-compatible `/api` shim is written but its
-test suite does not pass. See [CONTRIBUTING.md](../CONTRIBUTING.md) and the
+Publishing the testnet — it runs on loopback and nothing routes it, so the
+gap between "a stranger can deploy unaided" and the truth is deployment, not
+code. After that, the proof of work: it runs at a 64 KiB pad, the 2 GiB the
+documents promised is unreachable at 185.7 s per evaluation, and making it
+genuinely memory-hard means an amortised dataset across three implementations
+([`pow-parameters.md`](pow-parameters.md)). See [CONTRIBUTING.md](../CONTRIBUTING.md) and the
 [roadmap](roadmap.md).

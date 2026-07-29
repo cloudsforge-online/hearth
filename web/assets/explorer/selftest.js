@@ -190,7 +190,13 @@ export async function run({ verbose = true } = {}) {
     if (r.error) throw Object.assign(new Error(r.error.message), { code: r.error.code, data: r.error.data });
     return r.result;
   };
-  eq(await call('eth_chainId'), '0x1cf3', 'the fixture chain is 7411');
+  // The fixture chain reports the CONFIGURED id, not a literal — see
+  // assets/chain.js. Under node there is no document and no query string, so
+  // this is DEFAULT_CHAIN_ID (7412, hearth-testnet).
+  const { chainId, DEFAULT_CHAIN_ID } = await import('../chain.js');
+  eq(chainId(), DEFAULT_CHAIN_ID, 'with no meta and no ?chainid=, the default applies');
+  eq(await call('eth_chainId'), '0x' + chainId().toString(16),
+    'the fixture chain reports the configured chain id (' + chainId() + ')');
   const tipHex = await call('eth_blockNumber');
   const tip = Number(toBig(tipHex));
   const tipBlock = await call('eth_getBlockByNumber', [tipHex, true]);
@@ -279,6 +285,21 @@ export async function run({ verbose = true } = {}) {
   // ---- the rpc client's batch discipline ------------------------------------
   say('• rpc client');
   const rpc = await import('./rpc.js');
+
+  // WHICH PREFIX THE PAGES DEFAULT TO, which is the whole of CF-13. `/rpc/` is
+  // the REST + SSE proxy that mine.html needs; `/eth-rpc/` is the JSON-RPC one.
+  // Defaulting to the first meant every eth_* call reached the REST server,
+  // which answers HTTP 404 with a body carrying neither `result` nor `error` —
+  // reported as MalformedResponse, and read by a visitor as a dead chain.
+  const deployed = { search: '', protocol: 'https:', origin: 'https://explorer.cloudsforge.online' };
+  eq(rpc.resolveEndpoint('', deployed), 'https://explorer.cloudsforge.online/eth-rpc/',
+    'the same-origin default is the JSON-RPC proxy');
+  ok(!rpc.resolveEndpoint('', deployed).endsWith('/rpc/'),
+    'and it is NOT /rpc/, which is the REST prefix mine.html reads /info and /events through');
+  eq(rpc.resolveEndpoint('?rpc=http://127.0.0.1:8545/', deployed), 'http://127.0.0.1:8545',
+    '?rpc= still overrides it, trailing slash trimmed');
+  eq(rpc.resolveEndpoint('', null), 'http://localhost:8545',
+    'a page opened straight off disk falls back to the JSON-RPC port, not the REST one');
   rpc.useTransport(async (payload) => {
     // Answer a batch in REVERSE order. The spec allows any order and the server
     // comment says so; a client that matches by position instead of by id will

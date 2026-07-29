@@ -9,7 +9,8 @@
   "bin": { "hearth-explorer-api": "src/index.js" },
   "scripts": {
     "start": "node src/index.js",
-    "test": "node test/explorer-api.test.js"
+    "test": "node test/explorer-api.test.js",
+    "test:live": "node test/live-chain.test.js"
   },
   "engines": { "node": ">=22" }
 }

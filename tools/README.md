@@ -19,17 +19,16 @@ Start at [`../docs/quickstart.md`](../docs/quickstart.md).
 
 ## The one thing to understand first
 
-**There is no live Hearth network.** Phases 1–4 of
-[`../docs/evm-spec.md`](../docs/evm-spec.md) §8 are built and gated on published
-reference vectors, and the `eth_*` JSON-RPC layer exists in `node/src/jsonrpc/`
-and is tested against an in-memory fake — but **phase 5, consensus on the
-account model, has not landed.** Nothing produces blocks and no endpoint serves
-these methods over a real chain.
+**There is no PUBLISHED Hearth network, and there is a chain.**
+`node bin/hearthd.js --evm --mine` produces blocks and serves the `eth_*`
+surface on `http://127.0.0.1:8545/`; `docker-compose.testnet.yml` runs three
+nodes on chain id 7412. What does not exist is an endpoint anyone else can
+reach — every port binds loopback.
 
-So these templates are configured against a frozen specification rather than a
-running node. Where a value cannot exist yet it is marked `⬜` rather than filled
-in with something plausible. Where a command has never been executed against
-Hearth, it says so.
+So these templates are configured against a frozen specification **and** run
+against a node you start yourself. Where a value cannot exist without a
+deployment it is marked `⬜` rather than filled in with something plausible.
+Where a command has never been executed against Hearth, it says so.
 
 ## Keys
 
