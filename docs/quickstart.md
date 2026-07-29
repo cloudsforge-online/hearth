@@ -10,20 +10,28 @@ edges.
 
 ## Read this first: what you can actually run today
 
-**There is no live Hearth network.** Phases 1–4 of
-[`evm-spec.md`](evm-spec.md) §8 are built and gated on published reference
-vectors, the `eth_*` RPC layer is written and tested against an in-memory fake,
-but **phase 5 — consensus on the account model — has not landed.** Nothing
-produces blocks. There is no endpoint to point at.
+**There is no public Hearth network — and there is a chain.** One command
+starts one:
 
-That is not a reason to write a guide in the future tense and hope. Every step
-below carries a marker:
+```bash
+node node/bin/hearthd.js --evm --mine --data /tmp/hearth      # [RUN]
+```
+
+That is an account-model chain: it mines Homefire blocks, executes the EVM,
+and serves the `eth_*` surface on `http://127.0.0.1:8545/`. Everything on this
+page except §7 was executed against it while this page was written — a
+contract deployed, called, paid and read back. What does **not** exist is a
+published endpoint: no hostname, no HTTPS, nothing anyone else can reach. The
+two used to be one sentence in this document and they are not the same claim.
+
+Every step below carries a marker:
 
 | Marker | Meaning |
 | --- | --- |
-| **[RUN]** | Works right now on your machine. Everything so marked was executed while this page was written. |
-| **[PROBE]** | Works against `tools/rpc-probe/stub.js`, which serves Hearth's real RPC layer over a fake chain. Proves your wiring, encoding and chain id. **Cannot execute code**, so deployments will hang. |
-| **[WAITING]** | Needs a live chain. Written against the frozen spec, never executed. |
+| **[RUN]** | Works right now on your machine, with no chain involved. Everything so marked was executed while this page was written. |
+| **[LOCAL]** | Needs a chain, and the one above is it — chain id 7411 on the default network, 7412 with `HEARTH_NETWORK=hearth-testnet`. Executed against `hearthd --evm` while this page was written **unless the surrounding text says it was not**, and where it was not, that is said in the same breath rather than left to the marker. |
+| **[PROBE]** | Works against `tools/rpc-probe/stub.js`, which serves Hearth's real RPC layer over a chain with no state. Proves your wiring, encoding and chain id without mining anything. **Cannot execute code**, so deployments hang. |
+| **[WAITING]** | Needs a chain someone else runs — a published endpoint, a deployed faucet, a deployed explorer. Written against the frozen spec, never executed. |
 
 There is one exception worth knowing about up front: **§7, the exchange, is
 fully `[RUN]`**, because Hardhat ships its own Shanghai EVM. You can deploy the
@@ -63,7 +71,8 @@ Private key: 0xe90b9bbee515cd33…35daa4          ← truncated deliberately
 ```
 
 The key is truncated because a real one printed in a repository is a real one
-leaked, even if it holds nothing today and even if the chain does not exist yet.
+leaked, even if it holds nothing today and even if the only chain it can spend
+on is one you started five minutes ago.
 **Never paste a funded key into a terminal, a config file or a repository.** The
 templates read `HEARTH_PRIVATE_KEY` from the environment and nowhere else;
 `.env` is gitignored at the repository root, and the faucet goes further and
@@ -86,10 +95,33 @@ receive funds here.
 ## 3. Point your tooling at a node
 
 ```bash
-export HEARTH_RPC_URL=…      # ⬜ [WAITING] — no public endpoint exists
+export HEARTH_RPC_URL=…      # ⬜ [WAITING] — nothing is published to point at
 ```
 
-To make the rest of this page do something today, run the probe stub instead:
+Run your own instead. This is the path the rest of the page takes:
+
+```bash
+node node/bin/hearthd.js --evm --mine --data /tmp/hearth   # [RUN]
+export HEARTH_RPC_URL=http://127.0.0.1:8545
+```
+
+```console
+$ cast chain-id --rpc-url $HEARTH_RPC_URL                # [LOCAL]
+7411
+$ cast block-number --rpc-url $HEARTH_RPC_URL
+8
+```
+
+Three nodes instead of one, on the testnet chain id 7412, with the genesis hash
+published in [`../TESTNET.md`](../TESTNET.md):
+
+```bash
+docker compose -f docker-compose.testnet.yml up -d       # [RUN]
+# seed :8545 · miner1 :8547 · miner2 :8549
+```
+
+If you would rather not mine at all — you only want to check that your client
+speaks the right protocol — run the probe stub:
 
 ```bash
 node tools/rpc-probe/stub.js --port 8745                # [RUN]
@@ -139,10 +171,11 @@ in ways nothing else notices:
 - **`baseFeePerGas` must be absent.** Its absence is what makes ethers and viem
   fall back to legacy pricing. A zero base fee would make them build type-2
   transactions v1 cannot execute.
-- **`timestamp` must be seconds.** The v1 UTXO header stores milliseconds and
-  phase 5 has to divide at the header ([`evm-spec.md`](evm-spec.md) §4). Miss
-  that and every explorer renders the year 57,000 and every Solidity `deadline`
-  comparison — Uniswap's router included — behaves nonsensically.
+- **`timestamp` must be seconds.** The retired UTXO header stores milliseconds
+  and the account-model header divides at the header, not at the RPC boundary
+  ([`evm-spec.md`](evm-spec.md) §4). Get that wrong and every explorer renders
+  the year 57,000 and every Solidity `deadline` comparison — Uniswap's router
+  included — behaves nonsensically.
 
 ---
 
@@ -155,8 +188,22 @@ curl -X POST -H 'content-type: application/json' \
 ```
 
 The faucet **service** is built and tested — [`../tools/faucet`](../tools/faucet)
-— and you can run it locally against the probe today. It is not deployed
-anywhere, because there is nowhere to deploy it against.
+— and you can run it locally today. It is not deployed anywhere public.
+
+On your own chain you do not need it: **mine.** `hearthd --evm --mine` pays the
+subsidy to a key it generates on first start and keeps at
+`<data>/coinbase-key.json`. Import that key and the balance is yours to spend
+— which is exactly how the deploy in §5 below was paid for:
+
+```console
+$ node node/bin/hearth.js wallet import --label coinbase \
+    --key "$(node -p "require('/tmp/hearth/coinbase-key.json').privateKey")"   # [LOCAL]
+$ node node/bin/hearth.js wallet balance --from coinbase --rpc http://127.0.0.1:8545
+0x1085a284C830D892472F8E5c13cFE4d329Ab24Df  53.999964756 EMBER
+```
+
+`--miner-address` is refused with `--evm`, and the error says why: the coinbase
+must **sign** the block, so the node can only mine to a key it holds.
 
 Without a faucet and without mining, an account has no EMBER, and every step
 from §5 onward needs gas.
@@ -165,9 +212,45 @@ from §5 onward needs gas.
 
 ## 5. Deploy a contract
 
-Both templates deploy the same `Greeter`. It stores a string, emits an event,
-and reports `block.chainid` — which is the cheapest end-to-end proof that the
-node, the signer and the tooling all agree which chain you are on.
+### 5.0 With no toolchain at all
+
+The node ships a client. This is the deployment this page was checked against —
+WEMBER, the wrapped-EMBER contract from `contracts/`, onto a `hearthd --evm`
+chain, paid for with mined coin:
+
+```console
+$ node -e "const a=require('./contracts/out/WEMBER.json');
+  require('fs').writeFileSync('/tmp/w.bin',a.bytecode);
+  require('fs').writeFileSync('/tmp/w.abi.json',JSON.stringify(a.abi))"   # [RUN]
+
+$ node node/bin/hearth.js deploy --bin /tmp/w.bin --abi /tmp/w.abi.json \
+    --from coinbase --rpc http://127.0.0.1:8545 --wait --yes             # [LOCAL]
+address 0x900cf10263873e2376d7067a0179596b7D2018f2 (from sender + nonce 0)
+mined 0xfb7343025ff087e622d4921afc6bc0b1363905369170e5c1f03aef9b33418313  block 14  gas used 682499
+deployed 0x900cf10263873e2376d7067a0179596b7D2018f2
+```
+
+It executes, it emits, and the state survives the block:
+
+```console
+$ node node/bin/hearth.js send --to 0x900cf1…2018f2 --fn deposit --value 2 \
+    --abi /tmp/w.abi.json --from coinbase --rpc http://127.0.0.1:8545 --wait --yes   # [LOCAL]
+mined 0xe9f0239b7fbf7075b9d46f896b4db60cc39234707d349dd6902a15c4fb66b248  block 18  gas used 44932
+  log 0x900cf1…2018f2 topics 2 data 32B
+
+$ node node/bin/hearth.js call --to 0x900cf1…2018f2 --fn balanceOf 0x1085a2…b24Df \
+    --abi /tmp/w.abi.json --rpc http://127.0.0.1:8545                     # [LOCAL]
+balanceOf(address) @ 0x900cf10263873e2376d7067a0179596b7D2018f2
+  uint256            2000000000000000000
+```
+
+Your addresses and hashes will differ — the coinbase key is generated per data
+directory — but the shape is the check: a receipt with a block number, a log,
+and a `balanceOf` that reads back what you paid in.
+
+Both templates below deploy the same `Greeter` instead. It stores a string,
+emits an event, and reports `block.chainid` — the cheapest end-to-end proof
+that the node, the signer and the tooling all agree which chain you are on.
 
 ### 5.1 Hardhat
 
@@ -182,12 +265,19 @@ Then:
 
 ```bash
 export HEARTH_PRIVATE_KEY=0x…
-npx hardhat run scripts/deploy.js --network hearth       # ⬜ [WAITING]
+export HEARTH_RPC_URL=http://127.0.0.1:8545
+npx hardhat run scripts/deploy.js --network hearth       # [LOCAL]
 ```
 
-Against the probe **[PROBE]** this signs and broadcasts a correct transaction and
-then polls forever, because nothing mines it — which is the honest behaviour for
-"there is no chain".
+**Not executed while this page was written** — `npm install` in the template
+needs the network, and the machine this was checked on was offline — so treat
+this one as spec-following rather than as a transcript. What it produces is a
+legacy signed transaction like the one §5.0 mined, and the settings below are
+what make it legacy.
+
+Against the probe **[PROBE]** the same command signs and broadcasts a correct
+transaction and then polls forever, because the probe mines nothing — which is
+the honest behaviour for a chain with no state.
 
 The two settings in `hardhat.config.js` that are not decoration:
 
@@ -234,7 +324,7 @@ Deploy:
 ```bash
 forge create --rpc-url "$HEARTH_RPC_URL" --private-key "$HEARTH_PRIVATE_KEY" \
   --legacy --broadcast \
-  src/Greeter.sol:Greeter --constructor-args 'hello hearth'    # ⬜ [WAITING]
+  src/Greeter.sol:Greeter --constructor-args 'hello hearth'    # [LOCAL]
 ```
 
 ### 5.3 `--legacy` is required for Foundry, and only for Foundry
@@ -281,7 +371,7 @@ trading a loud error at signing time for a silent rejection at the node.
 ## 6. Talk to it
 
 ```bash
-GREETER=0x… npx hardhat run scripts/interact.js --network hearth   # ⬜ [WAITING]
+GREETER=0x… npx hardhat run scripts/interact.js --network hearth   # [LOCAL]
 ```
 
 or
@@ -388,7 +478,9 @@ factory.pairCodeHash() 0x46b4122ae9db4a03c913cfbed4e6321064741545c60aafe3ed9410b
   factory.feeTo() 0x00…00 (unset — correct at launch)
 ```
 
-On Hearth the same command becomes `--network hearth` **[WAITING]**.
+On Hearth the same command becomes `--network hearth` **[LOCAL]** — pointed at
+your own node, not at a published endpoint, and not executed here for the
+`npm install` reason in §5.1.
 
 ### 7.5 Verify the init code hash before any liquidity is added
 
@@ -539,16 +631,16 @@ Do not plan around any of these:
 
 | | |
 | --- | --- |
-| A public RPC endpoint | ⬜ blocked on phase 5. The port and path **are** settled: 8545, root path ([`evm-spec.md`](evm-spec.md) §6) |
-| A public testnet | ⬜ blocked on phase 5. Its chain id **is** chosen: **7412** |
-| A **deployed** `0x`-native block explorer | 🟡 `web/index.html` is EVM-aware and built — decoded logs, revert reasons, disassembly, `eth_getLogs` search. It has no chain to read |
-| Contract source verification | 🟡 the services are written — [`../tools/verify`](../tools/verify) (116/116, and it speaks what `forge verify-contract` speaks) and [`../tools/explorer-api`](../tools/explorer-api) (the Etherscan-compatible `/api`, **suite currently failing**). Neither has a chain to talk to |
-| A deployed faucet | ⬜ the service is written and tested; nowhere to run it |
-| Any deployed contract | ⬜ WEMBER, the AMM and Multicall3 have never been deployed anywhere |
-| `eth_subscribe` / WebSockets | ⬜ v2 |
-| `eth_newFilter` / `eth_getFilterChanges` | ⬜ v2 |
-| `eth_feeHistory` | ⬜ v2, and see §5.3 — implementing it early would be a regression |
-| `debug_*` / `trace_*` / `eth_getProof` | ⬜ not planned for v1 |
+| A **published** RPC endpoint | ⬜ nothing is deployed. The port and path **are** settled — 8545, root path ([`evm-spec.md`](evm-spec.md) §6) — and a node serves them on loopback today |
+| A **public** testnet | ⬜ the three-node testnet runs on `127.0.0.1` and nothing routes it. Its chain id **is** chosen: **7412**, and its genesis hash is published in [`../TESTNET.md`](../TESTNET.md) |
+| A **deployed** `0x`-native block explorer | 🟡 `web/index.html` is EVM-aware and built — decoded logs, revert reasons, disassembly, `eth_getLogs` search. Point it at your own node; nobody has hosted it |
+| Contract source verification | 🟡 the services are written — [`../tools/verify`](../tools/verify) (116/116, and it speaks what `forge verify-contract` speaks) and [`../tools/explorer-api`](../tools/explorer-api) (the Etherscan-compatible `/api`, 177/177 plus 27/27 against a real chain). Neither is hosted |
+| A deployed faucet | ⬜ the service is written and tested; nowhere public to run it. Mine instead — §4 |
+| Any **persistently** deployed contract | ⬜ WEMBER, the AMM and Multicall3 deploy and run (§5.0, §7) but no chain holding them outlives the process that mined them |
+| `eth_subscribe` / WebSockets | ⬜ v2. Port 8546 is reserved for it |
+| `eth_newFilter` / `eth_getFilterChanges` | ✅ implemented, bounded and served (`node/src/jsonrpc/filters.js`) — the poll-based stand-in for `eth_subscribe` |
+| `eth_feeHistory` | 🟡 implemented but **OFF by default** — `HEARTH_RPC_FEE_HISTORY=1` turns it on. See §5.3 for why the default is off on a legacy-only chain |
+| `debug_*` / `trace_*` / `eth_getProof` | ⬜ not planned for v1. `node/bin/hearth.js trace` covers the opcode-level case out of band |
 | A registered SLIP-44 coin type | ⬜ derive under coin type 60 meanwhile |
 | Chain id 7411 in `ethereum-lists/chains` | ⬜ unclaimed, unfiled |
 | Any independent audit | ⬜ [`listing-checklist.md`](listing-checklist.md) §4 |

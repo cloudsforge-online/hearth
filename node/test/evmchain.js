@@ -26,7 +26,7 @@ const P = require('../src/params');
 const HDR = require('../src/chain/header');
 const TX = require('../src/chain/transaction');
 const genesis = require('../src/chain/genesis');
-const { Blockchain } = require('../src/chain/blockchain');
+const { Blockchain, GENESIS_NETWORK_MISMATCH } = require('../src/chain/blockchain');
 const { Mempool } = require('../src/chain/mempool');
 const { EvmNode } = require('../src/evmnode');
 const { keccak256 } = require('../src/crypto/keccak');
@@ -689,6 +689,59 @@ group('persistence');
   eq(b.chain.config.alloc[alice.addressHex].balance, (100n * 10n ** 18n).toString(),
     'and is read back rather than regenerated from code');
   b.close();
+  fs.rmSync(dir, { recursive: true, force: true });
+}
+
+// ---------------------------------------------------------------------------
+group('a persisted genesis may not change the network');
+// ---------------------------------------------------------------------------
+{
+  /* params.js refuses to guess a chain id, but the id the chain RUNS on comes from
+   * genesis.json — so before this guard existed, a data directory written under one
+   * HEARTH_NETWORK and started under another answered eth_chainId with the file's
+   * id and nothing said so. Everything downstream follows that number: the mempool's
+   * replay check, _formatTx, and any wallet that asks. The realistic drift is a dir
+   * created with HEARTH_NETWORK unset (chain 7411) and later relabelled testnet. */
+  const fs = require('fs'), os = require('os'), path = require('path');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hearth-genesis-'));
+  const write = (cfg) => fs.writeFileSync(path.join(dir, 'genesis.json'), JSON.stringify(cfg, null, 2) + '\n');
+  const base = genesis.defaultConfig();
+
+  write({ ...base, chainId: 9999 });
+  /* The message is asserted, not just the throw: the whole cost of this defect was
+   * time-to-diagnose, so a refusal that does not name BOTH ids, the network and the
+   * file it read is only half the fix. */
+  assert.throws(() => new Blockchain({ dataDir: dir }),
+    e => e.code === GENESIS_NETWORK_MISMATCH
+      && e.message.includes('chain id 9999')
+      && e.message.includes(`"${P.NETWORK}"`)
+      && e.message.includes(String(P.CHAIN_ID))
+      && e.message.includes(path.join(dir, 'genesis.json')),
+    'a genesis.json on another chain id is refused, naming both ids, the network and the file');
+
+  // extraData is what keeps an EMPTY block — no transactions, therefore no chain
+  // id in it at all — from being valid on both networks. Same treatment.
+  write({ ...base, extraData: '0x' + Buffer.from('hearth/7411', 'utf8').toString('hex') });
+  assert.throws(() => new Blockchain({ dataDir: dir }),
+    e => e.code === GENESIS_NETWORK_MISMATCH && e.message.includes('extraData "hearth/7411"'),
+    'a genesis.json whose extraData names another network is refused too');
+
+  // An explicit override is a deliberate statement of which chain is meant, and it
+  // already wins over the file — so it is not a mismatch. This is the seam the
+  // devnet fixtures and the p2p suites run through.
+  write({ ...base, chainId: 9999 });
+  const forced = new Blockchain({ dataDir: dir, config: { chainId: 9999 } });
+  eq(forced.chainId, 9999, 'an explicitly overridden chain id is honoured, not refused');
+
+  // The ordinary case must still be silent: a directory this network created,
+  // reopened by this network, is not a mismatch.
+  fs.rmSync(path.join(dir, 'genesis.json'));
+  const fresh = new Blockchain({ dataDir: dir });
+  eq(fresh.chainId, P.CHAIN_ID, 'a fresh data directory takes its chain id from the network');
+  const reopened = new Blockchain({ dataDir: dir });
+  eq(reopened.chainId, P.CHAIN_ID, 'and reopening it is not a mismatch');
+  T.state.pass += 2;                     // the two assert.throws above
+
   fs.rmSync(dir, { recursive: true, force: true });
 }
 

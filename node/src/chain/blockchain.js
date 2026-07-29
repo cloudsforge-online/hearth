@@ -34,7 +34,8 @@
  * chain must do (`_stateAt` there walks every block). It also means every historical
  * state is readable for free, so `eth_getBalance(addr, 12)` is exact rather than
  * approximate. The cost is that nothing is ever pruned; spec §9 puts pruning out of
- * scope for v1 and this is the shape that decision takes.
+ * scope for v1 and this is the shape that decision takes — which is precisely why
+ * SPECULATIVE execution must not write here at all. See `speculativeStateAt`.
  *
  * WHAT IS COMMITTED. The header commits to `txRoot`, `stateRoot`, `receiptsRoot`,
  * `logsBloom` and `gasUsed`, and validation recomputes ALL FIVE from the
@@ -52,7 +53,7 @@ const HDR = require('./header');
 const ST = require('./statetransition');
 const bloom = require('./bloom');
 const genesis = require('./genesis');
-const { StateDB, MemoryDB } = require('../state/statedb');
+const { StateDB, MemoryDB, OverlayDB } = require('../state/statedb');
 const { keccak256 } = require('../crypto/keccak');
 
 const BLOCKS_FILE = 'blocks.ndjson';
@@ -61,6 +62,77 @@ const BLOCKS_FILE = 'blocks.ndjson';
 const BLOCKHASH_WINDOW = 256;
 
 const hexBuf = h => Buffer.from(h, 'hex');
+
+/** `err.code` on the refusal below, so a caller can present it without matching text. */
+const GENESIS_NETWORK_MISMATCH = 'GENESIS_NETWORK_MISMATCH';
+
+/** Render an extraData hex string as its text if it is printable ASCII, for a message. */
+function readableExtraData(hex) {
+  const s = Buffer.from(hex.slice(2), 'hex').toString('utf8');
+  return /^[\x20-\x7e]*$/.test(s) ? `"${s}"` : hex;
+}
+
+/**
+ * Refuse a persisted genesis that belongs to another network.
+ *
+ * params.js goes out of its way never to GUESS a chain id: an unregistered network
+ * is a hard error and HEARTH_CHAIN_ID must be explicit, because "a node that
+ * GUESSES its chain id signs transactions that are valid somewhere it did not
+ * intend". But the id the chain actually runs on does not come from params — it
+ * comes from `genesis.json`, and `genesis.loadOrCreate` returns whatever is on
+ * disk. `eth_chainId`, the mempool's replay check and `_formatTx` all follow the
+ * file, so that guard protected everything except the value it was guarding.
+ *
+ * A data directory written under one HEARTH_NETWORK and started under another
+ * therefore advertises the id in the file while ForgeKeyvault, hardhat and every
+ * wallet resolve the id of the network the operator asked for. The mild outcome is
+ * that every signature is refused (`403 binding_mismatch`) with no obvious cause
+ * and sweeps stall; the sharp one is a node that answers `eth_chainId` with
+ * ANOTHER LIVE NETWORK's id, so a wallet that trusts it signs a transaction that is
+ * byte-identical and valid over there — precisely the cross-net replay EIP-155
+ * exists to prevent, and which docs/evm-spec.md §1 calls mandatory to stop.
+ *
+ * `extraData` is checked for the same reason one layer up. It names the network
+ * inside the genesis header (see the long note in genesis.js), and that is what
+ * stops a cheaply mined EMPTY testnet block — no transactions, therefore no chain
+ * id anywhere in it — from being a structurally valid mainnet block. A directory
+ * whose extraData names another network is not this network's chain, whatever its
+ * chain id says.
+ *
+ * AN EXPLICIT OVERRIDE IS NOT A MISMATCH. Overrides already win over the file
+ * (genesis.js `loadOrCreate` spreads them last), and a caller that passes
+ * `chainId` or `extraData` has named the chain it means in the same breath as
+ * asking for it — the devnet fixtures and the p2p suites do exactly that. Only the
+ * default path, the one that takes the file's word for it, is refused.
+ */
+function assertGenesisMatchesNetwork(cfg, overrides, dataDir) {
+  const named = k => overrides != null && Object.prototype.hasOwnProperty.call(overrides, k)
+    && overrides[k] !== undefined && overrides[k] !== null;
+  const where = dataDir ? ` in ${path.join(dataDir, genesis.GENESIS_FILE)}` : '';
+  /* Both remedies are named because the right one depends on which side is wrong,
+   * and the wrong guess is destructive: an operator who wipes a directory that was
+   * merely mislabelled loses the chain. */
+  const remedy = 'Start the node with HEARTH_NETWORK (or HEARTH_CHAIN_ID) set to the '
+    + 'network this directory belongs to, or use a fresh data directory for this one. '
+    + 'A node must never advertise a chain id it did not intend.';
+  /* Tagged, not matched on its text: bin/hearthd.js prints this one cleanly and
+   * exits 2 rather than dumping a stack, and must not swallow anything else. */
+  const refuse = (msg) => {
+    const e = new Error(`genesis: ${msg} ${remedy}`);
+    e.code = GENESIS_NETWORK_MISMATCH;
+    throw e;
+  };
+
+  if (!named('chainId') && cfg.chainId !== P.CHAIN_ID) {
+    refuse(`chain id ${cfg.chainId}${where} disagrees with network "${P.NETWORK}", `
+      + `whose chain id is ${P.CHAIN_ID}.`);
+  }
+  const expectedExtra = genesis.defaultConfig().extraData;
+  if (!named('extraData') && cfg.extraData !== expectedExtra) {
+    refuse(`extraData ${readableExtraData(cfg.extraData)}${where} names another network — `
+      + `network "${P.NETWORK}" builds its genesis with ${readableExtraData(expectedExtra)}.`);
+  }
+}
 
 class Blockchain extends EventEmitter {
   /**
@@ -76,6 +148,7 @@ class Blockchain extends EventEmitter {
     this.db = new MemoryDB();
 
     const cfg = dataDir ? genesis.loadOrCreate(dataDir, config) : genesis.normalizeConfig(config || {});
+    assertGenesisMatchesNetwork(cfg, config, dataDir);
     const g = genesis.build(cfg, this.db);
     this.config = g.config;
     this.chainId = g.config.chainId;
@@ -152,6 +225,28 @@ class Blockchain extends EventEmitter {
   }
 
   stateAtTip() { return new StateDB(this.db, hexBuf(this.store.get(this.tipId).stateRoot)); }
+
+  /**
+   * A StateDB at a block id whose WRITES GO NOWHERE THIS CHAIN CAN SEE.
+   *
+   * `stateAt` above hands back the chain's own append-only node store, which is
+   * right for anything that will be mined and wrong for anything that will not.
+   * A speculative run — `eth_call`, `eth_estimateGas`, anything an unauthenticated
+   * stranger can ask for — writes trie nodes and code through `Trie._ref` exactly
+   * as a real transaction does, and the store is never pruned (see the header of
+   * this file), so those nodes stay for the life of the process. This overlays a
+   * per-call Map: reads fall through to the real store, writes stop at the Map,
+   * and the caller drops the whole thing when the run returns.
+   *
+   * The point is not only the memory. It is that a speculative execution becomes
+   * INCAPABLE of influencing consensus state, because nothing it writes is in the
+   * store any block's state root is resolved against.
+   */
+  speculativeStateAt(id) {
+    const e = this.store.get(id);
+    if (!e) return null;
+    return new StateDB(new OverlayDB(this.db), hexBuf(e.stateRoot));
+  }
 
   receiptsAt(height) {
     const e = this.entryAt(height);
@@ -564,4 +659,4 @@ class Blockchain extends EventEmitter {
   }
 }
 
-module.exports = { Blockchain, BLOCKS_FILE, BLOCKHASH_WINDOW };
+module.exports = { Blockchain, BLOCKS_FILE, BLOCKHASH_WINDOW, GENESIS_NETWORK_MISMATCH };

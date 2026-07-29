@@ -98,6 +98,54 @@ class MemoryDB {
   get size() { return this.map.size; }
 }
 
+/**
+ * A store whose writes go nowhere the chain can see: reads fall through to a
+ * base store, writes land in a Map the caller drops.
+ *
+ * SPECULATIVE EXECUTION NEEDS THIS AND ONLY SPECULATIVE EXECUTION DOES. The
+ * chain keeps one append-only node store (see the long note at the top of
+ * chain/blockchain.js) and never prunes it — that is what makes a reorg cheap
+ * and every historical state readable. But `eth_call` and `eth_estimateGas` run
+ * the EVM too, and every SSTORE, account touch and code deposit inside one of
+ * those runs calls `Trie._ref` -> `db.put`. Handed the chain's own store, an
+ * unauthenticated call that is never mined leaves nodes in it that are
+ * indistinguishable from consensus state and that nothing ever removes.
+ *
+ * The store is content-addressed, so REPEATING a call costs nothing; a caller
+ * that varies one byte of calldata per request does not, and that is the whole
+ * attack. Measured before this class existed: one SSTORE-loop `eth_call`
+ * retained 7,135 nodes / 1.6 MB, and ten calls differing in one byte retained
+ * 25,180 more.
+ *
+ * The property this buys is stronger than a memory bound, and it is the one
+ * actually worth having: a speculative run CANNOT influence consensus state at
+ * all. Nothing it writes is reachable from any block's state root, because
+ * nothing it writes is in the store those roots are resolved against.
+ *
+ * `has` and `get` consult the overlay first so a run reads its own writes back
+ * — a contract that SSTOREs and then SLOADs the same slot within one call must
+ * see what it wrote, and the trie resolves that through the store like any
+ * other node. `size` is the OVERLAY's, not the total: the interesting number is
+ * how much this run produced, and the base store's size is readable from the
+ * base store.
+ */
+class OverlayDB {
+  constructor(base) {
+    this.base = base;
+    this.map = new Map();
+  }
+
+  get(key) {
+    const k = key.toString('hex');
+    const v = this.map.get(k);
+    return v === undefined ? this.base.get(key) : v;
+  }
+
+  put(key, value) { this.map.set(key.toString('hex'), value); }
+  has(key) { return this.map.has(key.toString('hex')) || this.base.has(key); }
+  get size() { return this.map.size; }
+}
+
 // ---- the trie --------------------------------------------------------------
 
 /* A node in memory is its RLP-decoded form:
@@ -169,6 +217,45 @@ class Trie {
     return h;
   }
 
+  /**
+   * Hash and store everything reachable that is still an in-memory node, and
+   * return the reference the parent should hold. Together with `root()`, which
+   * does the same for the root node, this is the only path by which a write
+   * reaches the node store — `_put` and `_del` no longer touch it at all.
+   *
+   * WHY WRITES ARE NOT HASHED AS THEY HAPPEN. `_put` and `_del` used to call
+   * `_ref` on every node they rebuilt, so a single insert re-encoded, re-hashed
+   * and re-stored the whole path from the leaf to the root — and the store is
+   * append-only by design (a reorg has to be able to re-open any historical
+   * root), so every one of those nodes was permanent. `StateDB` then wrote the
+   * account record after each mutation, which walked the state trie the same
+   * way. Together that made one SSTORE cost a full two-trie re-root:
+   * docs/robustness-review.md §1 measured 443 MB retained and 65 s of CPU for a
+   * single 30,000,000-gas transaction against a 15 s block interval.
+   *
+   * Deferring changes nothing observable. Children are left as node objects
+   * while the trie is dirty; `_deref` already resolves an object to itself, so
+   * every read path works unchanged. The hashing rules — including rule 2, the
+   * one that decides embedding by encoded length — are applied here, bottom-up,
+   * exactly as they were before, because a parent's encoding depends on its
+   * children's references and therefore cannot be computed until they are.
+   *
+   * Committed children are REPLACED by their references in the parent, so the
+   * in-memory tree collapses back to hashes as it is committed. Without that,
+   * every root() would re-hash everything touched since the trie was opened
+   * rather than everything touched since the last root(), which is quadratic
+   * over a block.
+   */
+  _commit(node) {
+    if (node === null) return EMPTY;
+    if (node.length === 17) {
+      for (let k = 0; k < 16; k++) if (Array.isArray(node[k])) node[k] = this._commit(node[k]);
+    } else if (!hpDecode(node[0]).isLeaf && Array.isArray(node[1])) {
+      node[1] = this._commit(node[1]);
+    }
+    return this._ref(node);
+  }
+
   // -- reads -----------------------------------------------------------------
 
   /** The stored value, or null. */
@@ -202,6 +289,13 @@ class Trie {
     if (this._rootHash) return this._rootHash;
     const node = this._root();
     if (node === null) return EMPTY_TRIE_ROOT;
+    // Children first — see `_commit`. The root itself is then hashed
+    // unconditionally, which is why this does not just call `_commit(node)`.
+    if (node.length === 17) {
+      for (let k = 0; k < 16; k++) if (Array.isArray(node[k])) node[k] = this._commit(node[k]);
+    } else if (!hpDecode(node[0]).isLeaf && Array.isArray(node[1])) {
+      node[1] = this._commit(node[1]);
+    }
     const enc = RLP.encode(node);
     const h = keccak256(enc);
     this.db.put(h, enc);
@@ -232,7 +326,7 @@ class Trie {
     if (node.length === 17) {
       if (i === path.length) { node[16] = value; return node; }
       const k = path[i];
-      node[k] = this._ref(this._put(this._deref(node[k]), path, i + 1, value));
+      node[k] = this._put(this._deref(node[k]), path, i + 1, value);
       return node;
     }
 
@@ -242,7 +336,7 @@ class Trie {
 
     if (isLeaf && cpl === nibbles.length && cpl === rest.length) { node[1] = value; return node; }
     if (!isLeaf && cpl === nibbles.length) {
-      node[1] = this._ref(this._put(this._deref(node[1]), path, i + cpl, value));
+      node[1] = this._put(this._deref(node[1]), path, i + cpl, value);
       return node;
     }
 
@@ -254,18 +348,18 @@ class Trie {
     if (tailK.length === 0) {
       b[16] = node[1];                                  // an exhausted leaf's value
     } else if (isLeaf) {
-      b[tailK[0]] = this._ref(leaf(tailK.slice(1), node[1]));
+      b[tailK[0]] = leaf(tailK.slice(1), node[1]);
     } else {
       const sub = tailK.slice(1);
       // A one-nibble extension has nothing left to say; its child moves up.
-      b[tailK[0]] = sub.length ? this._ref(extension(sub, node[1])) : node[1];
+      b[tailK[0]] = sub.length ? extension(sub, node[1]) : node[1];
     }
 
     const tailV = rest.slice(cpl);
     if (tailV.length === 0) b[16] = value;
-    else b[tailV[0]] = this._ref(leaf(tailV.slice(1), value));
+    else b[tailV[0]] = leaf(tailV.slice(1), value);
 
-    return cpl === 0 ? b : extension(rest.slice(0, cpl), this._ref(b));
+    return cpl === 0 ? b : extension(rest.slice(0, cpl), b);
   }
 
   _del(node, path, i) {
@@ -280,7 +374,7 @@ class Trie {
         const child = this._deref(node[k]);
         if (child === null) return node;                // absent
         const next = this._del(child, path, i + 1);
-        node[k] = next === null ? EMPTY : this._ref(next);
+        node[k] = next === null ? EMPTY : next;
       }
       return this._collapseBranch(node);
     }
@@ -312,14 +406,14 @@ class Trie {
 
   /** Rule 3b: an extension whose child is not a branch merges into it. */
   _join(nibbles, child) {
-    if (child.length === 17) return extension(nibbles, this._ref(child));
+    if (child.length === 17) return extension(nibbles, child);
     const d = hpDecode(child[0]);
     return [hpEncode(nibbles.concat(d.nibbles), d.isLeaf), child[1]];
   }
 }
 
 module.exports = {
-  Trie, MemoryDB, EMPTY_TRIE_ROOT,
+  Trie, MemoryDB, OverlayDB, EMPTY_TRIE_ROOT,
   // Exported so the conformance suite can pin the encoding rules directly
   // rather than only through the roots they produce.
   hpEncode, hpDecode, toNibbles,

@@ -1,8 +1,12 @@
 # Roadmap
 
 **Where this actually is:** an EVM implementation that passes Ethereum's
-reference vectors, running Uniswap V2, with **no chain under it**. Consensus on
-the account model is the one thing standing between here and a testnet.
+reference vectors, running Uniswap V2, **with a chain under it**. Consensus on
+the account model has landed: the node mines blocks, reorgs onto the heavier
+branch, replays its disk to the same tip, and serves `eth_*` on 8545. Nothing
+is published, and two things are unfinished — throughput on storage-heavy load
+(phase 5's row below) and the production PoW parameters
+([`pow-parameters.md`](pow-parameters.md)).
 
 The phase numbering below is [`evm-spec.md`](evm-spec.md) §8's, because that is
 the plan the work is being executed against. Everything else is downstream of it.
@@ -19,19 +23,23 @@ the plan the work is being executed against. Everything else is downstream of it
 | **2. State** | trie, statedb | TrieTests pass | ✅ |
 | **3. Execution** | interpreter, gas, opcodes, precompiles | VMTests pass | ✅ **609/609** |
 | **4. Transition** | tx application, receipts, bloom, header v2 | GeneralStateTests pass | ✅ **20,077/20,077** — the last ten fixed by EIP-7610 (`c93a524`) — see [`MAP.md`](../MAP.md) §4.3. *Header v2 belongs to phase 5* |
-| **5. Consensus** | block production and validation on the new state model | testnet produces and reorgs | 🟡 **being built. No block has ever been produced** — and **blocked** on `StateDB` re-rooting both tries per mutation: 443 MB and 65 s for one 30M-gas transaction against a 15 s block time ([`robustness-review.md`](robustness-review.md) §1) |
-| **6. RPC** | `eth_*` surface | MetaMask connects; Hardhat deploys | 🟡 the surface is built and passes 301 checks, but against an in-memory fake — **nothing mounts it**, and the gate needs phase 5 |
+| **5. Consensus** | block production and validation on the new state model | testnet produces and reorgs | ✅ **met.** `node/test/evm-p2p-fork.js` (51 checks) partitions two real nodes over real sockets, reorgs them onto the heavier branch, agrees state roots byte for byte and replays a restarted node to the same tip; `docker-compose.testnet.yml` runs three. The standing caveat here was throughput on storage-heavy load — `StateDB` re-rooting both tries per mutation, measured at 443 MB and 65 s for one 30M-gas transaction. Fixed and gated: `node/test/bench/block-execution.js` measures the same transaction at 5.2 s and 9.2 MiB and fails if it regresses |
+| **6. RPC** | `eth_*` surface | MetaMask connects; Hardhat deploys | ✅ **mounted** on 8545 by `node/src/evmnode.js:186`. 41 methods (43 with `HEARTH_RPC_FEE_HISTORY=1`), 422 checks against a fake chain and 170 against a real one over HTTP. A contract deploys and answers through it ([`quickstart.md`](quickstart.md) §5.0). No WebSocket surface — 8546 is reserved for v2 |
 | **7. DeFi** | WEMBER, Factory, Pair, Router, Multicall3 | a swap succeeds end to end | ✅ **met** — `node/test/dex.js`, 167/167, a swap at 112,456 gas *on our own EVM*. Deployed to no chain |
-| **8. Ecosystem** | EVM-aware explorer, faucet, verified sources, docs | a stranger can deploy unaided | 🟡 explorer ✅, faucet ✅ (undeployed), CLI + tracer ✅, templates ✅, **verified contract sources ✅** (`tools/verify`, 116/116). Etherscan-compatible `/api` 🟡 written, **suite failing** (`tools/explorer-api`). All undeployed |
+| **8. Ecosystem** | EVM-aware explorer, faucet, verified sources, docs | a stranger can deploy unaided | 🟡 the gate is **met locally** — one command starts a chain and the next deploys to it — but not publicly, because nothing is hosted. explorer ✅, faucet ✅, CLI + tracer ✅, templates ✅, verified contract sources ✅ (`tools/verify`, 116/116), Etherscan-compatible `/api` ✅ (`tools/explorer-api`, 177/177 plus 27/27 against a real chain). All undeployed |
 
 Phases 1–4 were testable entirely offline against vectors, with no chain running.
 That was deliberate: the risky part is provably correct before it touches
-consensus. **The corollary is that none of it has ever been driven by a block**,
-and phase 5 is where that stops being true.
+consensus. The corollary used to be that none of it had ever been driven by a
+block. Phase 5 ended that, and what it did **not** end is written down rather
+than implied: no long-range reorg has been exercised, no sustained load has
+been applied, and **no block has ever been produced at production PoW
+parameters** ([`pow-parameters.md`](pow-parameters.md)).
 
-### What phase 5 actually has to do
+### What phase 5 had to do, and did
 
-Named here because several documents describe it as one line and it is not:
+Kept here because several documents described it as one line and it was not.
+Every item below is now in the tree:
 
 - **Header v2** — `txRoot` (a trie root, not a binary merkle root), `stateRoot`,
   `receiptsRoot`, `logsBloom`, `gasLimit`, `gasUsed`, plus the six fields an RPC
@@ -39,12 +47,12 @@ Named here because several documents describe it as one line and it is not:
   `totalDifficulty` (**cumulative — must be stored**), `size`, `extraData`,
   `nonce`, `mixHash`.
 - **`timestamp` in seconds, converted at the header**, not at the RPC boundary.
-- **The coinbase key becomes secp256k1**, and with it the block signature. The
-  browser miner has already moved and the node has not, so **the browser miner
-  currently cannot mine a block the node will accept** — see
+- **The coinbase key becomes secp256k1**, and with it the block signature. This
+  is why `hearthd --evm` refuses `--miner-address`: the coinbase must sign the
+  block, so a node can only mine to a key it holds — see
   [`decisions.md`](decisions.md) §2.5.
-- **Mount the JSON-RPC server** on 8545 at the root path. `jsonrpc/server.js`
-  exists; nothing constructs it.
+- **Mount the JSON-RPC server** on 8545 at the root path — `evmnode.js:186`
+  constructs it.
 - **An account-model genesis**, and its state root published as the verifiable
   no-premine artifact.
 
@@ -57,8 +65,8 @@ status is [`listing-checklist.md`](listing-checklist.md) §7.
 
 | | |
 | --- | --- |
-| ⬜ | **Raise `POW_SCRATCH_KIB`** from 64 to ~2 GiB and `POW_WALK_STEPS` from 256 to 2,048+. A 64 KiB pad fits in L2 cache and is not meaningfully memory-hard |
-| ⬜ | **Raise `COINBASE_MATURITY`** from 10 to ~100 |
+| ✅ | ~~**Raise `POW_SCRATCH_KIB`** from 64 to ~2 GiB~~ — **measured and closed the other way.** 2 GiB is 185.7 s per evaluation against a 15 s interval, and a validator pays one per block received; `params.js` refuses to start above 4 MiB. A 64 KiB pad still fits in L2 and is still not meaningfully memory-hard — fixing that needs an amortised dataset, not a constant ([`pow-parameters.md`](pow-parameters.md)) |
+| ✅ | ~~**Raise `COINBASE_MATURITY`** from 10 to ~100~~ — a no-op on the account model, which credits the subsidy straight to the balance. The constant is read only by the retired UTXO path |
 | ⬜ | **Implement 18 decimals.** `params.js:6` still defines 1e8 |
 | ⬜ | **A `0x` Commons address**, and a decision about whether anything can ever spend from it |
 | ⬜ | **Decide `nativeCurrency.name`** — SLIP-44 170 is already `MBRS / Ember`, so the name collides while the symbol does not |
@@ -76,7 +84,7 @@ status is [`listing-checklist.md`](listing-checklist.md) §7.
 | ⬜ | Deploy the faucet (the service is written and tested; there is nowhere to run it) |
 | ⬜ | Point the explorer at a real chain |
 | ⬜ | Deploy WEMBER, the AMM and Multicall3 — **and seed liquidity.** A DEX with empty pools attracts nobody |
-| ⬜ | Deploy the **Etherscan-compatible `/api` shim** — worth more than a prettier explorer: aggregators, tax tools, portfolio trackers and several exchange back-ends all speak it. The service is written (`tools/explorer-api`) but **its suite does not currently pass**, and there is nowhere to run it |
+| ⬜ | Deploy the **Etherscan-compatible `/api` shim** — worth more than a prettier explorer: aggregators, tax tools, portfolio trackers and several exchange back-ends all speak it. The service is written and green (`tools/explorer-api`, 177/177 plus 27/27 against a real chain); there is nowhere public to run it |
 | ⬜ | Deploy the plain-decimal total and circulating supply endpoints; aggregators poll exactly these. Written, in the same service |
 | ⬜ | Register chain id 7411 in `ethereum-lists/chains`; register a SLIP-44 coin type |
 | ⬜ | Seed nodes, DNS seeds, a status page, a second independent RPC provider |

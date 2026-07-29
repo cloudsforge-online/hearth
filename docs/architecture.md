@@ -81,7 +81,7 @@ the exact counts, all of which were produced by running the suites.
 | Execution | `evm/{stack,memory,opcodes,gas,interpreter}.js` | **609/609 VMTests** |
 | Precompiles | `evm/precompiles.js`, `evm/bn128.js`, `evm/blake2f.js` | EIP-196/197/1108, EIP-152, go-ethereum vectors |
 | Transition | `chain/{transaction,receipt,bloom,statetransition}.js` | **188/188 TransactionTests**, **20,077/20,077 GeneralStateTests** |
-| RPC | `jsonrpc/{hex,methods,server}.js` | 301 checks against an in-memory fake chain |
+| RPC | `jsonrpc/{hex,methods,server,filters}.js` | 422 checks against an in-memory fake chain, 170 against a real node over HTTP |
 
 **Three design points that are load-bearing rather than stylistic:**
 
@@ -92,11 +92,15 @@ the exact counts, all of which were produced by running the suites.
 - **StateDB is journaled, not a map.** `REVERT`, failed calls and out-of-gas must
   roll back storage, balance, nonce and code to a snapshot while gas already
   consumed stays consumed. It is an ordered journal with checkpoint markers.
-  **It also re-roots both tries on every single mutation**, which is correct and
-  unusably slow: 1.66 KB retained and 245 µs of CPU for 112 gas, or 443 MB and 65
-  seconds for one 30M-gas transaction against a 15-second block time
-  ([`robustness-review.md`](robustness-review.md) §1). Root computation has to
-  move to the end of a transaction before this layer can be driven by a block.
+  **Hashing is deferred to `root()`**, which is once per transaction: `_write`
+  marks an account dirty and `_flush` puts the dirty records into the state trie,
+  while `trie.js` leaves rebuilt nodes unhashed until `_commit` applies the
+  encoding rules bottom-up. It used to re-root both tries on every single
+  mutation — correct, and unusably slow at 443 MB and 65 seconds for one 30M-gas
+  transaction against a 15-second block time
+  ([`robustness-review.md`](robustness-review.md) §1). The same transaction
+  measures 5.2 s and 9.2 MiB now. The STORAGE root is still materialised per
+  write, which is about a third of what is left.
 - **An EVM failure is a *returned* `{ exception }`, never a throw.** A thrown JS
   error is an internal bug, and if internal bugs could satisfy a vector, the
   vectors that assert *failure* would be the easiest ones to fake.
@@ -199,8 +203,9 @@ understood, and its maths need no concentrated-liquidity tick machinery. V2 need
 
 `node/test/dex.js` drives the compiled contracts straight through the state
 transition — deploy, `createPair`, `addLiquidity`, swap, swap back, `permit`,
-`removeLiquidity`. 167/167, a swap at 112,456 gas. **Nothing is deployed to any
-chain, because there is no chain.**
+`removeLiquidity`. 167/167, a swap at 112,456 gas. **Nothing is deployed to any chain that
+outlives the process that mined it** — the contracts deploy to a local
+`hearthd --evm` node, and no chain holding them is published.
 
 Two things the AMM depends on that are easy to get silently wrong, both automated:
 the **init code hash** (the Router derives pair addresses from a compile-time

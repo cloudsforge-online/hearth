@@ -1,8 +1,13 @@
 /* Encrypted key storage for the account-model wallet.
  *
  * Format `hearth.wallet.v3`:
- *   { version: 3, curve: 'secp256k1', chainId: 7411, address, created,
+ *   { version: 3, curve: 'secp256k1', chainId, address, created,
  *     kdf: {name, hash, iterations, salt}, cipher, iv, ct }
+ *
+ * `chainId` records the chain the file was made for, and it is whatever
+ * ../chain.js resolves at the time — 7412 on this estate's testnet. It is a
+ * note to the reader, not a restriction: the key is a secp256k1 scalar and
+ * works on any EVM chain, and `open` does not refuse a file from another one.
  *
  * The sealing construction is unchanged from the Ed25519 wallet's v2 and is not
  * up for revision: PBKDF2-HMAC-SHA256 at 600,000 iterations (OWASP's 2023

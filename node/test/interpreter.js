@@ -35,7 +35,7 @@ const gas = require('../src/evm/gas');
 const { Stack } = require('../src/evm/stack');
 const { Memory } = require('../src/evm/memory');
 const EVMlib = require('../src/evm/interpreter');
-const { EVM, ERR, createAddress, create2Address, analyseJumpdests, logsHash } = EVMlib;
+const { EVM, ERR, Deadline, DEADLINE_STEPS, createAddress, create2Address, analyseJumpdests, logsHash } = EVMlib;
 
 const hex = (s) => Buffer.from(String(s).replace(/^0x/, ''), 'hex');
 const addr = (n) => { const b = Buffer.alloc(20); b.writeUInt32BE(n, 16); return b; };
@@ -195,6 +195,7 @@ function run(code, o = {}) {
     tx: { origin: C, gasPrice: 7n },
     onStep: o.onStep || null,
     blockHash: o.blockHash || null,
+    deadline: o.deadline || null,
   });
   const r = evm.call({
     caller: C, to: A, gas: o.gas === undefined ? 100000n : o.gas,
@@ -743,6 +744,64 @@ group('tracer');
     onStep: (e) => depths.add(e.depth),
   });
   ok(depths.has(0) && depths.has(1), 'the hook sees both the outer and the inner frame');
+}
+
+// ---- the RPC deadline ------------------------------------------------------
+group('the optional wall-clock deadline (RPC only)');
+{
+  /* The defect this exists for: the loop had no step counter, no deadline and no
+   * interruption point, so `eth_call` with a large `gas` held the whole
+   * single-threaded node for as long as the gas lasted — 30M gas of this exact
+   * spin loop is 0.37 s, and 30M gas of blake2f is 10.7.
+   *
+   * The two properties that matter are opposites, and both are asserted here:
+   * WITH a deadline the loop gives up; WITHOUT one nothing changes at all, because
+   * the same interpreter validates blocks and a validator that gave up because its
+   * machine was busy would fork away from one that did not. */
+  const SPIN = '5b600056';                       // JUMPDEST PUSH1 0 JUMP
+
+  {
+    const t0 = Date.now();
+    const { r, evm } = run(SPIN, { gas: 30_000_000n });
+    ok(r.exception === ERR.OUT_OF_GAS, 'with no deadline the spin loop runs until it is out of gas');
+    ok(evm.timedOut === false, '…and reports no timeout, which is the consensus path');
+    ok(Date.now() - t0 > 100, '…having really executed it (this is the cost the RPC path is capping)');
+  }
+
+  {
+    const t0 = Date.now();
+    const { r, evm } = run(SPIN, { gas: 3_000_000_000n, deadline: new Deadline(20) });
+    const ms = Date.now() - t0;
+    ok(r.exception === ERR.TIMEOUT, 'with a deadline it halts with `execution timeout`');
+    ok(r.gasLeft === 0n, '…as an exceptional halt, so no gas is reported left');
+    ok(evm.timedOut === true, '…and the EVM records that it was the clock, not the program');
+    ok(ms < 500, `…within the budget rather than the gas (${ms} ms for 3,000,000,000 gas)`);
+  }
+
+  {
+    // A caught timeout must still be a timeout. A contract may CALL another, see
+    // that call fail and return normally — which is exactly what this does — so
+    // the caller reads `timedOut` rather than the outer frame's exception. If it
+    // read the exception, this run would report a successful eth_call.
+    const B = 'bb'.repeat(20);
+    const CALL_B = '6000600060006000600073' + B + '625f5e10f1' + '5000';
+    const { r, evm } = run(CALL_B, { gas: 3_000_000_000n, accounts: { [B]: SPIN }, deadline: new Deadline(20) });
+    ok(r.exception === null, 'a contract that ignores its failed CALL still returns normally');
+    ok(evm.timedOut === true, '…but the EVM knows the child was killed by the clock');
+  }
+
+  {
+    // Latching: once one frame notices, nothing else starts. Without this a
+    // parent could keep launching child frames — including precompiles, which
+    // are uninterruptible once entered — for a whole check interval afterwards.
+    const d = new Deadline(-1);
+    ok(d.expired() === true && d.tripped === true, 'an expired deadline latches on the first read');
+    const { r } = run(SPIN, { gas: 1000n, deadline: d });
+    ok(r.exception === ERR.TIMEOUT, '…and every later frame fails immediately');
+  }
+
+  ok(DEADLINE_STEPS > 0 && DEADLINE_STEPS <= 65536,
+    'the clock is read at least every 65,536 instructions, so the budget is honoured finely');
 }
 
 // ---- the error contract ----------------------------------------------------

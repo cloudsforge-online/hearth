@@ -13,9 +13,10 @@ node src/index.js
 npm test        # 66 assertions over real HTTP against a stub node
 ```
 
-> **Not deployed anywhere.** There is no account-model chain to fund accounts on
-> — phase 5 has not landed. The service is finished and tested; it is waiting
-> for a network. See [`../../docs/network-config.md`](../../docs/network-config.md).
+> **Not deployed anywhere public.** It runs against a local chain today —
+> `hearthd --evm --mine`, or the three-node `docker-compose.testnet.yml` — and
+> the service is finished and tested. What it is waiting for is a published
+> network, not a chain. See [`../../docs/network-config.md`](../../docs/network-config.md).
 
 ---
 

@@ -28,10 +28,14 @@ import * as KS from './keystore.js';
 import * as T from './transaction.js';
 import { parseAddress } from './account.js';
 import { parseEmber, parseGwei, parseInteger, GWEI } from './amount.js';
+import { chainName } from '../chain.js';
 
 const $ = id => document.getElementById(id);
 const show = (node, on) => node.classList.toggle('hide', !on);
 
+/* Deployment configuration, resolved once in ../chain.js and threaded through
+ * transaction.js so the id this page BANNERS on and the id it SIGNS with cannot
+ * be different numbers. */
 const CHAIN_ID = T.CHAIN_ID;
 const DEFAULT_GAS_PRICE_WEI = 10n * GWEI;     // only used if the node offers nothing
 const PLAIN_TRANSFER_GAS = 21_000n;
@@ -135,9 +139,11 @@ async function probeChain() {
   chainOk = true;
   if (id !== CHAIN_ID) {
     setMode('● wrong chain — ' + id, 'bad');
-    banner(`The node at ${rpc.endpointUrl()} reports chain id ${id}. Hearth is ${CHAIN_ID} `
-      + '(docs/evm-spec.md §1). Signing here would produce transactions that chain rejects, so '
-      + 'point the page somewhere else with ?rpc=<url> before using it.');
+    banner(`The node at ${rpc.endpointUrl()} reports chain id ${id} (${chainName(id)}). This wallet `
+      + `is configured for ${CHAIN_ID} (${chainName(CHAIN_ID)}, docs/evm-spec.md §1). Signing here `
+      + 'would produce transactions that chain rejects, so point the page somewhere else with '
+      + '?rpc=<url> before using it. The configured id is deliberately not taken from the node: a '
+      + 'link that aimed this page at somebody else\'s RPC would otherwise choose what you sign for.');
   } else if (rpc.isFixture()) {
     setMode('● FIXTURES — canned data, no chain', 'warn');
   } else {

@@ -18,9 +18,16 @@
 <meta name="twitter:image" content="https://hearth.cloudsforge.online/og-hearth.png">
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
 <link rel="manifest" href="site.webmanifest">
-<!-- No hearth-eth-rpc pin: the node is same-origin /rpc/, proxied by nginx.
-     Set this meta only to point the page at a node on a different origin;
-     ?rpc=<url> overrides it for one visit. -->
+<!-- No hearth-eth-rpc pin: the node is same-origin /eth-rpc/, which nginx
+     proxies to the JSON-RPC port (8545). Set this meta only to point the page
+     at a node on a different origin; ?rpc=<url> overrides it for one visit. -->
+<!-- WHICH CHAIN THIS BUNDLE SIGNS FOR. Left empty on purpose: nginx's
+     sub_filter fills it from HEARTH_CHAIN_ID at boot, and an empty or
+     unsubstituted value falls through to the default in assets/chain.js. It is
+     configuration and not a constant because 7411 (mainnet) and 7412 (testnet)
+     are served by the same image, and it is not taken from the node because a
+     hostile ?rpc= would then choose what your signature is bound to. -->
+<meta name="hearth-chain-id" content="">
 <link rel="stylesheet" href="assets/vendor/cf-tokens.css">
 <link rel="stylesheet" href="assets/vendor/cf-ui.css">
 <link rel="stylesheet" href="assets/styles.css">
@@ -67,7 +74,7 @@
     <h2>Web wallet</h2>
     <p>One secp256k1 key, created in this tab, sealed with a passphrase you choose, and never
       sent anywhere. Balances and nonces are read over <span class="mono">eth_*</span> JSON-RPC
-      from a Hearth node (same origin <span class="mono">/rpc/</span> by default, override with
+      from a Hearth node (same origin <span class="mono">/eth-rpc/</span> by default, override with
       <span class="mono">?rpc=</span>); payments are signed on this device and broadcast already
       signed. There is no server-side wallet — if no node is reachable this page says so instead
       of inventing numbers.</p>
@@ -283,7 +290,8 @@
         <p class="muted" style="font-size:.9rem; margin:0 0 14px">Generates a secp256k1 key locally ·
           derives an EIP-55 checksummed <span class="mono">0x</span> address · seals the key at rest
           with AES-256-GCM behind a passphrase · reads balance and nonce over
-          <span class="mono">eth_*</span> JSON-RPC · builds, signs (EIP-155, chain 7411) and
+          <span class="mono">eth_*</span> JSON-RPC · builds, signs (EIP-155, bound to the chain id
+          this deployment is configured for — shown in the panel above) and
           broadcasts legacy type-0 transactions · decodes its own signed bytes back and refuses to
           send anything that does not recover to this address · polls for the receipt.</p>
         <p class="muted" style="margin:0 0 6px"><strong class="warn">Doesn't</strong></p>

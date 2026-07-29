@@ -39,6 +39,25 @@
 const OUTPUT_BYTES = 64;
 const INPUT_BYTES = 213;
 
+/* THE ROUND LOOP IS INTERRUPTIBLE, AND ONLY EVER FOR eth_call. One gas per round
+ * makes this the most concentrated work-per-call in the machine: measured at
+ * 2.8 Mgas/s (docs/robustness-review.md §6), a single CALL that spends a block's
+ * worth of gas here runs for over ten seconds without yielding — on a
+ * single-threaded node that is the whole process, mining and p2p included. So
+ * `compress` takes an optional deadline and abandons the loop when it expires.
+ *
+ * NOTHING ON A CONSENSUS PATH MAY PASS ONE. An abandoned compression returns a
+ * different answer from a completed one, so a validator that gave up would build
+ * a different state root from a validator that did not — a chain split decided by
+ * how busy each machine was. The only caller that passes a deadline is the
+ * speculative `_run` in chain/rpcadapter.js, and the interpreter reports the
+ * abandonment as `execution timeout` rather than as this precompile's own
+ * failure. See the header of evm/interpreter.js.
+ *
+ * Checked every 4096 rounds: ~1.5 ms of work at the measured rate, which is finer
+ * than any budget worth setting and costs one integer decrement per round. */
+const DEADLINE_ROUNDS = 4096;
+
 /* IV, as [low, high] pairs of the eight 64-bit words. */
 const IV = new Uint32Array([
   0xf3bcc908, 0x6a09e667, 0x84caa73b, 0xbb67ae85,
@@ -126,15 +145,24 @@ function G(a, b, c, d, ix, iy) {
  * @param {number[]}    t    [t0lo, t0hi, t1lo, t1hi]
  * @param {boolean}     last the final-block flag
  * @param {number}      rounds
+ * @param {{expired: function(): boolean}} [deadline]  RPC only; see the note above.
+ * @returns {?Uint32Array} `h`, or null if the deadline expired mid-loop
  */
-function compress(h, m, t, last, rounds) {
+function compress(h, m, t, last, rounds, deadline = null) {
   for (let i = 0; i < 16; i++) { V[i] = h[i]; V[i + 16] = IV[i]; }
   V[24] ^= t[0]; V[25] ^= t[1];                      // v[12] ^= t0
   V[26] ^= t[2]; V[27] ^= t[3];                      // v[13] ^= t1
   if (last) { V[28] = ~V[28]; V[29] = ~V[29]; }      // v[14] = ~v[14]
   M.set(m);
 
+  let untilCheck = deadline === null ? -1 : DEADLINE_ROUNDS;
   for (let r = 0; r < rounds; r++) {
+    if (untilCheck >= 0 && --untilCheck < 0) {
+      // `h` is left as the caller gave it: a partial compression is not a shorter
+      // one, it is a wrong one, so there is nothing here worth returning.
+      if (deadline.expired()) return null;
+      untilCheck = DEADLINE_ROUNDS;
+    }
     const s = SIGMA2[r % 10];
     G(0, 8, 16, 24, s[0], s[1]);
     G(2, 10, 18, 26, s[2], s[3]);
@@ -154,8 +182,12 @@ function compress(h, m, t, last, rounds) {
  * The precompile body. Returns the 64-byte little-endian state, or null when the
  * input is not a valid F invocation — in which case the CALL fails outright and
  * consumes everything forwarded to it, rather than returning empty and succeeding.
+ *
+ * An expired `deadline` also returns null, and the interpreter tells the two apart
+ * by asking the deadline itself rather than by inspecting this return: only one of
+ * them is the caller's fault.
  */
-function blake2f(input) {
+function blake2f(input, deadline = null) {
   if (input.length !== INPUT_BYTES) return null;
   const f = input[212];
   if (f !== 0 && f !== 1) return null;
@@ -170,7 +202,7 @@ function blake2f(input) {
     input.readUInt32LE(204), input.readUInt32LE(208),
   ];
 
-  compress(h, m, t, f === 1, rounds);
+  if (compress(h, m, t, f === 1, rounds, deadline) === null) return null;
 
   const out = Buffer.alloc(OUTPUT_BYTES);
   for (let i = 0; i < 16; i++) out.writeUInt32LE(h[i] >>> 0, i * 4);
@@ -183,4 +215,4 @@ function rounds(input) {
   return input.length !== INPUT_BYTES ? 0 : input.readUInt32BE(0);
 }
 
-module.exports = { blake2f, compress, rounds, IV, SIGMA, INPUT_BYTES, OUTPUT_BYTES };
+module.exports = { blake2f, compress, rounds, IV, SIGMA, INPUT_BYTES, OUTPUT_BYTES, DEADLINE_ROUNDS };

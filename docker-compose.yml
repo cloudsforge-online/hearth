@@ -9,8 +9,21 @@
 #   web      — explorer + wallet + merchant demo (host :8080)
 #
 # Open http://localhost:8080 — the explorer reads the live chain from the seed
-# node's RPC at http://localhost:8645. The Hearth marketing site is a separate
+# node's Ethereum JSON-RPC at http://localhost:8545, and mine.html reads the
+# REST API at http://localhost:8645. The Hearth marketing site is a separate
 # app in ../site (port 3003); this bundle is the explorer and the wallet.
+#
+# THE ACCOUNT-MODEL CHAIN, not the retired UTXO one. `hearthd` runs the UTXO
+# chain unless told otherwise and this bundle used to say nothing, so it served
+# a chain the explorer and wallet in ./web cannot read a single field of: they
+# are eth_*-native, and the UTXO node has no eth_* surface at all. HEARTH_DATA
+# keeps the account-model blocks in a subdirectory, because both chains write
+# the same `blocks.ndjson` filename and an EVM node pointed at UTXO history
+# reads garbage rather than refusing.
+x-hearth-evm: &hearth-evm
+  HEARTH_EVM: "1"
+  HEARTH_JSONRPC: "8545"
+  HEARTH_DATA: /data/evm
 
 services:
   seed:
@@ -19,8 +32,10 @@ services:
     environment:
       HEARTH_P2P: "8646"
       HEARTH_RPC: "8645"
+      <<: *hearth-evm
     ports:
-      - "8645:8645"   # RPC/HTTP exposed to the host (browser talks to this)
+      - "8545:8545"   # Ethereum JSON-RPC — what the explorer and wallet speak
+      - "8645:8645"   # REST + SSE — /info, /events, /mining/* (mine.html)
       - "8646:8646"
     volumes:
       - seed-data:/data
@@ -32,6 +47,7 @@ services:
       HEARTH_PEERS: "seed:8646"
       HEARTH_MINE: "1"
       HEARTH_THROTTLE: "0.6"
+      <<: *hearth-evm
     depends_on: [seed]
     volumes:
       - miner1-data:/data
@@ -43,6 +59,7 @@ services:
       HEARTH_PEERS: "seed:8646"
       HEARTH_MINE: "1"
       HEARTH_THROTTLE: "0.6"
+      <<: *hearth-evm
     depends_on: [seed]
     volumes:
       - miner2-data:/data
@@ -53,17 +70,32 @@ services:
     ports:
       - "8080:80"
     environment:
-      # The config proxies /rpc/ to the node; here that node is `seed`, not the
-      # testnet name baked into the image.
+      # The config proxies /rpc/ to the node's REST/SSE server and /eth-rpc/ to
+      # its Ethereum JSON-RPC server; here that node is `seed`, not the testnet
+      # name baked into the image. Both are REQUIRED for the same reason the CSP
+      # variable below is — this service runs stock nginx:alpine and inherits no
+      # default from web/Dockerfile.
+      #
+      # Two variables because they are two servers. The REST one answers an
+      # eth_* POST with HTTP 404 and a body saying "this is the REST API", and
+      # the explorer reports that as MalformedResponse — a live chain rendered
+      # as a dead one.
       HEARTH_RPC_UPSTREAM: seed:8645
+      HEARTH_ETH_RPC_UPSTREAM: seed:8545
+      # The chain the bundle signs and banners for, templated into
+      # <meta name="hearth-chain-id"> and read by web/assets/chain.js. This
+      # bundle sets no HEARTH_NETWORK, so its seed is `hearth` — chain id 7411
+      # (node/src/params.js). Point the same web image at the estate's testnet
+      # and this becomes 7412.
+      HEARTH_CHAIN_ID: "7411"
       # The CSP connect-src allowlist. REQUIRED: this service runs stock
       # nginx:alpine, NOT web/Dockerfile, so it does not inherit that image's
       # default. envsubst leaves an unset variable in place rather than blanking
       # it, so nginx then reads `$HEARTH_CSP_CONNECT` as one of its own runtime
       # variables and refuses to start — `unknown "hearth_csp_connect" variable`,
-      # and no web container at all. Same-origin covers the proxied node at /rpc;
-      # loopback covers assets/obs.js reporting to a local Lantern and the
-      # documented `?rpc=http://localhost:8645` override.
+      # and no web container at all. Same-origin covers the proxied node at
+      # /rpc and /eth-rpc; loopback covers assets/obs.js reporting to a local
+      # Lantern and the documented `?rpc=http://localhost:8545` override.
       HEARTH_CSP_CONNECT: "'self' http://localhost:* http://127.0.0.1:*"
       NGINX_ENVSUBST_FILTER: HEARTH_
     volumes:

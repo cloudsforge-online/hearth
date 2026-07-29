@@ -13,7 +13,7 @@
  * This is a thin adapter over Blockchain and Mempool on purpose. It holds no state
  * of its own, so there is nothing here that can disagree with consensus.
  *
- * THREE THINGS IN HERE ARE NOT MECHANICAL AND ARE WORTH READING:
+ * FOUR THINGS IN HERE ARE NOT MECHANICAL AND ARE WORTH READING:
  *
  * 1. `logIndex` IS PER BLOCK, NOT PER RECEIPT. The receipts consensus stores know
  *    nothing about their position, so the numbering is applied here, across the
@@ -31,6 +31,21 @@
  *    limit, because the 63/64 rule gives a child frame a share of what is left — so
  *    "run it once and add 10%" produces estimates that are too low exactly where it
  *    matters, on deep calls.
+ *
+ * 4. SPECULATIVE EXECUTION IS SANDBOXED, GAS-CAPPED AND TIME-CAPPED, and all three
+ *    are load-bearing. `eth_call`/`eth_estimateGas` are the only unauthenticated
+ *    way to make this process run EVM code, over a CORS-`*` endpoint with no auth.
+ *    So `_run` executes against an overlay store nothing outside the call can reach
+ *    (`Blockchain.speculativeStateAt`), `_capFor` bounds the gas for BOTH methods,
+ *    and `_deadline` bounds the wall clock for BOTH methods — one budget for a
+ *    whole `estimateGas`, not one per bisection step. Without the first, every
+ *    distinct call leaves trie nodes in the chain's never-pruned store for the life
+ *    of the process. Without the other two, one request pins the single-threaded
+ *    event loop for as long as it likes and p2p, mining and the healthcheck stop
+ *    with it: measured before they existed, ONE `eth_call` of blake2f at the block
+ *    gas limit froze this node for 11.3 s, and one `eth_estimateGas` of a message
+ *    costing a tenth of that froze it for 15.2 s, because the bisection probed 26
+ *    times and 14 of those probes really executed.
  */
 
 const P = require('../params');
@@ -38,7 +53,7 @@ const HDR = require('./header');
 const TX = require('./transaction');
 const gas = require('../evm/gas');
 const bloom = require('./bloom');
-const { EVM, ERR } = require('../evm/interpreter');
+const { EVM, ERR, Deadline } = require('../evm/interpreter');
 const { PRECOMPILES } = require('../state/statedb');
 const { keccak256 } = require('../crypto/keccak');
 
@@ -55,12 +70,46 @@ class RpcChain {
    * @param {Mempool}    o.mempool
    * @param {function}   [o.submit]   (raw) -> {ok, hash} | {ok:false, error}; the
    *                                  node's, so a submitted transaction is gossiped
+   * @param {bigint|number} [o.rpcGasCap]      the ceiling on a speculative run's gas
+   * @param {number}     [o.rpcTimeBudgetMs]   wall clock for one call, or one whole
+   *                                           estimateGas including its bisection
+   * @param {function}   [o.peers]     () -> number of connected p2p peers
+   * @param {function}   [o.mining]    () -> boolean
+   * @param {function}   [o.hashrate]  () -> hashes per second
+   * @param {function}   [o.coinbase]  () -> Buffer(20), where this node mines to
    */
-  constructor({ chain, mempool, submit = null, gasPrice = P.EVM_MIN_GAS_PRICE }) {
+  constructor({
+    chain, mempool, submit = null, gasPrice = P.EVM_MIN_GAS_PRICE,
+    rpcGasCap = P.EVM_RPC_GAS_CAP, rpcTimeBudgetMs = P.EVM_RPC_TIME_BUDGET_MS,
+    peers = null, mining = null, hashrate = null, coinbase = null,
+  }) {
     this.chain = chain;
     this.mempool = mempool;
     this.submit = submit;
     this.suggestedGasPrice = BigInt(gasPrice);
+    this.rpcGasCap = BigInt(rpcGasCap);
+    this.rpcTimeBudgetMs = Number(rpcTimeBudgetMs);
+    if (this.rpcGasCap <= 0n || !(this.rpcTimeBudgetMs > 0)) {
+      // Fail at construction rather than serve one unbounded call: a zero here
+      // would read as "no cap" to anyone who wrote it, and would be one.
+      throw new Error('RpcChain: rpcGasCap and rpcTimeBudgetMs must both be positive');
+    }
+
+    /* ---- the node, as opposed to the chain -------------------------------
+     *
+     * DEFINED ONLY WHEN THE EMBEDDER SUPPLIED THE FACT, because the JSON-RPC
+     * layer registers `net_peerCount`, `eth_mining`, `eth_hashrate` and
+     * `eth_coinbase` on exactly this test and leaves them ABSENT otherwise.
+     * That is the whole point of routing them through here: an adapter built
+     * over a bare Blockchain — an indexer's, a test's — has no peers and no
+     * miner, and a node dashboard told "0 peers" by something that simply does
+     * not know reports the network as down. -32601 is the honest answer and
+     * the client can then fall back to its own probe.
+     */
+    if (peers) this.peerCount = () => BigInt(peers());
+    if (mining) this.mining = () => mining() === true;
+    if (hashrate) this.hashrate = () => BigInt(Math.max(0, Math.round(Number(hashrate()) || 0)));
+    if (coinbase) this.coinbase = () => coinbase();
   }
 
   // ---- chain metadata ------------------------------------------------------
@@ -139,6 +188,19 @@ class RpcChain {
   getBlockByNumber(n, fullTx) {
     const e = this.chain.entryAt(Number(n));
     return e ? this._formatBlock(e, fullTx) : null;
+  }
+
+  /**
+   * A canonical block's hash by height, without building the block.
+   *
+   * `eth_newBlockFilter` polls this once per new head, and `_formatBlock` would
+   * otherwise keccak every transaction in the block to produce a value the
+   * caller throws away — a 5,000-transaction block costs 5,000 hashes to learn
+   * one. The interface treats it as optional and falls back to getBlockByNumber.
+   */
+  blockHashAt(n) {
+    const e = this.chain.entryAt(Number(n));
+    return e ? hexBuf(e.id) : null;
   }
 
   getBlockByHash(hash, fullTx) {
@@ -292,12 +354,74 @@ class RpcChain {
   }
 
   /**
+   * The gas a speculative run may burn, which is NOT whatever the caller asked for.
+   *
+   * `eth_call` and `eth_estimateGas` are the only unauthenticated way to make this
+   * process execute EVM code, and this node is single-threaded: the run holds the
+   * event loop for its whole duration, so p2p, mining and the /info healthcheck
+   * compose polls all stop with it. A transaction cannot do that — a block's gas
+   * limit bounds it, and it has to be mined first — so the call path has to apply
+   * a bound itself or a stranger's one request is an outage. Measured before any
+   * clamp existed: `gas: 0x11e1a300` (300M, ten times the block limit) blocked the
+   * loop for 3.6 s from a single request — the same spin loop at the block gas
+   * limit is 0.37 s — and larger values scaled linearly with nothing to stop them.
+   *
+   * The cap is `EVM_RPC_GAS_CAP`, a third of the block gas limit by default and
+   * NOT the block gas limit itself — the reasoning for the number is in params.js.
+   * Clamping SILENTLY rather than erroring is deliberate and matches what geth
+   * does with `--rpc.gascap`: a caller asking for more gas than the endpoint will
+   * spend is asking a question about a transaction this node would not run anyway,
+   * and the honest answer is what happens at the limit that applies. The clamp
+   * lives here rather than in each caller because it was once in `estimateGas` and
+   * not in `call`, and one copy of a rule cannot drift from the other.
+   */
+  _capFor(msg) {
+    const asked = BigInt(msg.gas === null || msg.gas === undefined ? this.rpcGasCap : msg.gas);
+    return asked > this.rpcGasCap ? this.rpcGasCap : asked;
+  }
+
+  /**
+   * The wall clock one RPC request may spend executing, as a fresh `Deadline`.
+   *
+   * WHY GAS IS NOT ENOUGH, and why this is the half of the fix that actually stops
+   * the attack. Gas prices instructions as a native client experiences them; this
+   * interpreter's spread between its cheapest and dearest gas is 135x
+   * (docs/robustness-review.md §6). At the 10M cap, ordinary compute is 160 ms and
+   * blake2f is 3.5 s — and blake2f is one CALL into one loop with no instruction
+   * boundary in it, which is why the deadline is handed all the way down to the
+   * precompile rather than only checked between opcodes.
+   *
+   * ONE DEADLINE PER REQUEST, NOT PER EXECUTION. `estimateGas` re-executes the
+   * message up to 33 times, so a per-execution budget would authorise 33 times the
+   * outage; the bisection shares this one and stops when it is gone. Not every
+   * probe costs a run — one that is out of gas before the first opcode is free,
+   * and a message that fails at the cap returns after a single execution — but a
+   * message that succeeds near the cap pays for roughly half of them: the blake2f
+   * measurement in the header is 26 probes, 14 of which really executed.
+   *
+   * The consensus path must never see one of these. See the header of
+   * evm/interpreter.js: a validator that gave up on a block because its machine
+   * was busy would fork away from one that did not.
+   */
+  _deadline() { return new Deadline(this.rpcTimeBudgetMs); }
+
+  /**
    * One speculative execution. Never throws — an EVM failure is a returned value
    * (spec §0), and so is a JavaScript error inside the interpreter, which would
    * otherwise be indistinguishable from a correctly-rejected transaction.
+   *
+   * The state is `speculativeStateAt`, not `stateAt`: every write this run makes
+   * lands in a Map that is unreachable the moment this function returns, so an
+   * `eth_call` cannot add a single node to the chain's own store. See the note on
+   * that method — this is the one call site that must never use the real store.
+   *
+   * `deadline` is asked whether it tripped rather than the result being matched on
+   * `ERR.TIMEOUT`, because a contract may CALL another, see that call fail and
+   * return normally — reporting that as the callee's own outcome would turn "this
+   * node gave up" into "your contract returned false".
    */
-  _run(msg, entry, gasLimit) {
-    const state = this.chain.stateAt(entry.id);
+  _run(msg, entry, gasLimit, deadline) {
+    const state = this.chain.speculativeStateAt(entry.id);
     const ctx = this._contextFor(entry);
     const from = msg.from || ZERO_ADDRESS;
     const value = msg.value === null || msg.value === undefined ? 0n : msg.value;
@@ -321,6 +445,7 @@ class RpcChain {
       block: ctx,
       tx: { origin: from, gasPrice: msg.gasPrice || 0n },
       blockHash: this.chain._blockHashFn(entry.block.header.prevHash, entry.height),
+      deadline,
     });
 
     const execGas = gasLimit - intrinsic;
@@ -328,6 +453,7 @@ class RpcChain {
       ? evm.create({ caller: from, initcode: data, gas: execGas, value })
       : evm.call({ caller: from, to: msg.to, value, data, gas: execGas });
 
+    if (evm.timedOut) return { ok: false, timeout: true, error: ERR.TIMEOUT };
     if (r.internalError) return { ok: false, error: 'internal: ' + r.internalError };
     if (!r.exception) {
       const refund = gas.refundAllowance(gasLimit - r.gasLeft, state.getRefund());
@@ -340,8 +466,7 @@ class RpcChain {
   call(msg, at) {
     const entry = this._entryFor(at);
     if (!entry) return { ok: false, error: 'header not found' };
-    const cap = msg.gas === null || msg.gas === undefined ? this.chain.gasLimit : msg.gas;
-    return this._run(msg, entry, BigInt(cap));
+    return this._run(msg, entry, this._capFor(msg), this._deadline());
   }
 
   /**
@@ -351,21 +476,30 @@ class RpcChain {
    * exceeds allowance": a revert here is almost always a genuine revert, and
    * turning it into a gas error is how a developer spends an afternoon raising a
    * limit that was never the problem.
+   *
+   * THE BUDGET IS SHARED BY EVERY PROBE, and running out of it mid-bisection is
+   * NOT an error — it returns the smallest limit already proven to work. That is
+   * a true answer, just a loose one: `best` is a limit at which this message
+   * succeeded, and an over-estimate costs the caller nothing, because a
+   * transaction is charged for the gas it uses and not for the limit it names.
+   * Failing instead would deny an answer that has already been computed. Only a
+   * timeout on the FIRST probe is fatal, because then nothing is known at all.
    */
   estimateGas(msg, at) {
     const entry = this._entryFor(at);
     if (!entry) return { ok: false, error: 'header not found' };
-    let hi = BigInt(msg.gas === null || msg.gas === undefined ? this.chain.gasLimit : msg.gas);
-    if (hi > this.chain.gasLimit) hi = this.chain.gasLimit;
+    const deadline = this._deadline();
+    let hi = this._capFor(msg);
 
-    const top = this._run(msg, entry, hi);
+    const top = this._run(msg, entry, hi, deadline);
     if (!top.ok) return top;
 
     let lo = gas.intrinsicGas({ data: msg.data || Buffer.alloc(0), isCreation: !msg.to }) - 1n;
     let best = hi;
     for (let i = 0; i < ESTIMATE_ITERATIONS && lo + 1n < hi; i++) {
       const mid = (lo + hi) / 2n;
-      const r = this._run(msg, entry, mid);
+      const r = this._run(msg, entry, mid, deadline);
+      if (r.timeout) break;
       if (r.ok) { hi = mid; best = mid; } else lo = mid;
     }
     return { ok: true, returnData: top.returnData, gas: best };
@@ -375,6 +509,26 @@ class RpcChain {
     if (!this.submit) return { ok: false, error: 'this node does not accept transactions' };
     return this.submit(raw);
   }
+
+  // ---- the mempool, as the RPC sees it -------------------------------------
+
+  /** geth's two counts, for `txpool_status`. See Mempool#status. */
+  txpoolStatus() {
+    const s = this.mempool.status();
+    return { pending: BigInt(s.pending), queued: BigInt(s.queued) };
+  }
+
+  /**
+   * The mempool's admission journal, for `eth_newPendingTransactionFilter`.
+   *
+   * Passed straight through rather than re-derived: the pool is where a
+   * transaction is ANNOUNCED, and it is announced whether it arrived over
+   * `eth_sendRawTransaction` or over p2p gossip, which is exactly what a pending
+   * filter is asking about. Deriving it here from `mempool.list()` instead would
+   * mean diffing the pool per poll, and would report a mined transaction as
+   * "removed" — a pending filter has no such concept.
+   */
+  pendingSince(cursor) { return this.mempool.pendingSince(cursor); }
 
   syncing() { return false; }
 }

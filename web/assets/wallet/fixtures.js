@@ -34,7 +34,10 @@ import { qty, toHex } from '../explorer/format.js';
 import { RpcUnreachable } from '../explorer/rpc.js';
 import * as T from './transaction.js';
 
-const CHAIN_ID = 7411;
+/* The fixture node reports the chain the wallet signs for — anything else and
+ * the demo opens straight into the wrong-chain banner. `T.CHAIN_ID` is the
+ * configured id (../chain.js), so the two cannot drift apart again. */
+const CHAIN_ID = T.CHAIN_ID;
 const GWEI = 1_000_000_000n;
 const EMBER = 10n ** 18n;
 const BLOCK_GAS_LIMIT = 30_000_000n;

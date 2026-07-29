@@ -6,10 +6,12 @@ It has no state, executes no code, mines nothing and validates nothing. It
 serves the **real** JSON-RPC layer — `node/src/jsonrpc/{server,methods,hex}.js`,
 unmodified — over a fake chain, and logs every method a client calls.
 
-It exists because phase 5 (consensus) has not landed, so there is no way to
-point Hardhat, Foundry, MetaMask, ethers or viem at Hearth and find out what
-they actually do. This closes that gap without pretending to be the thing it is
-standing in for.
+It existed because there was no chain to point Hardhat, Foundry, MetaMask,
+ethers or viem at. There is one now — `hearthd --evm` — and this is still the
+faster answer to "does my client speak the protocol correctly", because it
+starts instantly, mines nothing, and logs every method a client calls including
+the ones Hearth does not implement. Use it to prove wiring; use a node to prove
+execution.
 
 ```bash
 node tools/rpc-probe/stub.js --port 8745

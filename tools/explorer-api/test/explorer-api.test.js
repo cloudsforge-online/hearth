@@ -115,9 +115,11 @@ function buildFixture() {
   ] });                                                                                   // 2
   chain.addBlock({ txs: [{ from: ALICE, to: null, creates: CREATED, gasUsed: 120000 }] }); // 3
   /* Block 4 is the one that matters for log ordinals: THREE logs across TWO
-   * transactions. The node numbers logIndex per receipt (0,1 then 0), so an
-   * index that trusted logIndex would resolve Bob's transfer to Token A's log
-   * and report the wrong contract. */
+   * transactions, so the second transaction's only log is the block's THIRD.
+   * An index that numbered logs from zero inside each receipt would file it as
+   * ordinal 0 and then resolve Bob's transfer to Token A's first log — the
+   * wrong contract, the wrong amount, the wrong counterparties. The block-wide
+   * numbering is asserted directly over the wire below. */
   chain.addBlock({ txs: [
     { from: CAROL, to: TOKEN_A, logs: [
       transferLog(TOKEN_A, CAROL, ALICE, 7),
@@ -293,6 +295,50 @@ async function main() {
 
     const nft = await api(port, { module: 'account', action: 'tokennfttx', address: hex(ALICE) });
     eq(nft.message, 'No transactions found', 'no ERC-721 transfers, and ERC-20 ones are not miscounted as such');
+  }
+
+  // ==========================================================================
+  group('logIndex is numbered across the BLOCK, on every path that serves it');
+  {
+    /* THE CHECK THAT WOULD HAVE CAUGHT THE DEFECT THIS SUITE SHIPPED WITH.
+     *
+     * The fixture used to omit `logIndex` on the belief that the node numbers
+     * logs per receipt; node/src/jsonrpc/methods.js `formatReceipt` instead
+     * refuses to invent an ordinal it cannot derive from one receipt, so the
+     * whole suite threw on the first block with a log and the Developer kit CI
+     * job was red on every push. Asserting the values makes the contract
+     * explicit: the fixture cannot go back to omitting them, and it cannot
+     * start numbering them per receipt either.
+     *
+     * Block 4 is the discriminating case — two transactions, three logs. Per
+     * BLOCK the ordinals are 0, 1, 2; per RECEIPT they would be 0, 1, 0. */
+    const [tx0, tx1] = chain.blocks[4].transactions;
+
+    const r0 = await api(port, { module: 'proxy', action: 'eth_getTransactionReceipt', txhash: hex(tx0.hash) });
+    ok(!r0.error, 'a receipt carrying logs is served rather than erroring');
+    eq(r0.result.logs.map(l => l.logIndex), ['0x0', '0x1'], "the first transaction's two logs are 0 and 1");
+
+    const r1 = await api(port, { module: 'proxy', action: 'eth_getTransactionReceipt', txhash: hex(tx1.hash) });
+    eq(r1.result.logs.map(l => l.logIndex), ['0x2'],
+      "and the second transaction's ONE log is the block's THIRD — 0x2, not 0x0");
+
+    /* eth_getLogs numbers the same logs itself when a chain omits the value
+     * (methods.js `scanLogs`), so it is the one path that would have kept
+     * working with a broken fixture. Requiring the two to agree pins them
+     * together: a chain that numbers per receipt now disagrees with itself. */
+    const scan = await api(port, {
+      module: 'proxy', action: 'eth_getLogs',
+      params: JSON.stringify([{ fromBlock: '0x4', toBlock: '0x4' }]),
+    });
+    eq(scan.result.map(l => l.logIndex), ['0x0', '0x1', '0x2'], 'eth_getLogs agrees, in block order');
+    eq(scan.result.map(l => l.transactionIndex), ['0x0', '0x0', '0x1'],
+      'and the ordinals cross the transaction boundary rather than restarting at it');
+
+    // The index derives its own ordinal (hydrate.js flattenLogs) and must land
+    // on the same number the node reports, or /api and eth_getLogs disagree
+    // about which log a token transfer is.
+    const bobtx = await api(port, { module: 'account', action: 'tokentx', address: hex(BOB) });
+    eq(bobtx.result[0].logIndex, '2', "the index files Bob's transfer as the block's third log");
   }
 
   // ==========================================================================

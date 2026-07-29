@@ -58,6 +58,24 @@ const MESSAGES = {
   SENDER_FULL: 'txpool is full for this sender',
 };
 
+/**
+ * Admission-journal length — how far back `eth_newPendingTransactionFilter` can
+ * see, and the whole memory cost of supporting it.
+ *
+ * A RING, NOT A QUEUE PER FILTER, and that distinction is the point. geth gives
+ * each pending-transaction subscription its own channel and fills it from the
+ * pool; a subscription nobody drains is then unbounded growth reachable from an
+ * unauthenticated endpoint. Here the pool keeps ONE bounded log of what it
+ * admitted and a filter is an integer into it, so a thousand filters cost a
+ * thousand integers. A filter that falls further behind than this misses the
+ * difference — the honest degradation, and the reason `pendingSince` reports the
+ * cursor it actually served from.
+ *
+ * 8,192 hashes is roughly 0.5 MB of hex and covers a filter polling every two
+ * seconds through the fastest burst this pool will accept.
+ */
+const RECENT_MAX = 8_192;
+
 class Mempool {
   /**
    * @param {object}   o
@@ -78,6 +96,50 @@ class Mempool {
      * selection on (tip, version) exactly as the UTXO miner does. `size` is not a
      * substitute: an eviction plus an admission leaves it unchanged. */
     this.version = 0;
+
+    /* The admission journal — see RECENT_MAX. `recentBase` is the sequence
+     * number of `recent[0]`, so a cursor survives the ring wrapping and a reader
+     * can tell whether it fell off the back. Written in `add` and nowhere else:
+     * a transaction that is mined or evicted was still ANNOUNCED, and a client
+     * that already saw its hash does not want it withdrawn. */
+    this.recent = [];
+    this.recentBase = 0;
+  }
+
+  /** The sequence number the next admitted transaction will take. */
+  get pendingCursor() { return this.recentBase + this.recent.length; }
+
+  /**
+   * Transaction hashes admitted since `cursor`, and the cursor to pass next
+   * time. A null cursor means "from now", which is what a filter created this
+   * instant wants — it must not be handed the whole journal on its first poll.
+   *
+   * A cursor from the future (a node restarted under a client that kept its
+   * filter) is treated as "from now" rather than as an error: the alternative is
+   * replaying the entire ring to a client that has already seen it.
+   */
+  pendingSince(cursor) {
+    const end = this.pendingCursor;
+    if (cursor === null || cursor === undefined || !Number.isSafeInteger(cursor) || cursor > end) {
+      return { cursor: end, hashes: [] };
+    }
+    const start = Math.max(cursor, this.recentBase);
+    return {
+      cursor: end,
+      hashes: this.recent.slice(start - this.recentBase).map(h => Buffer.from(h, 'hex')),
+    };
+  }
+
+  /* Trimmed in batches rather than shifted per push: `Array#shift` on an
+   * eight-thousand element array, once per admitted transaction, is the kind of
+   * quadratic cost that only shows up under the load it is meant to survive. */
+  _journal(hashHex) {
+    this.recent.push(hashHex);
+    if (this.recent.length > RECENT_MAX * 2) {
+      const drop = this.recent.length - RECENT_MAX;
+      this.recent = this.recent.slice(drop);
+      this.recentBase += drop;
+    }
   }
 
   get size() { return this.byHash.size; }
@@ -173,6 +235,7 @@ class Mempool {
     this.byHash.set(hashHex, entry);
     this.bytes += entry.size;
     this.version++;
+    this._journal(hashHex);
     return { ok: true, hash: hashHex, entry };
   }
 
@@ -310,6 +373,27 @@ class Mempool {
     }
   }
 
+  /**
+   * geth's split of the pool, for `txpool_status`: PENDING is what could be
+   * mined right now — a sender's unbroken run upwards from its account nonce —
+   * and QUEUED is everything stranded above a gap.
+   *
+   * The distinction is the only thing that makes the number useful. A wallet
+   * whose transaction sits in `queued` is not waiting for a miner, it is waiting
+   * for an earlier nonce that may never arrive, and a dashboard that reports one
+   * total cannot tell the operator which. Costs one state read per SENDER, which
+   * is the same walk `revalidate()` already does after every block.
+   */
+  status() {
+    const state = this.readState();
+    let pending = 0;
+    for (const [senderHex, ladder] of this.bySender) {
+      let n = state.getNonce(Buffer.from(senderHex, 'hex'));
+      while (ladder.has(n)) { pending++; n += 1n; }
+    }
+    return { pending, queued: this.byHash.size - pending };
+  }
+
   /** Everything pooled, newest last — for `/mempool` and for tests. */
   list() {
     return [...this.byHash.values()].map(e => ({
@@ -330,4 +414,4 @@ class Mempool {
   }
 }
 
-module.exports = { Mempool, REJECT, MESSAGES };
+module.exports = { Mempool, REJECT, MESSAGES, RECENT_MAX };

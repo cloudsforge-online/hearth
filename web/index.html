@@ -20,18 +20,23 @@
 <link rel="manifest" href="site.webmanifest">
 
 <!-- WHERE THE CHAIN IS.
-     Resolution order is ?rpc= → this meta → same-origin /rpc/ → :8545, and the
-     same-origin default is the deployed path that web/nginx.conf proxies. Set
-     this meta only to aim the page at a node on another origin — and remember
-     the CSP's connect-src has to allow it (HEARTH_CSP_CONNECT).
+     Resolution order is ?rpc= → this meta → same-origin /eth-rpc/ → :8545, and
+     the same-origin default is the deployed path that web/nginx.conf proxies to
+     HEARTH_ETH_RPC_UPSTREAM. Set this meta only to aim the page at a node on
+     another origin — and remember the CSP's connect-src has to allow it
+     (HEARTH_CSP_CONNECT).
 
-     Phase 5/6 still has to settle one thing: node/src/jsonrpc/server.js accepts
-     POST at whatever path it is mounted on, and node/src/rpc.js already answers
-     POST /rpc with the older {method:'getinfo'} shape. Those two must not
-     collide. If they do, this page reports "answered, but not with JSON-RPC 2.0"
-     rather than showing an empty chain.
+     /eth-rpc/ and /rpc/ are different servers, not different spellings: the
+     first is Ethereum JSON-RPC on 8545, the second is REST + SSE on 8645 for
+     mine.html. The REST server answers an eth_* POST with a 404 whose body says
+     so, which this page reports as "answered, but not with JSON-RPC 2.0" rather
+     than as an empty chain.
 <meta name="hearth-eth-rpc" content="http://localhost:8545">
 -->
+<!-- WHICH CHAIN. Empty on purpose — nginx's sub_filter fills it from
+     HEARTH_CHAIN_ID; assets/chain.js falls back to its own default when it is
+     empty (a page opened straight off disk). -->
+<meta name="hearth-chain-id" content="">
 <!-- The Commons treasury address under the account model has not been chosen
      (docs/tokenomics.md §8). Set it here and /supply reads the real balance
      instead of only modelling it.

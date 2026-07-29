@@ -1,13 +1,14 @@
 # Adding Hearth to MetaMask
 
-> **You cannot complete this yet.** MetaMask needs an RPC URL that answers
-> `eth_chainId`, and **there is no public Hearth endpoint** — phase 5
-> (consensus) has not landed, so no node serves a real account-model chain. See
+> **There is no public Hearth endpoint**, so the RPC URL below is one you run:
+> `hearthd --evm --mine` serves `eth_chainId` on `http://127.0.0.1:8545/`, and
+> `docker-compose.testnet.yml` serves chain id **7412** on the same port. Both
+> work in MetaMask today; neither is reachable by anyone else. See
 > [`../docs/network-config.md`](../docs/network-config.md).
 >
-> This page is the exact configuration to use the moment there is one, and the
-> explanation of every field, because getting one of them wrong produces an
-> error message that names none of them.
+> Everything below is the exact configuration, and the explanation of every
+> field, because getting one of them wrong produces an error message that names
+> none of them.
 
 ---
 

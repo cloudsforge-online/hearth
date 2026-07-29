@@ -47,6 +47,17 @@ jobs:
       # current keystore is covered by `wallet-selftest` in the `web` job.
       #   mining-api / p2p-fork               two real nodes on real sockets:
       #                                       partition, compete, reconnect, reorg
+      #   pow-params                          what the PoW parameters COST. The
+      #                                       production sizes in params.js had
+      #                                       never been evaluated by anything;
+      #                                       this refuses a pad that cannot be
+      #                                       verified inside a block interval
+      #   bench/block-execution               one transaction spending the whole
+      #                                       30M block gas limit on SSTOREs.
+      #                                       Nothing else in the suite has a
+      #                                       cost assertion, and cost is the
+      #                                       only observable of CF-10 — the
+      #                                       state roots were always correct
       - name: All node suites
         run: npm test
       - name: Coinnomics model sanity
@@ -201,7 +212,17 @@ jobs:
       # a check-and-record that is atomic against concurrent requests for the
       # same address. These run over real HTTP against a stub node and need no
       # network and no dependencies.
+      #
+      # EVERY STEP FROM HERE DOWN CARRIES `if: ${{ !cancelled() }}`, and it is
+      # not decoration. GitHub Actions skips the remaining steps of a job the
+      # moment one fails, so while `tools/explorer-api` was red — which it was
+      # on every push, see CF-29 — the three steps BELOW it never executed at
+      # all. `tools/verify`'s 116 checks, including the byte-flip rejection that
+      # gates the exchange listing, had never gated anything. A red job that
+      # also silently disables the checks after it is worse than a red job.
+      # `!cancelled()` still stops everything on a manual cancel or a timeout.
       - name: Faucet
+        if: ${{ !cancelled() }}
         run: node tools/faucet/test/faucet.test.js
       # The two services that stand between Hearth and an exchange listing
       # (docs/listing-checklist.md §3). Both run over real HTTP with no network
@@ -218,7 +239,25 @@ jobs:
       # It also unwinds a reorg and asserts the orphaned transaction stops being
       # served, which an append-only indexer would fail.
       - name: Explorer API (Etherscan shim + address index)
+        if: ${{ !cancelled() }}
         run: node tools/explorer-api/test/explorer-api.test.js
+      # And the gate the fixture suite above is NOT. This boots a real node from
+      # node/src — real proof-of-work, real signed transactions, real EVM
+      # execution — mines a block with two log-emitting transactions, points the
+      # explorer service at it and requires that `module=account&action=balance`
+      # and `module=logs&action=getLogs` agree field for field with
+      # `eth_getBalance` and `eth_getLogs`.
+      #
+      # A fake chain agrees with whatever its author believed, and that is
+      # precisely how this job came to be red: its author believed the node
+      # numbers `logIndex` per receipt, so the fixture omitted the field and the
+      # node's own receipt formatter refused it. Nothing fixture-shaped could
+      # have caught that. Point it at a running node with
+      # HEARTH_LIVE_RPC_URL=http://127.0.0.1:8545 to run the same comparison
+      # against the compose testnet.
+      - name: Explorer API against a real chain (the aggregator/listing gate)
+        if: ${{ !cancelled() }}
+        run: node tools/explorer-api/test/live-chain.test.js
       # And in the verifier, the assertion that matters is the REJECTION: it
       # compiles contracts/src/WEMBER.sol with the pinned solc, verifies the
       # match, then changes one byte of the deployed code and requires a refusal
@@ -229,12 +268,14 @@ jobs:
       # miss. If that is ever a problem, pre-seed tools/verify/.solc-cache and
       # set HEARTH_VERIFY_SOLC_OFFLINE=1.
       - name: Contract verification (compile, match, then reject)
+        if: ${{ !cancelled() }}
         run: node tools/verify/test/verify.test.js
       # Not a compile — just proof that the templates and the probe still parse
       # after a refactor upstream. `hardhat.config.js` in particular is the file
       # that pins evmVersion to shanghai, and a syntax error in it fails as
       # "cannot find network hearth", which is not a useful signal.
       - name: Templates and probe parse
+        if: ${{ !cancelled() }}
         run: |
           node --check tools/rpc-probe/stub.js
           node --check tools/hardhat/hardhat.config.js
@@ -243,6 +284,7 @@ jobs:
       # directly, so this catches an interface change in either the moment it
       # lands rather than the next time someone runs the developer kit.
       - name: The probe boots and answers the chain id in both encodings
+        if: ${{ !cancelled() }}
         run: |
           node tools/rpc-probe/stub.js --port 8745 &
           sleep 2

@@ -19,10 +19,11 @@ claim before you read the claim.
 | Precompiles `0x01`–`0x09`, including bn128 and blake2f | **Built.** All nine implemented; EIP-196/197/152 vectors pass |
 | Transactions, receipts, logs bloom | **Built. 188/188 TransactionTests pass** |
 | State transition | **Built. 20,077 of 20,077 GeneralStateTests pass** — the last ten fixed by EIP-7610 — see [`MAP.md`](MAP.md) §4.3 |
-| `eth_*` JSON-RPC surface | **Built**, 301 checks — against a chain *interface* and an in-memory fake. Nothing serves it yet |
+| `eth_*` JSON-RPC surface | **Built and served** on 8545 by `node/src/evmnode.js`. 41 methods, 422 checks against a fake chain and 170 against a real one over HTTP |
 | EVM-aware explorer · secp256k1 browser wallet · `hearth` CLI with an opcode tracer | **Built** |
-| AMM contracts (WEMBER, Factory, Pair, Router, Multicall3) | **Compiled, and executed — on our own EVM.** A full Uniswap V2 deployment and a real swap run in `node/test/dex.js`. **Deployed to no chain, because there is no chain** |
-| **Consensus on the account model** | **Being built now. No block has ever been produced on it**, so there is no endpoint, no testnet and no mainnet |
+| AMM contracts (WEMBER, Factory, Pair, Router, Multicall3) | **Compiled, and executed — on our own EVM.** A full Uniswap V2 deployment and a real swap run in `node/test/dex.js`, and WEMBER deploys to a local node. **Deployed to no chain that outlives the process that mined it** |
+| **Consensus on the account model** | **Built.** Blocks are produced, validated and reorged; two real nodes partition and converge (`node/test/evm-p2p-fork.js`). **No block has ever been produced at production PoW parameters** — §2.4 |
+| A public endpoint | **Does not exist.** The three-node testnet binds `127.0.0.1` and nothing routes it |
 | Mainnet | **Does not exist.** Nothing but throwaway testnets has ever run |
 
 There is no mainnet, no market, no listed price, and no EMBER of any monetary
@@ -30,16 +31,20 @@ value in existence. Anything in this document written in the present tense is
 running today; anything else is marked.
 
 **The single most important line in that table is the second-to-last one.**
-Everything marked "built" above is a component proved offline against published
-vectors. None of it has ever been driven by a block.
+Everything marked "built" above has now been driven by a block. What has not
+happened is publication: every port binds `127.0.0.1`, and no genesis outlives
+the process that mined it.
 
-**"Built" is not "ready", and the gap is measured rather than guessed.**
-`StateDB` re-roots both of its tries on every single mutation, so one 30M-gas
-transaction costs **443 MB of retained heap and 65 seconds of single-threaded CPU
-against a 15-second block time** ([`docs/robustness-review.md`](docs/robustness-review.md)
-§1). Consensus on the account model is blocked on fixing that, not merely
-unstarted. Nothing in this paper should be read as saying the chain can run
-today.
+**"Built" is still not "ready", and the two remaining gaps are measured rather
+than guessed.** The first is closed and recorded because it shaped this
+paragraph for a long time: `StateDB` re-rooting both tries on every mutation cost
+**443 MB and 65 seconds for one 30M-gas transaction against a 15-second block
+time** ([`docs/robustness-review.md`](docs/robustness-review.md) §1); hashing is
+deferred now and the same transaction measures 5.2 s and 9.2 MiB. The second is
+open: the proof of work runs at a 64 KiB pad and **cannot be raised** — 2 GiB
+measures at 185.7 s per evaluation against a validator's per-block budget
+([`docs/pow-parameters.md`](docs/pow-parameters.md)) — so §2.4's
+ASIC-resistance argument remains an argument about the construction.
 
 **This paper replaces v0.1, which made two claims the code did not support.**
 Both retractions are in §8. v0.3 updates the status table, which v0.2 took as a
@@ -154,15 +159,26 @@ So: **pools can form on Hearth.** "No pools required" is true — solo mining on
 laptop works and is the default configuration of `hearthd`. "Pools cannot form"
 is not a claim this paper is entitled to make.
 
-### 2.4 The parameters are dev-tuned, and mainnet must change them
+### 2.4 The parameters are 64 KiB, and that is what mainnet will launch with
 
-`POW_SCRATCH_KIB` is 64 and `POW_WALK_STEPS` is 256 (`node/src/params.js:51-52`),
-chosen so a single laptop produces a lively local chain in seconds. The comment
-alongside records the intended production sizes — roughly 2 GiB and 2,048+
-steps. A 64 KiB pad fits in L2 cache and is *not* meaningfully memory-hard
-against dedicated hardware. Raising it is a hard fork and must happen before
-mainnet, not after. Until then, the ASIC-resistance argument above is an argument
-about the construction, not a measured property of the running testnet.
+`POW_SCRATCH_KIB` is 64 and `POW_WALK_STEPS` is 256, and this section used to say
+they were dev values awaiting a raise to the ~2 GiB and 2,048+ steps recorded
+beside them. **That raise is not achievable and the paper should not have implied
+it was.** It has now been measured
+([`docs/pow-parameters.md`](docs/pow-parameters.md)): a 2 GiB pad costs **185.7
+seconds per evaluation**, because Homefire fills the entire pad on every attempt
+and amortises nothing between them. A validator pays one full evaluation to
+verify every block it receives, against a 15-second interval, so the parameter
+is bounded by verification cost and not by miner willingness. `params.js` refuses
+to start above 4 MiB, and `node/test/pow-params.js` runs in the gate.
+
+A 64 KiB pad fits in L2 cache and is **not meaningfully memory-hard against
+dedicated hardware.** That is a real and unresolved weakness, stated plainly:
+what would fix it is an epoch-cached dataset with a cheap verification path —
+Ethash's shape — which is a redesign of the proof of work across the node, the
+browser miner and the Rust core, not a change to a constant. Until that exists,
+the ASIC-resistance argument above is an argument about the construction, not a
+measured property, and the construction's memory parameter is 64 KiB.
 
 ---
 
@@ -448,13 +464,14 @@ believe `MAP.md`.
   tractable, not safe. The corpus now passes in full, but **no independent audit
   has run**, and the vectors only cover what someone thought to write down.
   Treat contract behaviour here as unverified.
-- **The EVM is correct and, as written, too slow to run a chain.** `StateDB`
-  re-roots both of its tries on every single mutation, which costs 1.66 KB of
-  permanently retained heap and 245 µs of CPU for 112 gas of `SSTORE` — **443 MB
-  and 65 seconds for one 30M-gas transaction, against a 15-second block time**
+- **The EVM was correct and too slow to run a chain, and that is fixed.**
+  `StateDB` re-rooted both of its tries on every single mutation — **443 MB and
+  65 seconds for one 30M-gas transaction, against a 15-second block time**
   ([`docs/robustness-review.md`](docs/robustness-review.md) §1, measured, with the
-  commands alongside). Root computation has to move to the end of a transaction
-  before consensus can be built on this layer. Correctness against vectors and
+  commands alongside). Root computation moved to the end of the transaction; the
+  same transaction now measures 5.2 s and 9.2 MiB, and a benchmark in the test
+  gate fails if it regresses. A third of what remains is the storage root, which
+  is still materialised per write. Correctness against vectors and
   fitness to run a network are different properties, and only the first is
   demonstrated.
 - **A green DEX run is narrower than it looks.** `node/test/dex.js` proves a real

@@ -131,11 +131,35 @@ class EvmNode {
       mempool: this.mempool,
       submit: raw => this.submitRawTransaction(raw),
       gasPrice: opts.gasPrice === undefined ? P.EVM_MIN_GAS_PRICE : BigInt(opts.gasPrice),
+      /* The two bounds on what an unauthenticated caller may make this process
+       * do — see the note in params.js. Left as options rather than read from
+       * params.js down there so that a suite can measure the clamp instead of
+       * inferring it, and so an embedder with its own endpoint can widen them. */
+      rpcGasCap: opts.rpcGasCap === undefined ? P.EVM_RPC_GAS_CAP : opts.rpcGasCap,
+      rpcTimeBudgetMs: opts.rpcTimeBudgetMs === undefined ? P.EVM_RPC_TIME_BUDGET_MS : opts.rpcTimeBudgetMs,
+      /* The four facts that belong to the NODE and not to the chain, which is
+       * why they arrive as accessors: an adapter built without them leaves
+       * net_peerCount / eth_mining / eth_hashrate / eth_coinbase absent rather
+       * than answering a confident zero. Every one of them is already public on
+       * the REST /info, so serving them over JSON-RPC discloses nothing new — it
+       * only stops a node dashboard or an explorer health page from reporting a
+       * live network as unreachable because it asked in the standard way. */
+      peers: () => this.p2p.peers.size,
+      mining: () => this.miner.running,
+      hashrate: () => this.miner.hashrate,
+      coinbase: () => this.coinbaseKey.address,
     });
     this.jsonrpc = new JsonRpcServer({
       chain: this.rpcChain,
       version: require('../package.json').version,
       logger: f => this.error(f.msg || 'jsonrpc error', f),
+      maxBatchSize: opts.maxBatchSize,
+      maxInFlightPerIp: opts.maxInFlightPerIp,
+      /* OFF unless an operator asks for it — see params.js. This is the one
+       * option here that changes WHICH METHODS EXIST, and it does so because on
+       * a legacy-only chain the honest answer to eth_feeHistory is worse for
+       * every measured client than -32601 is. */
+      feeHistory: opts.feeHistory === undefined ? P.EVM_RPC_FEE_HISTORY : opts.feeHistory,
     });
 
     this.sseClients = new Set();
@@ -286,6 +310,11 @@ class EvmNode {
       height: this.chain.height,
       tip: '0x' + this.chain.tipId,
       genesis: '0x' + this.chain.genesisId,
+      /* Consensus, and NOT covered by the genesis hash — block 0 does not commit to
+       * where the Commons share is paid, so two nodes can match on `genesis` and
+       * still fork at block 1. The p2p handshake compares it (see p2p.js `_binding`);
+       * this is how an operator reads the value the refusal is talking about. */
+      commonsAddress: this.chain.config.commonsAddress,
       totalDifficulty: this.chain.totalDifficulty.toString(),
       hashrate: this.miner.hashrate,
       mining: this.miner.running,
@@ -294,6 +323,12 @@ class EvmNode {
       difficultyTarget: this.chain.nextTarget(),
       minerAddress: this.minerAddress,
       gasLimit: Number(this.chain.gasLimit),
+      /* What an eth_call on this node is actually allowed to do. Published because
+       * a caller whose estimate came back clamped, or whose call came back
+       * `execution timeout`, otherwise has no way to find out what the limits were
+       * — and because an operator who raised them wants to see that it took. */
+      rpcGasCap: Number(this.rpcChain.rpcGasCap),
+      rpcTimeBudgetMs: this.rpcChain.rpcTimeBudgetMs,
       jsonRpc: `:${this.opts.jsonRpcPort === undefined ? P.DEFAULT_JSONRPC_PORT : this.opts.jsonRpcPort}/`,
     };
   }

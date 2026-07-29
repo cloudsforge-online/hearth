@@ -10,7 +10,10 @@ is the full conformance corpus and takes about thirty-five.
 
 ---
 
-## 1. The gate — `npm test`, 27 suites, 85,512 checks
+## 1. The gate — `npm test`, 31 suites, 86,094 checks
+
+Re-derived by running it: `pnpm test` in `node/`, exit 0, with the optional
+reference corpus present in `test/conformance/vectors`.
 
 | # | Suite | Checks | What it establishes |
 | --- | --- | --- | --- |
@@ -20,29 +23,33 @@ is the full conformance corpus and takes about thirty-five.
 | 4 | `secp256k1` | 179 | RFC 6979 nonces, recovery, the EIP-155 worked example |
 | 5 | `opcodes` | 81 | all 256 bytes; 112 explicitly invalid |
 | 6 | `gas` | 205 | the Shanghai schedule — consensus, so a wrong constant is a split |
-| 7 | `precompiles` | 119 | `0x01`–`0x05`, incl. ecrecover **not** enforcing low-s |
+| 7 | `precompiles` | 126 | `0x01`–`0x09`, incl. ecrecover **not** enforcing low-s |
 | 8 | `bn128` | 86 | ecAdd/ecMul/pairing against go-ethereum's vectors, gas included |
-| 9 | `blake2f` | 46 | EIP-152, four of which assert failure |
-| 10 | `trie` | 302 | all 25 TrieTests vectors (26 published cases across 6 files), anyorder files run at *every* permutation — which is what takes 252 of the 302 |
+| 9 | `blake2f` | 53 | EIP-152, four of which assert failure |
+| 10 | `trie` | 315 | all 25 TrieTests vectors (26 published cases across 6 files), anyorder files run at *every* permutation — which is what takes most of them — plus the speculative overlay store |
 | 11 | `statedb` | 166 | 8 published state roots, journal and revert |
 | 12 | `transaction` | 167 | 188 TransactionTests; mainnet block 4,400,116 end to end |
 | 13 | `receipt` | 62 | encoding and the receipts trie |
 | 14 | `bloom` | 61 | the 2048-bit filter — wrong is *silent*, logs just never match |
-| 15 | `interpreter` | 182 | execution, frames, EIP-150, collisions |
+| 15 | `interpreter` | 194 | execution, frames, EIP-150, collisions, and the RPC-only deadline |
 | 16 | `statetransition` | 133 | a transaction end to end |
 | 17 | `cli` | 310 | the tracer, ABI codec, wallet, keystore |
-| 18 | `jsonrpc` | 301 | the `eth_*` surface and its hex codec |
-| 19 | `conformance --selftest` | 85 | **that the harness can still fail** |
-| 20 | `fuzz` | 82,481 | property tests over five surfaces |
-| 21–27 | `unit`, `e2e`, `records`, `browser-pow`, `keystore`, `mining-api`, `p2p-fork` | 183 | the UTXO-era chain, still green |
+| 18 | `jsonrpc` | 422 | the `eth_*` surface, its hex codec, the filter registry and what one request may cost |
+| 19 | `evmchain` | 191 | **the account-model chain**: block production, validation, retarget, reorg |
+| 20 | `evm-rpc` | 170 | the same surface over real HTTP against a real node |
+| 21 | `conformance --selftest` | 85 | **that the harness can still fail** |
+| 22 | `fuzz` | 82,481 | property tests over five surfaces |
+| 23 | `evm-p2p-fork` | 51 | **two real nodes over real sockets** — partition, divergent mining, reorg onto the heavier branch, byte-identical state roots, disk replay to the same tip, and an open `eth_newFilter` that must deliver the winning branch's logs afterwards |
+| 24 | `pow-params` | 7 | **what the PoW parameters cost.** The production sizes had never been evaluated by anything; this fits the cost model and refuses a pad that cannot be verified inside a block interval ([`pow-parameters.md`](pow-parameters.md)) |
+| 25 | `bench/block-execution` | 5 | **what a crafted block costs.** One transaction spending the whole 30M gas limit on SSTOREs, against a calibration block of ordinary traffic |
+| 26–31 | `unit`, `e2e`, `records`, `browser-pow`, `mining-api`, `p2p-fork` | 181 | the UTXO-era chain, still green |
 
 `node test/dex.js` (167 checks) is separate because it needs `contracts/out`; it
-runs in the `contracts` CI job.
+runs in the `contracts` CI job. `tools/` has its own job — faucet 66,
+explorer-api 177 plus 27 against a real chain, verify 116.
 
-**85,512 is the total with the reference corpus fetched.** `npm test` passes
-without it — verified from a fresh clone into an empty directory, 27 suites,
-exit 0 — and two suites are then smaller: `bn128` 86 → 81 (one case skipped) and
-`blake2f` 46 → 43. The gate is **85,504** offline. A skipped optional corpus is
+**86,094 is the total with the reference corpus fetched.** `npm test` passes
+without it and two suites are then smaller, because a skipped optional corpus is
 deliberately not counted as a check that passed.
 
 ---
@@ -55,7 +62,7 @@ pass**.
 
 | Suite | Result |
 | --- | --- |
-| **GeneralStateTests** | **20,077 / 20,077** — 60,231 checks |
+| **GeneralStateTests** | **20,077 / 20,077** — 60,231 checks, 0 failed, re-run in full (32 min) after the trie and StateDB stopped hashing on every write, because a deferred-hashing bug is a wrong state root and the corpus is the only thing that would say so |
 | **VMTests** | **609 / 609**, zero errors |
 | **TransactionTests** | **188 / 188** legacy |
 | **TrieTests** | **25 / 25** vectors — `node/test/conformance/README.md` counts the corpus as 20,766 = 20,077 state + 609 VM + 55 RLP + 25 trie. An earlier revision said 97/97; that figure is not reproducible from this tree and has been corrected |
@@ -130,8 +137,16 @@ score drops. This caught real gaps repeatedly — the two worth naming:
 
 The most important section.
 
-- **No block has ever been produced on the account model.** Consensus is under
-  construction. Everything above tests the execution layer in isolation.
+- **No block has ever been produced at production PoW parameters.** Every block
+  this project has ever made — in these suites, in CI, on the compose testnet —
+  used a 64 KiB scratchpad and a 256-step walk. The parameters `params.js`
+  records as the mainnet intent are 2 GiB and 2,048+ steps, and they have now
+  been *measured* rather than assumed: [`pow-parameters.md`](pow-parameters.md).
+  This line used to read "no block has ever been produced on the account model",
+  which stopped being true when `evmchain` and `evm-p2p-fork` landed.
+- **No long-range reorg and no sustained load.** `evm-p2p-fork` partitions two
+  nodes for a handful of blocks and reorgs them. Nothing here exercises a
+  hundred-block reorg, a third node arriving mid-fork, or hours of traffic.
 - **`DELEGATECALL`** — vectors only, for the reason above.
 - **`hearth trace --tx`** cannot see a CREATE collision: chain replay prefetches
   state slot by slot, so it cannot know an account's true storage root. It needs
@@ -139,10 +154,15 @@ The most important section.
 - **`Create2OnDepth1023` is intermittently flaky**, pre-existing. The interpreter
   recurses on the JS stack (~2 frames per EVM level) and at depth 1024 uses ~70%
   of V8's default. A real fix means an explicit frame stack.
-- **Performance is not gated.** `docs/robustness-review.md` measured StateDB
-  re-rooting the trie on every mutation: **443 MB retained and 65 seconds of CPU
-  for one 30M-gas transaction**, against a 15-second block time. No test fails on
-  it.
+- **Performance is gated now, in exactly one place.**
+  `node/test/bench/block-execution.js` executes one transaction that spends the
+  whole 30,000,000-gas limit on SSTOREs — the case `docs/robustness-review.md`
+  §1 measured at 443 MB and 65 s against a 15-second block time — and fails if
+  it costs more than 25x an ordinary block of the same gas or retains more than
+  64 MiB. It measures **5.2 s and 9.2 MiB** now, 13.5x, against **35.3 s /
+  212 MiB / 64.3x** on the same machine before the fix. Nothing else in the
+  suite asserts cost, and cost was the only observable: the state roots were
+  correct throughout.
 - **RLP has no nesting cap** — 7–12 KB, inside `MAX_TX_BYTES`, exhausts the stack.
   Worse, the limit is the *remaining* stack, so the same input decodes from a
   shallow call site and throws from a deep one. Pinned as an observation, not a
@@ -161,3 +181,11 @@ seconds; fuzzing is 4.
 This is not a stall and not a timeout. It is 210 seconds of genuine proof-of-work
 that every agent checking for regressions pays. A test-only easier target would
 remove nearly all of it and is worth doing.
+
+The two cost suites add about 30 seconds between them and neither is optional.
+`pow-params` sweeps Homefire out to a 16 MiB pad (~15 s) because a cost model
+fitted on cache-resident sizes only would understate the production figure, and
+understating it is the mistake the suite exists to prevent.
+`bench/block-execution` executes two full 30M-gas blocks (~11 s) because one is
+the measurement and the second, against a five-times-wider state trie, is what
+distinguishes a fixed cost from one an attacker can make everybody else pay.

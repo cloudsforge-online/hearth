@@ -11,15 +11,18 @@ node src/index.js
 ```
 
 ```bash
-npm test        # 171 assertions over real HTTP against a fake chain
+npm test        # 177 assertions over real HTTP against a fake chain
+node test/live-chain.test.js   # 27 more against a node that mined the blocks
 ```
 
-> **Not deployed anywhere, and not yet run against a node.** There is no
-> account-model chain — phase 5 of [`../../docs/evm-spec.md`](../../docs/evm-spec.md)
-> §8 has not landed. Everything below is **fixture-verified**: the tests drive
-> both HTTP surfaces for real, but the blocks and receipts are encoded by
-> `node/src/jsonrpc` from declared fixtures rather than produced by consensus.
-> See [What is proven, and what is not](#what-is-proven-and-what-is-not).
+> **Not deployed anywhere, and run against a real node in CI.**
+> `test/live-chain.test.js` boots a node from `node/src` — real proof of work,
+> real signed transactions, real EVM execution — and requires
+> `module=account&action=balance` and `module=logs&action=getLogs` to agree
+> field for field with `eth_getBalance` and `eth_getLogs`. The larger suite is
+> still fixture-verified against blocks encoded by `node/src/jsonrpc`, and the
+> difference between the two is the point: see
+> [What is proven, and what is not](#what-is-proven-and-what-is-not).
 
 ---
 
@@ -190,14 +193,20 @@ index or Postgres. The migration is mechanical because everything above
 | `TOPIC` | `topics[0]` | `logs&getLogs` by topic |
 | `INTERNAL` | the parties to a value-bearing internal call | `txlistinternal` — only where a node can trace |
 
-**`logIndex` is derived, not taken from the node.** The specification says it is
-per block ([`../../docs/evm-spec.md`](../../docs/evm-spec.md) §6), but
-`node/src/jsonrpc/methods.js` numbers the logs inside a single
-`eth_getTransactionReceipt` response from zero — so the third transaction's
-first log also arrives as `logIndex 0`. Indexing on a value whose meaning
-depends on which method fetched it resolves to the wrong log, silently, and only
-in blocks with more than one log-emitting transaction. A test asserts exactly
-that case.
+**`logIndex` is derived, not taken from the node** — but not because the node
+gets it wrong. The specification says it is per block
+([`../../docs/evm-spec.md`](../../docs/evm-spec.md) §6), `node/src/chain/rpcadapter.js`
+numbers it that way, and `node/src/jsonrpc/methods.js` refuses to serve a receipt
+whose logs lack it rather than restart the count at zero. We derive it anyway
+because this service indexes whatever node it is pointed at, and getting it
+wrong is silent: a node that numbered per receipt would report the third
+transaction's first log as `logIndex 0`, and every lookup in a block with more
+than one log-emitting transaction would resolve to the wrong log — wrong
+contract, wrong amount, wrong counterparties, under a `"status": "1"`. The
+derived ordinal also cannot depend on *which* method fetched the receipts, and
+this service fetches them two ways. Both suites assert that case, and
+`test/live-chain.test.js` asserts that the derived value equals the one a real
+node reports.
 
 ---
 
@@ -297,14 +306,30 @@ parked**, so a load balancer will take it out rather than serve half an answer.
 
 ## What is proven, and what is not
 
-`npm test` drives both HTTP surfaces for real: the service talks to a fake chain
-served by the tree's own `node/src/jsonrpc` layer, and the assertions talk to
-the service through its own socket. Using the real RPC encoder matters — it
-means a QUANTITY/DATA mistake surfaces here rather than on a running chain,
-which hand-written JSON fixtures would never catch because they would agree with
-whatever the parser expected.
+There are two suites, and the difference between them is the point.
 
-**Fixture-verified** (proven by the suite):
+`pnpm test` (`test/explorer-api.test.js`) drives both HTTP surfaces for real:
+the service talks to a **fake chain** served by the tree's own `node/src/jsonrpc`
+layer, and the assertions talk to the service through its own socket. Using the
+real RPC encoder matters — it means a QUANTITY/DATA mistake surfaces here rather
+than on a running chain, which hand-written JSON fixtures would never catch
+because they would agree with whatever the parser expected.
+
+`pnpm run test:live` (`test/live-chain.test.js`) is **the aggregator/listing
+gate**. It boots a real node from `node/src` — real proof-of-work, real signed
+transactions, real EVM execution — mines a block holding two log-emitting
+transactions, and requires `module=account&action=balance` and
+`module=logs&action=getLogs` to agree field for field with `eth_getBalance` and
+`eth_getLogs`. Point it at a node someone else is running with
+`HEARTH_LIVE_RPC_URL=http://127.0.0.1:8545` and it indexes a window of that
+chain's recent history and runs the same comparison; it refuses rather than
+passing if that window holds no logs.
+
+That distinction is not academic. A fake chain agrees with whatever its author
+believed, and the belief that the node numbers `logIndex` per receipt is what
+kept this suite — and with it CI's whole *Developer kit* job — red.
+
+**Fixture-verified** (proven by `test/explorer-api.test.js`):
 
 - ingestion, paging, sorting, block ranges, and every envelope shape;
 - the log-ordinal derivation, against a block with three logs across two
@@ -316,13 +341,22 @@ whatever the parser expected.
   than total;
 - internal transactions refused without a tracer and indexed with one.
 
-**Not proven, because there is no chain:**
+**Chain-verified** (proven by `test/live-chain.test.js`, against blocks a node
+actually mined and executed):
 
-- that a real Hearth node's blocks, receipts and logs match the shapes assumed
-  here. They are the shapes `node/src/jsonrpc` produces, which is the contract
-  phase 5 is being written against — but no consensus code has produced one.
+- balances served by the shim equal `eth_getBalance`, in decimal wei rather than
+  the node's hex;
+- logs served by the shim equal `eth_getLogs` — address, topics, data, block,
+  transaction, position and ordinal;
+- `logIndex` really is numbered across the block by the chain, on a block with
+  two log-emitting transactions, where per-receipt numbering would give both
+  ordinal 0;
+- a receipt carrying logs is served rather than refused.
+
+**Still not proven:**
+
 - indexing throughput or memory at any real chain length. The 180 MB figure
-  above is arithmetic, not a measurement.
+  above is arithmetic, not a measurement, and the live gate mines five blocks.
 - the emission model against consensus. It matches the published schedule and
   `proto/emission.js`; the account-model genesis is not written
   ([`../../docs/listing-checklist.md`](../../docs/listing-checklist.md) M6), so

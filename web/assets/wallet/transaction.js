@@ -16,7 +16,8 @@
  *
  * EIP-155 (spec §3): the signing hash covers the chain id, so a Hearth
  * transaction cannot be replayed on another chain. This wallet ALWAYS signs
- * protected, with chain id 7411. The node also accepts pre-155 unprotected
+ * protected, with the chain id ../chain.js resolves — 7412 (hearth-testnet)
+ * unless the deployment configures otherwise. The node also accepts pre-155 unprotected
  * transactions — it must, or Multicall3's keyless deployment is unreachable —
  * but there is no reason for a user's wallet to ever produce one, so it cannot.
  *
@@ -29,9 +30,16 @@
 import { keccak256 } from '../explorer/keccak.js';
 import * as RLP from './rlp.js';
 import * as secp from './secp256k1.js';
+import { chainId } from '../chain.js';
 
-/** Chain id, docs/evm-spec.md §1. EIP-155 replay protection binds signatures to it. */
-export const CHAIN_ID = 7411;
+/**
+ * Chain id, docs/evm-spec.md §1. EIP-155 replay protection binds signatures to
+ * it. Resolved from deployment configuration once (../chain.js) rather than
+ * written here as a literal: every function below already takes `chainId` as an
+ * option, so this is only the default they fall back to, and it was the one
+ * place a stale 7411 could reach a real signature.
+ */
+export const CHAIN_ID = chainId();
 
 export const TX_TYPE_LEGACY = 0;
 

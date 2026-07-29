@@ -42,6 +42,7 @@ import { parseUnits, parseEmber, parseGwei, parseInteger } from './wallet/amount
 import { accountFromPrivateKey, accountFromInput, parseAddress } from './wallet/account.js';
 import { keccak256 } from './explorer/keccak.js';
 import { formatEmber, toChecksumAddress } from './explorer/format.js';
+import { DEFAULT_CHAIN_ID } from './chain.js';
 
 let pass = 0;
 const failures = [];
@@ -208,13 +209,18 @@ export async function run({ verbose = true } = {}) {
   }
 
   // ---- transactions on Hearth's own chain id -------------------------------
-  say('• transactions on chain 7411');
+  // `T.CHAIN_ID` is deployment configuration (web/assets/chain.js), and under
+  // node — no document, no query string — that is DEFAULT_CHAIN_ID. Asserted
+  // rather than assumed, because the whole point of the indirection is that a
+  // signature is bound to whatever this resolves to.
+  say('• transactions on chain ' + T.CHAIN_ID);
   {
+    eq(T.CHAIN_ID, DEFAULT_CHAIN_ID, 'the wallet signs for the configured chain id');
     const priv = unhex('0x' + '11'.repeat(32));
     const me = accountFromPrivateKey(priv);
     const draft = { nonce: 3n, gasPrice: 12n * 10n ** 9n, gasLimit: 21000n, to: EIP155.tx.to, value: 5n * 10n ** 17n, data: '0x' };
     const out = T.signAndCheck(draft, priv, me.addressBytes);
-    eq(out.tx.v, BigInt(7411 * 2 + 35) + BigInt(out.tx.recoveryId), 'v encodes chain 7411');
+    eq(out.tx.v, BigInt(T.CHAIN_ID * 2 + 35) + BigInt(out.tx.recoveryId), 'v encodes chain ' + T.CHAIN_ID);
     eq('0x' + hex(out.sender), me.address.toLowerCase(), 'signAndCheck recovers to the signing account');
     eq(out.intrinsicGas, 21000n, 'a plain transfer costs the base 21,000');
     eq(hex(out.hash), hex(keccak256(out.raw)), 'the hash is keccak over the signed bytes');
@@ -362,7 +368,8 @@ export async function run({ verbose = true } = {}) {
       if (r.error) throw Object.assign(new Error(r.error.message), { code: r.error.code });
       return r.result;
     };
-    eq(await call('eth_chainId'), '0x1cf3', 'the fixture chain is 7411');
+    eq(await call('eth_chainId'), '0x' + T.CHAIN_ID.toString(16),
+      'the fixture chain reports the configured chain id (' + T.CHAIN_ID + ')');
     const balance = BigInt(await call('eth_getBalance', [me.address, 'latest']));
     ok(balance > 0n, 'the unlocked account has a balance to spend');
     const nonce = BigInt(await call('eth_getTransactionCount', [me.address, 'pending']));
@@ -493,6 +500,19 @@ export async function run({ verbose = true } = {}) {
     eq(rlpRoundDrift, 0, 'and decode(encode(x)) round-trips byte for byte, which is what stops one transaction having two hashes');
 
     // --- transactions vs node/src/chain/transaction.js ---
+    //
+    // Both sides are driven with ONE explicit chain id, because they resolve
+    // their defaults from different places and must not be compared through
+    // that difference: the browser reads deployment config (assets/chain.js,
+    // 7412 under node), the node reads HEARTH_NETWORK (params.js, 7411 when
+    // unset). What is being checked here is the encoding, not the environment.
+    // The environment gets its own check immediately below.
+    const nodeParams = require('../../node/src/params.js');
+    eq(DEFAULT_CHAIN_ID, nodeParams.CHAIN_IDS['hearth-testnet'],
+      'the bundle default is the id node/src/params.js gives hearth-testnet — the chain this estate runs');
+    ok(nodeParams.CHAIN_IDS.hearth !== DEFAULT_CHAIN_ID,
+      'and it is NOT mainnet\'s, which is the whole point of a separate testnet id');
+    const XC = { chainId: T.CHAIN_ID };
     let hashDrift = 0, bytesDrift = 0, senderDrift = 0, gasDrift = 0, idDrift = 0;
     const nextT = rng(0x5eed);
     for (let i = 0; i < 120; i++) {
@@ -507,16 +527,16 @@ export async function run({ verbose = true } = {}) {
         value: BigInt(nextT()) * 10n ** 9n,
         data: '0x' + Buffer.from(randomBytes(nextT, dataLen)).toString('hex'),
       };
-      const mine = T.sign(draft, new Uint8Array(priv));
-      const theirs = nodeTx.sign(draft, priv);
+      const mine = T.sign(draft, new Uint8Array(priv), XC);
+      const theirs = nodeTx.sign(draft, priv, XC);
 
-      if (hex(T.signingHash(draft)) !== nodeTx.signingHash(draft).toString('hex')) hashDrift++;
+      if (hex(T.signingHash(draft)) !== nodeTx.signingHash(draft, T.CHAIN_ID).toString('hex')) hashDrift++;
       if (hex(T.encode(mine)) !== nodeTx.encode(theirs).toString('hex')) bytesDrift++;
       if (hex(T.hash(mine)) !== nodeTx.hash(theirs).toString('hex')) hashDrift++;
       if (T.intrinsicGas(draft) !== nodeGas.intrinsicGas({ data: Buffer.from(unhex(draft.data)), isCreation: creation })) gasDrift++;
       // Each side recovers the sender from the other's bytes.
       const senderMine = T.recoverSender(T.decode('0x' + nodeTx.encode(theirs).toString('hex')));
-      const senderTheirs = nodeTx.recoverSender(nodeTx.decode(Buffer.from(T.encode(mine))));
+      const senderTheirs = nodeTx.recoverSender(nodeTx.decode(Buffer.from(T.encode(mine)), XC));
       if (hex(senderMine) !== senderTheirs.toString('hex')) senderDrift++;
       if (hex(senderMine) !== nodeTx.addressFromPublicKey(nodeSecp.publicKeyFromPrivate(priv)).toString('hex')) senderDrift++;
       if (creation) {

@@ -25,8 +25,24 @@
  *
  * Each precompile exposes:
  *   gas(input) -> bigint            charged whether or not the call succeeds
- *   run(input) -> Buffer | null     output; null ONLY from 0x06-0x09, and only ever
+ *   run(input, deadline) -> Buffer | null
+ *                                   output; null ONLY from 0x06-0x09, and only ever
  *                                   meaning "fail this CALL"
+ *
+ * THE SECOND ARGUMENT IS AN OPTIONAL WALL-CLOCK DEADLINE, and it exists for exactly
+ * two of the nine. `blake2f` (0x09) and `modexp` (0x05) are each a single loop whose
+ * trip count the caller chooses, and they are the two slowest gas in the machine —
+ * 2.8 and 2.6 Mgas/s, against a 62 Mgas/s baseline (docs/robustness-review.md §6) —
+ * so one CALL to either can hold a single-threaded node for ten seconds or more and
+ * there is no instruction boundary in the middle for the interpreter to check. Given
+ * a deadline they abandon the loop and return null.
+ *
+ * THAT IS THE ONE EXCEPTION TO "null ONLY FROM 0x06-0x09" ABOVE, and it is why the
+ * interpreter asks the DEADLINE whether it tripped rather than inferring anything
+ * from the null: a modexp that ran out of time and a bn128 point that is off the
+ * curve must not report as each other. Nothing on a consensus path passes a
+ * deadline — see the header of evm/interpreter.js — so on that path both remain
+ * exactly as specified, and an abandoned run is impossible.
  *
  * WHY THE VALIDITY CHECKS ARE IN `run` AND NOT IN `gas`. It is tempting to have
  * `gas` reject a bad input by pricing it out of reach, which needs no cooperation
@@ -280,14 +296,24 @@ function modexpGas(input) {
   return gas < 200n ? 200n : gas;
 }
 
-/** Square-and-multiply. `exp` may be very large, but its size is what was paid for. */
-function modPow(base, exp, mod) {
+/** How many squarings run between two clock reads, when a deadline was given.
+ *  Small enough that a 4096-bit modulus still checks in well under a millisecond. */
+const MODEXP_DEADLINE_BITS = 256;
+
+/** Square-and-multiply. `exp` may be very large, but its size is what was paid for.
+ *  Returns null if the optional deadline expires mid-loop; see the header. */
+function modPow(base, exp, mod, deadline = null) {
   if (mod === 0n) return 0n;
   if (mod === 1n) return 0n;
   let result = 1n;
   let b = base % mod;
   let e = exp;
+  let untilCheck = deadline === null ? -1 : MODEXP_DEADLINE_BITS;
   while (e > 0n) {
+    if (untilCheck >= 0 && --untilCheck < 0) {
+      if (deadline.expired()) return null;
+      untilCheck = MODEXP_DEADLINE_BITS;
+    }
     if (e & 1n) result = (result * b) % mod;
     e >>= 1n;
     if (e > 0n) b = (b * b) % mod;
@@ -295,7 +321,7 @@ function modPow(base, exp, mod) {
   return result;
 }
 
-function modexpRun(input) {
+function modexpRun(input, deadline = null) {
   const { baseLen, expLen, modLen, body } = modexpLengths(input);
 
   // A zero-length modulus returns zero bytes. Not an error, not a 32-byte zero.
@@ -310,7 +336,8 @@ function modexpRun(input) {
   const mod = toBig(getData(body, baseLen + expLen, modLen));
 
   // x mod 0 is defined as 0 here, per EIP-198.
-  const result = mod === 0n ? 0n : modPow(base, exp, mod);
+  const result = mod === 0n ? 0n : modPow(base, exp, mod, deadline);
+  if (result === null) return null;                    // deadline only; see the header
   return toBuf(result, Number(modLen));
 }
 
@@ -360,7 +387,7 @@ function blake2fGas(input) { return BigInt(blake2fRounds(input)); }
 /* Calldata reaches here as whatever the interpreter's memory happens to hand over.
  * Normalising once at the boundary means none of the nine has to care whether it was
  * given a Buffer, a Uint8Array or nothing at all. */
-const wrap = (fn) => (input) => fn(Buffer.isBuffer(input) ? input : Buffer.from(input || []));
+const wrap = (fn) => (input, deadline) => fn(Buffer.isBuffer(input) ? input : Buffer.from(input || []), deadline || null);
 
 const entry = (address, name, gas, run) =>
   Object.freeze({ address, name, gas: wrap(gas), run: wrap(run) });
@@ -423,6 +450,7 @@ module.exports = {
   isPrecompile,
   SECP256K1_N,
   MODEXP_MAX_LEN,
+  MODEXP_DEADLINE_BITS,
   ECADD_GAS, ECMUL_GAS, ECPAIRING_BASE_GAS, ECPAIRING_PER_PAIR_GAS,
   // exported for tests and for reuse by the interpreter's own zero-padded reads
   getData,

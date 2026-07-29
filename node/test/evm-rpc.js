@@ -53,6 +53,10 @@ const bound = server => new Promise((res, rej) => {
       alloc: { [alice.addressHex]: { balance: (100n * 10n ** 18n).toString() } },
       target: C.EASY_TARGET,
     },
+    /* A quarter of the shipped budget, so the last group's checks cost a second
+     * rather than five. The GAS cap is left at the real default on purpose —
+     * that one is measured below rather than asserted from a constant. */
+    rpcTimeBudgetMs: 250,
   });
   node.listenJsonRpc(0);
   node.listenRest(0);
@@ -303,6 +307,318 @@ const bound = server => new Promise((res, rej) => {
     const code = await seq('eth_getCode', [receipt.contractAddress, 'latest']);
     ok(code.length > 2, 'with code at the reported address');
     eq(steps.length, 8, 'eight calls, no eth_feeHistory and no eth_maxPriorityFeePerGas');
+  }
+
+  // -------------------------------------------------------------------------
+  group('a speculative call cannot touch consensus state, and cannot run forever');
+  // -------------------------------------------------------------------------
+  /* eth_call and eth_estimateGas are the only way an unauthenticated stranger can
+   * make this process execute EVM code — the endpoint above answers CORS `*` with
+   * no auth and no rate limit — so the two bounds on a speculative run are asserted
+   * here, over real HTTP, against the real chain. Both were absent once:
+   *
+   *   - the run used the chain's own never-pruned node store, so one SSTORE-loop
+   *     eth_call retained 7,135 nodes / 1.6 MB for the life of the process. The
+   *     store is content-addressed, so REPEATING a call cost nothing and only
+   *     varying the payload grew it; the checks below therefore vary it.
+   *   - eth_call took the caller's `gas` verbatim while eth_estimateGas clamped,
+   *     so `gas: 0x11e1a300` bought 300M gas of execution — ten times any block —
+   *     on a single-threaded node, from one request.
+   */
+  {
+    /* A contract whose runtime is `GAS PUSH1 00 MSTORE PUSH1 20 PUSH1 00 RETURN`:
+     * it returns the gas left at its first opcode, so the word an `eth_call` gets
+     * back IS the limit the adapter handed the run, less the intrinsic cost. It has
+     * to be deployed and called rather than run as initcode, because `eth_call` on
+     * a creation returns the empty create-frame return data, not the code. */
+    const reportGas = C.deployer(C.hex('5a', '6000', '52', '6020', '6000', 'f3'));
+    const gasNonce = BigInt(await rpc('eth_getTransactionCount', [alice.addressHex, 'pending']));
+    await rpc('eth_sendRawTransaction', ['0x' + C.signed(alice, {
+      nonce: gasNonce, to: null, data: reportGas, gasLimit: 200_000n,
+    }).toString('hex')]);
+    mine();
+    const reporter = '0x' + TX.contractAddress(alice.address, gasNonce).toString('hex');
+    ok((await rpc('eth_getCode', [reporter, 'latest'])).length > 2, 'the gas-reporting contract deployed');
+
+    /* An SSTORE loop, as initcode: PUSH1 nn JUMPDEST DUP1 DUP1 SSTORE PUSH1 01 ADD
+     * PUSH1 02 JUMP. It runs out of gas having written thousands of slots, which is
+     * the point — every one of them is a trie node somebody has to not keep. */
+    const sstoreLoop = n => '0x60' + n.toString(16).padStart(2, '0') + '5b808055600101600256';
+    const before = node.chain.db.size;
+    for (let i = 1; i <= 8; i++) {
+      await rpc('eth_call', [{ data: sstoreLoop(i), gas: '0x1c9c380' }, 'latest']);
+    }
+    await rpc('eth_estimateGas', [{ data: sstoreLoop(9), gas: '0x1c9c380' }]);
+    eq(node.chain.db.size, before, 'eight distinct SSTORE-loop eth_calls add NOTHING to the chain node store');
+
+    // The sharper statement of the same property: a call that writes a storage
+    // slot cannot be observed by anything that reads consensus state afterwards.
+    const word = n => '0x' + n.toString(16).padStart(64, '0');
+    eq(await rpc('eth_call', [{ to: contract, data: word(99) }, 'latest']), word(99),
+      'a call that SSTOREs still returns the right answer');
+    eq(await rpc('eth_getStorageAt', [contract, '0x0', 'latest']), word(42),
+      'and the slot it wrote still holds what the last MINED transaction put there');
+    eq(node.chain.db.size, before, 'with the node store still exactly where it was');
+
+    /* The gas cap, measured rather than inferred: the word the reporter returns IS
+     * the limit the adapter applied. Asking for 300M must not buy 300M. */
+    const cap = BigInt(P.EVM_RPC_GAS_CAP);
+    const seen = async gas => BigInt(await rpc('eth_call', [{ to: reporter, ...(gas ? { gas } : {}) }, 'latest']));
+    const huge = await seen('0x11e1a300');
+    ok(cap < node.chain.gasLimit, `the RPC gas cap is BELOW the block gas limit (${cap} of ${node.chain.gasLimit})`);
+    ok(huge < cap, `eth_call gas is clamped to that cap (saw ${huge}, cap ${cap})`);
+    ok(huge > cap - 100_000n, 'and clamped TO it, not to something smaller');
+    const modest = await seen('0x186a0');
+    ok(modest < 100_000n && modest > 50_000n, 'a request under the cap is still honoured verbatim');
+    const dflt = await seen(null);
+    ok(dflt > cap - 100_000n && dflt < cap, 'and omitting gas means the cap, not the block gas limit');
+  }
+
+  // -------------------------------------------------------------------------
+  group('one request cannot stop the node (CF-09)');
+  // -------------------------------------------------------------------------
+  /* The gas cap above bounds ordinary compute. It does not bound TIME, because the
+   * spread between the cheapest and dearest gas in this interpreter is 135x
+   * (docs/robustness-review.md §6): 10M gas of PUSH/ADD is 160 ms and 10M gas of
+   * blake2f is three and a half seconds. Measured on this machine before the
+   * deadline existed, against this same node:
+   *
+   *     one eth_call, blake2f at the block gas limit    11,284 ms frozen
+   *     one eth_estimateGas, a tenth of that            15,216 ms frozen (26 probes,
+   *                                                     14 of which really ran)
+   *     one POST, a 32-member batch of the first       359,777 ms frozen
+   *
+   * "Frozen" is the number that matters and it is measured here the way it was
+   * measured then: an interval that should tick every 25 ms, whose worst gap IS
+   * the outage — the miner's tick, p2p gossip and the /info healthcheck compose
+   * polls all share this loop.
+   */
+  {
+    const budget = node.rpcChain.rpcTimeBudgetMs;
+
+    /** 213 bytes of EIP-152 input. Gas is one per round, so the caller picks both
+     *  the work and the price; 9M rounds is inside the 10M gas cap and is roughly
+     *  three seconds of uninterruptible compression. */
+    const blake2f = rounds => '0x' + (() => {
+      const b = Buffer.alloc(213); b.writeUInt32BE(rounds, 0); b[212] = 1; return b;
+    })().toString('hex');
+    const BLAKE = '0x0000000000000000000000000000000000000009';
+
+    /** Runs `fn`, returning how long it took and the worst tick the loop missed. */
+    const watched = async (fn) => {
+      let last = Date.now(), worst = 0;
+      const h = setInterval(() => { const n = Date.now(); worst = Math.max(worst, n - last - 25); last = n; }, 25);
+      const t0 = Date.now();
+      const value = await fn();
+      const ms = Date.now() - t0;
+      clearInterval(h);
+      return { value, ms, worst };
+    };
+
+    {
+      const { value, ms, worst } = await watched(() => rpcErr('eth_call', [{ to: BLAKE, data: blake2f(9_000_000) }, 'latest']));
+      eq(value.code, -32000, 'a 9,000,000-round blake2f eth_call — inside the gas cap — is refused');
+      eq(value.message, 'execution timeout', '…as an execution timeout, not as a revert or an EVM error');
+      ok(ms < budget * 8, `…in ${ms} ms rather than the three seconds of work it asked for`);
+      ok(worst < budget * 8, `…and the event loop kept running: worst missed tick ${worst} ms`);
+    }
+
+    {
+      /* The bisection is up to 33 executions of the same message. One budget covers
+       * the whole request, so estimateGas cannot cost 33 times what a call costs —
+       * that amplification is what turned 3M rounds, one second of work, into
+       * 15.2 seconds. */
+      const { ms, worst } = await watched(() => rpcErr('eth_estimateGas', [{ to: BLAKE, data: blake2f(9_000_000) }, 'latest']));
+      ok(ms < budget * 8, `eth_estimateGas of the same message costs one budget, not 33 (${ms} ms)`);
+      ok(worst < budget * 8, `…with the loop still turning: worst missed tick ${worst} ms`);
+    }
+
+    {
+      /* A batch is many executions in ONE request. Two things bound it: a member
+       * limit, and — the one that matters — a yield to the event loop between
+       * members, without which the whole batch is a single uninterrupted stall
+       * however short each member is.
+       *
+       * SIX MEMBERS AND A FOUR-BUDGET BOUND, both chosen so that DELETING the
+       * yield fails this check. The stall with the yield does not grow with the
+       * batch: it is two budgets, because the first `setImmediate` is scheduled
+       * from inside the poll phase and so runs in the same loop iteration,
+       * putting members one and two back to back. Without the yield the stall is
+       * the whole batch — six budgets — so anything between three and six
+       * separates them. A bound of `ms` (the request's own length) would not:
+       * without the yield the stall IS `ms`, and the check would still pass. */
+      const body = [];
+      for (let i = 0; i < 6; i++) {
+        body.push({ jsonrpc: '2.0', id: 500 + i, method: 'eth_call', params: [{ to: BLAKE, data: blake2f(9_000_000 - i) }, 'latest'] });
+      }
+      const { value, ms, worst } = await watched(async () => {
+        const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+        return res.json();
+      });
+      eq(value.length, 6, 'every member of a six-member batch is answered');
+      ok(value.every(r => r.error && r.error.message === 'execution timeout'), '…each one timed out on its own budget');
+      ok(ms > budget * 4, `…so the batch really did take several budgets end to end (${ms} ms)`);
+      ok(worst < budget * 4, `…and yet the loop never stalled for more than two of them: worst missed tick ${worst} ms`);
+    }
+
+    {
+      const over = [];
+      for (let i = 0; i < 1001; i++) over.push({ jsonrpc: '2.0', id: i, method: 'eth_chainId', params: [] });
+      const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(over) });
+      const b = await res.json();
+      ok(!Array.isArray(b), 'a 1001-member batch is refused whole rather than truncated');
+      ok(/exceeds the limit of 1000/.test(b.error.message), '…naming the limit');
+    }
+
+    {
+      /* THE OTHER HALF, and the one that would be a chain split if it were wrong:
+       * the deadline is the RPC path's alone. The same message MINED must execute
+       * every round it paid for, however long that takes, because a validator that
+       * gave up because its machine was busy would fork away from one that did
+       * not. This transaction takes far longer than the budget above. */
+      const nonce = BigInt(await rpc('eth_getTransactionCount', [alice.addressHex, 'pending']));
+      const raw = C.signed(alice, {
+        nonce, to: Buffer.alloc(20, 0).fill(9, 19), data: Buffer.from(blake2f(2_000_000).slice(2), 'hex'),
+        gasLimit: 2_100_000n,
+      });
+      const hash = await rpc('eth_sendRawTransaction', ['0x' + raw.toString('hex')]);
+      const t0 = Date.now();
+      mine();
+      const took = Date.now() - t0;
+      const receipt = await rpc('eth_getTransactionReceipt', [hash]);
+      eq(receipt.status, '0x1', 'a MINED 2,000,000-round blake2f succeeds — consensus has no deadline');
+      ok(took > budget, `…having really run for ${took} ms, well past the RPC budget of ${budget} ms`);
+      // 2,000,000 rounds at one gas each, plus 21,900 intrinsic (21,000 + 209 zero
+      // calldata bytes at 4 and 4 non-zero at 16). Exact, because the whole point
+      // is that this run was not cut short.
+      eq(receipt.gasUsed, '0x1eda0c', '…and burned exactly its 2,000,000 rounds plus 21,900 intrinsic');
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  group('what MetaMask, ethers and an explorer also ask for');
+  // -------------------------------------------------------------------------
+  /* test/jsonrpc.js drives every one of these against the fake chain, where the
+   * semantics are pinned. This group answers the question the fake cannot: does
+   * the REAL adapter stand in for it. Each check below is therefore about the
+   * chain agreeing with the interface, not about the encoding. */
+  {
+    const info = await (await fetch(`http://127.0.0.1:${restPort}/info`)).json();
+    eq(await rpc('net_peerCount'), '0x' + info.peers.toString(16), 'net_peerCount agrees with /info');
+    eq(await rpc('eth_mining'), info.mining, 'eth_mining agrees with /info');
+    eq(await rpc('eth_coinbase'), info.minerAddress, 'eth_coinbase is the address this node mines to');
+    eq(await rpc('eth_hashrate'), '0x0', 'a node that is not mining hashes at 0x0');
+
+    /* txpool_status splits the pool the way geth does. A transaction two nonces
+     * above the account's is QUEUED — it cannot be mined until the gap is
+     * filled — and reporting it as pending is how an operator concludes the
+     * miner is stuck when it is the sender that is. */
+    const n = BigInt(await rpc('eth_getTransactionCount', [alice.addressHex, 'pending']));
+    await rpc('eth_sendRawTransaction',
+      ['0x' + C.signed(alice, { nonce: n, to: bob.address, value: 1n, gasLimit: 21_000n }).toString('hex')]);
+    await rpc('eth_sendRawTransaction',
+      ['0x' + C.signed(alice, { nonce: n + 2n, to: bob.address, value: 1n, gasLimit: 21_000n }).toString('hex')]);
+    eq(await rpc('txpool_status'), { pending: '0x1', queued: '0x1' },
+      'one executable transaction is pending and one stranded above a nonce gap is queued');
+    mine();
+    eq(await rpc('txpool_status'), { pending: '0x0', queued: '0x1' },
+      'mining the executable one leaves the stranded one queued');
+  }
+
+  {
+    // the block-transaction-by-index family, against a block that really has one
+    const height = await rpc('eth_blockNumber');
+    const block = await rpc('eth_getBlockByNumber', [height, false]);
+    eq(await rpc('eth_getBlockTransactionCountByNumber', [height]), '0x1', 'the tip carries one transaction');
+    eq(await rpc('eth_getBlockTransactionCountByHash', [block.hash]), '0x1', 'and the same by block hash');
+    const byIndex = await rpc('eth_getTransactionByBlockNumberAndIndex', [height, '0x0']);
+    eq(byIndex.hash, block.transactions[0], 'index 0 is the block\'s first transaction');
+    eq(byIndex, await rpc('eth_getTransactionByHash', [block.transactions[0]]),
+      '…and is byte-identical to the same transaction fetched by hash');
+    eq(byIndex.blockNumber, height, '…knowing its block');
+    eq(byIndex.transactionIndex, '0x0', '…and its index');
+    eq(await rpc('eth_getTransactionByBlockHashAndIndex', [block.hash, '0x0']), byIndex,
+      'the by-block-hash form agrees');
+    eq(await rpc('eth_getTransactionByBlockNumberAndIndex', [height, '0x5']), null, 'an index past the end is null');
+    eq(await rpc('eth_getUncleCountByBlockNumber', [height]), '0x0', 'a Hearth block has no uncles');
+    eq(await rpc('eth_getUncleByBlockNumberAndIndex', [height, '0x0']), null, 'and none to fetch');
+  }
+
+  {
+    /* eth_feeHistory is OFF on a default node, because on a legacy-only chain
+     * the only toolchain that calls it — Foundry — is better served by the error
+     * (docs/network-config.md §5). So this measures it through a second server
+     * built over the SAME chain with the option on, which is how an operator
+     * running a private endpoint for a gas dashboard would get it. */
+    eq((await rpcErr('eth_feeHistory', ['0x1', 'latest'])).code, -32601,
+      'a default node does not serve eth_feeHistory');
+    eq((await rpcErr('eth_maxPriorityFeePerGas', [])).code, -32601, 'nor eth_maxPriorityFeePerGas');
+    const { JsonRpcServer } = require('../src/jsonrpc/server');
+    const withFees = new JsonRpcServer({ chain: node.rpcChain, feeHistory: true });
+    const rpc = (m, p = []) => withFees.methods[m](p, { remote: 'test' });
+
+    // over real blocks, whose gas figures are the chain's own
+    const f = await rpc('eth_feeHistory', ['0x3', 'latest', [50]]);
+    const tipNo = BigInt(await rpc('eth_blockNumber'));
+    eq(BigInt(f.oldestBlock), tipNo - 2n, 'the window ends at the requested block');
+    eq(f.gasUsedRatio.length, 3, 'one gasUsedRatio per block');
+    eq(f.baseFeePerGas.length, 4, 'and one more baseFeePerGas than that');
+    ok(f.baseFeePerGas.every(v => v === '0x0'), 'every base fee is zero — v1 has no fee market');
+    /* The value that has to come from the chain rather than from a constant:
+     * the tip contains one 21,000-gas transfer in a 30,000,000-gas block. */
+    const tipBlock = await rpc('eth_getBlockByNumber', ['latest', false]);
+    eq(f.gasUsedRatio[2], Number(BigInt(tipBlock.gasUsed)) / Number(BigInt(tipBlock.gasLimit)),
+      'and the ratio is the block\'s own gasUsed over its own gasLimit');
+    eq(f.reward[2], ['0x' + C.GWEI.toString(16)],
+      'with no base fee the reward at every percentile is the price the sender paid');
+    eq(await rpc('eth_maxPriorityFeePerGas'), await rpc('eth_gasPrice'),
+      'and eth_maxPriorityFeePerGas is that same whole price');
+  }
+
+  {
+    /* THE FILTER FAMILY, END TO END OVER HTTP — the path ethers v6's
+     * JsonRpcProvider takes before it falls back to polling eth_getLogs. */
+    const blockFilter = await rpc('eth_newBlockFilter');
+    const pendingFilter = await rpc('eth_newPendingTransactionFilter');
+    const logFilter = await rpc('eth_newFilter', [{ address: contract }]);
+    eq(await rpc('eth_getFilterChanges', [blockFilter]), [], 'a fresh block filter reports nothing yet');
+    eq(await rpc('eth_getFilterChanges', [logFilter]), [],
+      'and a fresh log filter does not replay the log already on this chain');
+
+    const n = BigInt(await rpc('eth_getTransactionCount', [alice.addressHex, 'pending']));
+    const set = C.signed(alice, {
+      nonce: n, to: Buffer.from(contract.slice(2), 'hex'),
+      data: Buffer.alloc(32).fill(7), gasLimit: 100_000n,
+    });
+    const setHash = await rpc('eth_sendRawTransaction', ['0x' + set.toString('hex')]);
+    eq(await rpc('eth_getFilterChanges', [pendingFilter]), [setHash],
+      'the pending filter reports the transaction the moment the pool admits it');
+    eq(await rpc('eth_getFilterChanges', [pendingFilter]), [], '…exactly once');
+
+    mine();
+    const heads = await rpc('eth_getFilterChanges', [blockFilter]);
+    eq(heads, [(await rpc('eth_getBlockByNumber', ['latest', false])).hash], 'the block filter reports the new head');
+    const logs = await rpc('eth_getFilterChanges', [logFilter]);
+    eq(logs.length, 1, 'and the log filter reports the log the transaction emitted');
+    eq(logs[0].topics[0], '0x' + C.STORED_TOPIC.toString('hex'), '…under the right topic');
+    eq(logs[0].data, '0x' + '07'.repeat(32), '…with the right data');
+    eq(logs[0].transactionHash, setHash, '…naming the transaction it came from');
+    eq(await rpc('eth_getFilterChanges', [logFilter]), [], 'and the cursor advanced past it');
+
+    /* eth_getFilterLogs is the other half and does NOT consume: the full range
+     * the filter declared, every time. Here that is `latest` at creation time,
+     * which is why this asks the equivalent eth_getLogs rather than a constant. */
+    eq(await rpc('eth_getFilterLogs', [logFilter]), await rpc('eth_getLogs', [{ address: contract }]),
+      'eth_getFilterLogs answers the filter\'s whole declared range, identically to eth_getLogs');
+
+    eq(await rpc('eth_uninstallFilter', [logFilter]), true, 'uninstalling a live filter is true');
+    eq(await rpc('eth_uninstallFilter', [logFilter]), false, '…and false the second time, without an error');
+    eq((await rpcErr('eth_getFilterChanges', [logFilter])).message, 'filter not found',
+      'polling an uninstalled filter is geth\'s "filter not found", which is what makes ethers re-subscribe');
+    eq((await rpcErr('eth_getFilterChanges', [logFilter])).code, -32000, '…as -32000');
+    await rpc('eth_uninstallFilter', [blockFilter]);
+    await rpc('eth_uninstallFilter', [pendingFilter]);
+    eq(node.jsonrpc.filters.size, 0, 'and the node is holding no filters afterwards');
   }
 
   // -------------------------------------------------------------------------

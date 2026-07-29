@@ -11,6 +11,7 @@ import * as rpc from './rpc.js';
 import * as V from './views.js';
 import { el, clear, link } from './dom.js';
 import { classifyQuery } from './search.js';
+import { chainId, chainName } from '../chain.js';
 
 const outlet = document.getElementById('view');
 const modePill = document.getElementById('mode');
@@ -212,13 +213,18 @@ async function boot() {
   setMode('warn', '● connecting…');
   const probe = await rpc.probe();
   if (probe.ok) {
-    const chainId = parseInt(probe.chainId, 16);
-    setMode('ok', '● LIVE — chain ' + chainId);
-    if (chainId !== 7411) {
+    const seen = parseInt(probe.chainId, 16);
+    // The expected id is deployment configuration (../chain.js), not a literal:
+    // one image serves the testnet and, later, mainnet. It is compared against
+    // the node's answer and never replaced by it.
+    const want = chainId();
+    setMode('ok', '● LIVE — chain ' + seen);
+    if (seen !== want) {
       showBanner([
-        el('strong', null, 'This is not chain 7411. '),
-        el('span', null, `The node at ${rpc.endpointUrl()} reports chain id ${chainId}. Hearth is `
-          + '7411 (docs/evm-spec.md §1) — you are looking at a different network.'),
+        el('strong', null, `This is not chain ${want}. `),
+        el('span', null, `The node at ${rpc.endpointUrl()} reports chain id ${seen} `
+          + `(${chainName(seen)}). This explorer is configured for ${want} `
+          + `(${chainName(want)}, docs/evm-spec.md §1) — you are looking at a different network.`),
       ]);
     }
   } else {

@@ -59,17 +59,27 @@ function decodeString(hex) {
 /**
  * Every log in a block, numbered from 0 across the whole block.
  *
- * THIS IS NOT `log.logIndex` AND MUST NOT BE. The specification says logIndex
- * is per block (docs/evm-spec.md §6), but the node's own formatter numbers the
- * logs inside a single `eth_getTransactionReceipt` response from zero
- * (node/src/jsonrpc/methods.js, `formatReceipt`), so the third transaction's
- * first log also arrives as logIndex 0. Indexing on a value whose meaning
- * depends on which RPC method fetched it produces an index that resolves to
- * the wrong log — silently, and only for blocks with more than one
- * log-emitting transaction.
+ * THIS IS DERIVED, NOT TAKEN FROM `log.logIndex`, and the reason is not the one
+ * an earlier version of this comment gave. Hearth's node is correct: logIndex
+ * is per block (docs/evm-spec.md §6), the chain numbers it that way
+ * (node/src/chain/rpcadapter.js, `_receiptsFor`) and the RPC layer refuses to
+ * serve a receipt whose logs lack it rather than restart the count at zero
+ * (node/src/jsonrpc/methods.js, `formatReceipt`).
  *
- * So the index derives its own block-wide ordinal here, and the indexer and
- * the hydrator both call this one function to get it.
+ * We derive it anyway because this service indexes whatever node it is pointed
+ * at, and getting this wrong is silent: a node that numbered per receipt would
+ * report the third transaction's first log as logIndex 0, the index would key
+ * it as such, and every lookup in a block with more than one log-emitting
+ * transaction would resolve to the wrong log — wrong contract, wrong amount,
+ * wrong counterparties, with a status of "1" on top. A derived ordinal also
+ * cannot depend on WHICH method fetched the receipts, and this service fetches
+ * them two ways (`eth_getBlockReceipts`, or a batch of per-transaction
+ * receipts; see rpc.js).
+ *
+ * The indexer and the hydrator both call this one function, so the two can
+ * never drift apart. Against a correct node the derived value equals the
+ * node's, and the suite asserts that equality over the wire rather than
+ * assuming it.
  */
 function flattenLogs(receipts) {
   const out = [];

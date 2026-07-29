@@ -151,11 +151,19 @@ without new impact will be closed with a pointer here.
   Shanghai includes EIP-3198.
 - **The browser wallet has no recovery** — one key per browser, no seed phrase,
   no HD derivation.
-- **`StateDB` re-roots both tries on every mutation.** One 30M-gas transaction
-  retains 443 MB and burns 65 seconds of CPU against a 15-second block time
-  ([`docs/robustness-review.md`](docs/robustness-review.md) §1). Measured, known,
-  and the reason the EVM is not wired to a block. Not reachable from the network
-  today; it becomes reachable the day it is.
+- **A crafted block still costs about 13x an ordinary one.** `StateDB` used to
+  re-root both tries on every mutation — 443 MB and 65 s for one 30M-gas
+  transaction against a 15-second block time
+  ([`docs/robustness-review.md`](docs/robustness-review.md) §1). Hashing is
+  deferred now and the same transaction measures 5.2 s and 9.2 MiB, gated by
+  `node/test/bench/block-execution.js`. It is inside the block interval rather
+  than four times it, which is a bound and not a comfortable one; the storage
+  root is still materialised per write.
+- **The proof of work is 64 KiB and not meaningfully memory-hard.** The 2 GiB
+  the documents used to promise measures at 185.7 s per evaluation and a
+  validator pays one per block received, so the parameter is bounded by
+  verification ([`docs/pow-parameters.md`](docs/pow-parameters.md)). `params.js`
+  refuses to start above 4 MiB. Closing this needs an amortised dataset.
 - **`RLP.decode` has no nesting cap.** Roughly 7–12 KB of nested input — inside
   `MAX_TX_BYTES` — exhausts the JS stack with an untyped `RangeError`, and the
   threshold moves with remaining stack, so the same bytes can decode from one call
@@ -196,11 +204,14 @@ GeneralStateTests**), all nine precompiles,
 and the `eth_*` JSON-RPC surface. Uniswap V2 deploys and swaps on it
 (`node/test/dex.js`).
 
-**What is not built is consensus on the account model.** No block has ever been
-produced on it, so there is no endpoint, no testnet and no mainnet. Every
-component above is proved offline against vectors and fixtures — a whole class of
-bug that only appears when state is carried across blocks, reorged or persisted
-has had no opportunity to show itself.
+**What is not built is a public network.** Blocks are produced, validated and
+reorged — two real nodes partition and converge in `node/test/evm-p2p-fork.js`,
+and three run under `docker-compose.testnet.yml` — but every port binds
+`127.0.0.1`, no genesis outlives the process that mined it, and there is no
+mainnet. The class of bug that only appears when state is carried across blocks,
+reorged or persisted has had a few thousand blocks to show itself, not a few
+million, and nothing here has ever run under adversarial load or at production
+proof-of-work parameters ([`docs/pow-parameters.md`](docs/pow-parameters.md)).
 
 [`docs/evm-spec.md`](docs/evm-spec.md) §8 tracks the phases,
 [`docs/decisions.md`](docs/decisions.md) records why the non-obvious choices were

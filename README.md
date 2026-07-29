@@ -37,8 +37,9 @@ that has produced blocks is the original UTXO ledger, and it is being retired.
 | --- | --- |
 | **Built and vector-gated** | keccak/RLP/uint256/secp256k1 · Merkle Patricia Trie + StateDB · the interpreter (**609/609 VMTests**) · transactions, receipts, bloom (**188/188 TransactionTests**) · the state transition (**20,077/20,077 GeneralStateTests**) · all nine precompiles including bn128 and blake2f · the `eth_*` JSON-RPC surface · an EVM-aware explorer · the `hearth` CLI with an opcode tracer · a browser wallet on secp256k1 |
 | **Proved end to end** | **Uniswap V2 runs on our own EVM** — `node/test/dex.js`, 167/167, a real swap at **112,456 gas** |
-| **Not built** | Consensus on the account model. Nothing produces blocks, so there is no endpoint, no testnet and no mainnet |
-| **Measured, and blocking** | `StateDB` re-roots both tries on every mutation — **443 MB and 65 seconds for one 30M-gas transaction**, against a 15-second block time ([`docs/robustness-review.md`](docs/robustness-review.md) §1). The EVM cannot be wired to a block until this is fixed |
+| **Built and running locally** | Consensus on the account model. `hearthd --evm --mine` produces and validates blocks and serves `eth_*` on 8545; two real nodes partition and reorg in `node/test/evm-p2p-fork.js`; `docker-compose.testnet.yml` runs three on chain id 7412 |
+| **Not published** | No endpoint anyone else can reach. Every port binds `127.0.0.1`, no genesis outlives a `docker compose down -v`, and there is no mainnet |
+| **Measured, and open** | The proof of work is 64 KiB and cannot be raised: a 2 GiB pad measures **185.7 s per evaluation** and a validator pays one per block received ([`docs/pow-parameters.md`](docs/pow-parameters.md)). Making it meaningfully memory-hard needs an amortised dataset, not a constant |
 
 [`MAP.md`](MAP.md) is the verified inventory — every claim in it cites `path:line`
 or a command that was run. **Where this README and `MAP.md` disagree, believe
@@ -108,9 +109,10 @@ Everything below **runs**, and every number was produced by running it:
 - ✅ **Uniswap V2 runs on it** — `node/test/dex.js` deploys the factory, router,
   pair and WEMBER, adds liquidity, swaps, swaps back, exercises `permit` and
   removes liquidity. 167/167, swap at 112,456 gas against mainnet's ~150,000
-- ✅ **the `eth_*` JSON-RPC surface** (`node/src/jsonrpc/`) — 301 checks, strict
+- ✅ **the `eth_*` JSON-RPC surface** (`node/src/jsonrpc/`) — 41 methods, 422
+  checks against a fake chain and 170 against a real one over HTTP; strict
   QUANTITY/DATA encoding, batches, notifications, revert payloads as code 3.
-  Written against a chain interface and tested against an in-memory fake
+  Mounted on 8545 by `node/src/evmnode.js`
 - ✅ **`hearth`, the terminal tool** — `trace` (an opcode-level debugger with gas,
   stack, memory and storage deltas per step), `watch`, `wallet`, `call`, `send`,
   `deploy`, `devnet`. 310 checks
@@ -149,13 +151,17 @@ network. Verified by cloning this repository into an empty directory and running
 it. Fetching the reference corpus completes two of them: `blake2f` goes 43/43 →
 46/46 and `bn128`'s one skipped case runs.
 
-**The caveat that matters most, and it is not in the list above.**
+**The caveat that used to matter most is closed.**
 [`docs/robustness-review.md`](docs/robustness-review.md) measured `StateDB`
 re-rooting both tries on *every single mutation*: a single 30M-gas transaction
-costs **443 MB of retained heap and 65 seconds of CPU, against a 15-second block
-time**. Nothing above is wrong, but the EVM cannot be driven by a block until
-that is fixed. Nothing in this repository should be read as saying the chain is
-ready to run.
+cost **443 MB of retained heap and 65 seconds of CPU, against a 15-second block
+time**. Hashing is deferred to `root()` now and the same transaction measures
+**5.2 s and 9.2 MiB**, gated by `node/test/bench/block-execution.js`.
+
+The caveat that matters most now is the proof of work: every block ever produced
+used a 64 KiB pad, the 2 GiB the documents promised measures at **185.7 s per
+evaluation**, and closing that gap is a redesign rather than a constant
+([`docs/pow-parameters.md`](docs/pow-parameters.md)).
 
 ---
 
@@ -165,9 +171,9 @@ ready to run.
 
 ```bash
 cd node
-node test/interpreter.js      # 182 checks
+node test/interpreter.js      # 194 checks
 node test/statetransition.js  # 133 checks
-node test/jsonrpc.js          # 301 checks
+node test/jsonrpc.js          # 422 checks
 node test/cli.js              # 310 checks
 node test/fuzz/run.js         # 82,481 property-fuzz checks
 ```
@@ -238,12 +244,12 @@ hearth/
 ## Contributing
 
 Hearth is a commons. See **[CONTRIBUTING.md](CONTRIBUTING.md)**. Highest-leverage
-areas right now: **consensus on the account model** (the one thing blocking
-everything else), the `StateDB` re-rooting fix that blocks it
-([docs/robustness-review.md](docs/robustness-review.md) §1), and closing the items
-in **[docs/listing-checklist.md](docs/listing-checklist.md)** §7. Contract
-verification is **already built** (`tools/verify/`, 116/116) and the
-Etherscan-compatible `/api` shim is written but **its suite does not pass**
+areas right now: **publishing the testnet** (it runs on loopback and nothing
+routes it), **an amortised proof of work** so the memory-hardness argument is
+more than a construction ([docs/pow-parameters.md](docs/pow-parameters.md)), and
+closing the items in **[docs/listing-checklist.md](docs/listing-checklist.md)**
+§7. Contract verification is **already built** (`tools/verify/`, 116/116) and the
+Etherscan-compatible `/api` shim is built and green
 (`tools/explorer-api/`) — both are waiting on a chain to serve.
 
 ## Security

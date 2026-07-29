@@ -108,6 +108,9 @@ function blockAt(n) {
 
 /** Accepted-and-forgotten transactions, so a client at least gets its hash back. */
 const seen = new Map();
+/** The same hashes as an ordered journal, for `eth_newPendingTransactionFilter`. */
+const announced = [];
+let announcedBase = 0;
 
 const chain = {
   chainId: () => BigInt(TX.CHAIN_ID),
@@ -162,6 +165,27 @@ const chain = {
     }
   },
 
+  /* ---- the node, as opposed to the chain ------------------------------
+   * The JSON-RPC layer registers net_peerCount / eth_mining / eth_hashrate /
+   * eth_coinbase / txpool_status / eth_newPendingTransactionFilter only when
+   * the chain supplies these, and a probe that 404s a method the real node
+   * serves records the wrong answer about a client. So they are here — and
+   * every value is TRUE OF THIS PROBE rather than a stand-in: it really has no
+   * peers, really is not mining, and really has no pool.
+   */
+  peerCount: () => 0n,
+  mining: () => false,
+  hashrate: () => 0n,
+  coinbase: () => Buffer.alloc(20),
+  txpoolStatus: () => ({ pending: 0n, queued: 0n }),
+  /** Hashes this probe has been handed, so a pending filter has something real
+   *  to deliver. A ring with a base, exactly like the mempool's journal. */
+  pendingSince(cursor) {
+    const end = announcedBase + announced.length;
+    if (cursor === null || cursor === undefined || cursor > end) return { cursor: end, hashes: [] };
+    return { cursor: end, hashes: announced.slice(Math.max(cursor, announcedBase) - announcedBase) };
+  },
+
   sendRawTransaction(raw) {
     let tx;
     try {
@@ -171,6 +195,8 @@ const chain = {
     }
     const hash = Buffer.from(TX.hash(raw));
     seen.set(hash.toString('hex'), tx);
+    announced.push(hash);
+    if (announced.length > 1024) { announcedBase += announced.length - 1024; announced.splice(0, announced.length - 1024); }
     process.stderr.write(
       `  accepted and DROPPED (no chain): hash=0x${hash.toString('hex')} `
       + `nonce=${tx.nonce} to=${tx.to ? '0x' + Buffer.from(tx.to).toString('hex') : '(creation)'} `
@@ -197,9 +223,11 @@ server.has = name => {
 };
 for (const name of KNOWN) {
   const fn = server.methods[name];
-  server.methods[name] = async params => {
+  // `ctx` is forwarded, not dropped: the filter methods key their per-caller cap
+  // on it, and a wrapper that swallowed it would put every client in one bucket.
+  server.methods[name] = async (params, ctx) => {
     if (!CFG.quiet) process.stderr.write(`→ ${name} ${JSON.stringify(params)}\n`);
-    return fn(params);
+    return fn(params, ctx);
   };
 }
 

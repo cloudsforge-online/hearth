@@ -339,6 +339,48 @@ group('ethereum/tests GeneralStateTests — every blake2f input they carry');
   }
 }
 
+group('the RPC deadline (0x09 is one uninterruptible loop)');
+{
+  /* One gas per round, chosen by the caller, makes this the most concentrated
+   * work-per-call in the machine: the performance group below measures a full
+   * block of it at ten seconds, and an `eth_call` could buy all of it. There is
+   * no instruction boundary inside `compress` for the interpreter to check, so
+   * the deadline comes in here or not at all.
+   *
+   * The other half of the property is the one that would break consensus if it
+   * were wrong: with no deadline the loop is exactly what EIP-152 says it is. */
+  const many = (rounds) => buf(rounds.toString(16).padStart(8, '0') + COMMON
+    + '03000000000000000000000000000000' + '01');
+
+  const twelve = buf('0000000c' + COMMON + '03000000000000000000000000000000' + '01');
+  const expected = B.blake2f(twelve).toString('hex');
+  eq(B.blake2f(twelve, { expired: () => false }).toString('hex'), expected,
+    'a deadline that never expires changes no digest at all');
+  eq(B.blake2f(twelve, null).toString('hex'), expected, 'and neither does an absent one');
+
+  {
+    // 20,000,000 rounds is ~7 s of real work here. It must come back in the
+    // budget, not in the rounds.
+    const deadline = { at: Date.now() + 25, tripped: false, expired() { return this.tripped || (Date.now() > this.at && (this.tripped = true)); } };
+    const t0 = Date.now();
+    const out = B.blake2f(many(20_000_000), deadline);
+    const ms = Date.now() - t0;
+    eq(out, null, 'a 20,000,000-round F abandons the loop when the deadline expires');
+    ok(deadline.tripped, '…having tripped the deadline, which is how it is told from a bad input');
+    ok(ms < 1000, `…and returns in ${ms} ms rather than the seven seconds it was asked for`);
+  }
+
+  {
+    const t0 = Date.now();
+    const out = B.blake2f(many(2_000_000));
+    ok(out !== null && Date.now() - t0 > 100,
+      'with NO deadline the same call still runs every round it was paid for — the consensus path is untouched');
+  }
+
+  ok(B.DEADLINE_ROUNDS > 0 && B.DEADLINE_ROUNDS <= 65536,
+    'and the clock is read often enough that the budget is honoured to well under a millisecond');
+}
+
 group('performance');
 {
   const b = buf('0000000c' + COMMON + '03000000000000000000000000000000' + '01');

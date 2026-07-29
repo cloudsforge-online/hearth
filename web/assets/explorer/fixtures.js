@@ -30,8 +30,13 @@ import { keccak256, keccak256Hex, utf8 } from './keccak.js';
 import { toBytes, toHex, qty, padTopic } from './format.js';
 import { selectorOf, topicOf, TRANSFER_TOPIC, APPROVAL_TOPIC } from './abi.js';
 import { RpcUnreachable } from './rpc.js';
+import { chainId } from '../chain.js';
 
-const CHAIN_ID = 7411n;
+/* The canned chain answers with the id this bundle is configured for. It has to:
+ * a fixture chain that reported a different id would trip the explorer's own
+ * "this is not chain N" banner on every fixture tour, which is the one state
+ * the fixtures exist to let a reviewer see WITHOUT a real node. */
+const CHAIN_ID = BigInt(chainId());
 const GAS_LIMIT = 30_000_000n;
 const GWEI = 1_000_000_000n;
 const ETHER = 10n ** 18n;
