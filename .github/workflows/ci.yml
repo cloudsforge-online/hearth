@@ -159,7 +159,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      # Pinned here rather than read from a packageManager field: this repo has
+      # no root package.json, and pnpm/action-setup looks for one at the repo
+      # root regardless of the job's working-directory. Without it the step
+      # fails with "No pnpm version is specified" before any contract compiles.
       - uses: pnpm/action-setup@v4
+        with:
+          version: 11.9.0
       - run: pnpm install --frozen-lockfile
       # The Router computes pair addresses from a hard-coded init code hash
       # rather than asking the factory, so a hash that drifts sends it looking
