@@ -274,10 +274,21 @@ crypto wallet, block explorer, blockchain node, tail emission.</sub>
 Parts of this repository were produced with AI assistance, and it seems worth saying so plainly
 rather than leaving it to be inferred.
 
-- **Code** — written with Claude Opus 5 and Claude Opus 4.8 (Anthropic), reviewed and directed by
-  a human, and gated on the same tests and CI as anything else here.
-- **Artwork** — brand marks, icons and in-game art generated with OpenAI's image models
-  (GPT Image 1, 1.5 and 2), driven by the manifest pipeline in `asset-forge`.
+The code in this repository was written by **Claude Opus 5** and **Claude Fable 5**, assets
+generated with **FLUX 2 Pro**, under human direction and review.
+
+**This paragraph used to name different models, and the correction is itself a fact about the
+repository.** It credited Claude Opus 4.8 for the code and OpenAI's GPT Image models for the art.
+Both were true when written and neither is true now: the chain was rewritten around the account
+model and its own EVM, decommissioning the code that attribution described, and every brand mark
+and piece of in-game art was regenerated with FLUX 2 Pro. An attribution that survives the work it
+describes is just a stale sentence with a credit in it.
+
+The generated originals carry **C2PA provenance metadata** written by the model, so the claim above
+is checkable rather than merely asserted — `branding/hearth-logo.png`, `branding/mark-hearth.png`
+and `web/art/mine-hero.png` all hold it. The favicon, Open Graph, social and wordmark files do not,
+because they are derived from those originals by downscaling and cropping, and resampling discards
+the metadata along with the pixels.
 
 The models were used under paid API access and the output is the project's to use. Nothing here is
 claimed to be hand-written that is not, and nothing is claimed to work that has not been tested.
