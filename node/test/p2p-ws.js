@@ -330,14 +330,24 @@ function mine(n, key, transactions = []) {
 
     /* …and the other half of a heartbeat: acting on silence. Without this a
      * half-open link through a tunnel looks connected forever, which is worse
-     * than a dropped one — the miner keeps mining into it. */
-    const mute = net.connect({ host: '127.0.0.1', port: jport }, () => {
+     * than a dropped one — the miner keeps mining into it.
+     *
+     * Its own listener, with a deadline measured in seconds rather than in the
+     * 400 ms the byte counter above needs. Sharing J's timings made the window
+     * in which the mute peer is connected about 400 ms wide, and a CI runner
+     * that stalls for half of that reports "never accepted" for a node that
+     * accepted and dropped it correctly — a flaky test, which is a defect in
+     * the test and was one here. The property is unchanged; only the clock is. */
+    const S = node('silence', gen, { coinbaseKey: minerA });
+    S.p2p.listenWs(0, { pingMs: 100, idleMs: 2000 });
+    const sport = await bound(S.p2p.wsServer, 'S p2p ws');
+    const mute = net.connect({ host: '127.0.0.1', port: sport }, () => {
       mute.write(`GET ${P.P2P_WS_PATH} HTTP/1.1\r\nHost: x\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n`
         + 'Sec-WebSocket-Key: AAAAAAAAAAAAAAAAAAAAAA==\r\nSec-WebSocket-Version: 13\r\n\r\n');
     });
     mute.on('error', () => {});
-    assert(await wait(() => J.p2p.peers.size === 2, 5000), 'a peer that only completes the handshake is accepted');
-    assert(await wait(() => J.p2p.peers.size === 1, 5000),
+    assert(await wait(() => S.p2p.peers.size === 1, 10000), 'a peer that only completes the handshake is accepted');
+    assert(await wait(() => S.p2p.peers.size === 0, 15000),
       'and then dropped once it answers no ping — silence is acted on, not waited on forever');
     mute.destroy();
     proxy.close();
