@@ -509,10 +509,19 @@ believe `MAP.md`.
 Parts of this repository were produced with AI assistance, and it seems better to
 say so than to leave it to be inferred.
 
-- **Code** — written with Claude Opus 5 and Claude Opus 4.8 (Anthropic), directed
+- **Code** — written with Claude Opus 5 and Claude Fable 5 (Anthropic), directed
   and reviewed by a human, and gated on the same tests and CI as anything else
   here.
-- **Artwork** — brand marks and icons generated with OpenAI's image models.
+- **Artwork** — brand marks and icons generated with FLUX 2 Pro. The generated
+  originals carry C2PA provenance written by the model, so the claim is checkable
+  rather than asserted; derived sizes do not, because resampling discards the
+  metadata along with the pixels.
+
+This paragraph named **Claude Opus 4.8** and **OpenAI's image models** until
+2026-08-04, and both were true when written. Neither is now: the chain was
+rewritten around the account model and its own EVM, retiring the code that
+attribution described, and the art was regenerated. An attribution that outlives
+the work it describes is a stale sentence with a credit in it.
 
 The models were used under paid API access and the output is the project's to
 use. Nothing here is claimed to be hand-written that is not, and nothing is
