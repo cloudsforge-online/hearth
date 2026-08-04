@@ -10,8 +10,19 @@ edges.
 
 ## Read this first: what you can actually run today
 
-**There is no public Hearth network — and there is a chain.** One command
-starts one:
+**Mainnet is live: `https://rpc.cloudsforge.online`, chain id 7411.** It answers
+JSON-RPC over POST with a publicly trusted certificate, and an explorer is at
+`https://explorer.cloudsforge.online`.
+
+Read it before you trust it. It is **hours old** — block 1 was mined 2026-08-04
+19:12 UTC — under 250 blocks tall, carries zero transactions so far, sits at its
+launch difficulty, and runs on **one home server behind one Cloudflare Tunnel**
+with no redundancy and no restored backup. Nothing here has been independently
+audited. There is **no publicly reachable testnet**, so mainnet is the only
+public chain to point at.
+
+Which is why most of this page still runs against a chain of your own. One
+command starts one:
 
 ```bash
 node node/bin/hearthd.js --evm --mine --data /tmp/hearth      # [RUN]
@@ -20,9 +31,8 @@ node node/bin/hearthd.js --evm --mine --data /tmp/hearth      # [RUN]
 That is an account-model chain: it mines Homefire blocks, executes the EVM,
 and serves the `eth_*` surface on `http://127.0.0.1:8545/`. Everything on this
 page except §7 was executed against it while this page was written — a
-contract deployed, called, paid and read back. What does **not** exist is a
-published endpoint: no hostname, no HTTPS, nothing anyone else can reach. The
-two used to be one sentence in this document and they are not the same claim.
+contract deployed, called, paid and read back. Swap the `--rpc` for
+`https://rpc.cloudsforge.online` when you want the public chain instead.
 
 Every step below carries a marker:
 
@@ -631,12 +641,12 @@ Do not plan around any of these:
 
 | | |
 | --- | --- |
-| A **published** RPC endpoint | ⬜ nothing is deployed. The port and path **are** settled — 8545, root path ([`evm-spec.md`](evm-spec.md) §6) — and a node serves them on loopback today |
-| A **public** testnet | ⬜ the three-node testnet runs on `127.0.0.1` and nothing routes it. Its chain id **is** chosen: **7412**, and its genesis hash is published in [`../TESTNET.md`](../TESTNET.md) |
-| A **deployed** `0x`-native block explorer | ⬜ **not in this repository any more.** `web/` was deleted in `48bc28a`. The estate surface is [`micro-explorer-web`](https://github.com/cloudsforge-online/micro-explorer-web), which reads `micro-indexer` rather than talking `eth_*` to your node — so there is currently **nothing here you can point at your own node** |
+| A **published** RPC endpoint | ✅ `https://rpc.cloudsforge.online`, chain id 7411, POST only. What it does **not** have is age, transactions, a demonstrated hashrate, an audit or a second machine |
+| A **public** testnet | ⬜ the three-node testnet runs on `127.0.0.1` and nothing routes it; its `*.testnet.cloudsforge.online` names resolve but fail the TLS handshake. Its chain id **is** chosen: **7412**, and its genesis hash is published in [`../TESTNET.md`](../TESTNET.md) |
+| A **deployed** `0x`-native block explorer | 🟡 one is deployed at `https://explorer.cloudsforge.online`, but **not from this repository** — `web/` was deleted in `48bc28a`. The estate surface is [`micro-explorer-web`](https://github.com/cloudsforge-online/micro-explorer-web), which reads `micro-indexer` rather than talking `eth_*` to your node — so there is still **nothing here you can point at your own node** |
 | Contract source verification | 🟡 the services are written — [`../tools/verify`](../tools/verify) (116/116, and it speaks what `forge verify-contract` speaks) and [`../tools/explorer-api`](../tools/explorer-api) (the Etherscan-compatible `/api`, 177/177 plus 27/27 against a real chain). Neither is hosted |
 | A deployed faucet | ⬜ the service is written and tested; nowhere public to run it. Mine instead — §4 |
-| Any **persistently** deployed contract | ⬜ WEMBER, the AMM and Multicall3 deploy and run (§5.0, §7) but no chain holding them outlives the process that mined them |
+| Any **persistently** deployed contract | ⬜ WEMBER, the AMM and Multicall3 deploy and run (§5.0, §7), but nothing is deployed to mainnet — every block on it so far carries zero transactions |
 | `eth_subscribe` / WebSockets | ⬜ v2. Port 8546 is reserved for it |
 | `eth_newFilter` / `eth_getFilterChanges` | ✅ implemented, bounded and served (`node/src/jsonrpc/filters.js`) — the poll-based stand-in for `eth_subscribe` |
 | `eth_feeHistory` | 🟡 implemented but **OFF by default** — `HEARTH_RPC_FEE_HISTORY=1` turns it on. See §5.3 for why the default is off on a legacy-only chain |

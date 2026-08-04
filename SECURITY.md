@@ -218,8 +218,8 @@ without new impact will be closed with a pointer here.
 
 ## Status of this codebase
 
-**Pre-mainnet. Nothing here has been independently audited, and no mainnet
-exists.**
+**Mainnet is live, and nothing here has been independently audited.** That
+combination is the single most important sentence on this page.
 
 The account-model EVM chain is under construction. What is built and gated on
 published reference vectors: the primitives, the Merkle Patricia Trie and
@@ -229,14 +229,28 @@ GeneralStateTests**), all nine precompiles,
 and the `eth_*` JSON-RPC surface. Uniswap V2 deploys and swaps on it
 (`node/test/dex.js`).
 
-**What is not built is a public network.** Blocks are produced, validated and
-reorged — two real nodes partition and converge in `node/test/evm-p2p-fork.js`,
-and three run under `docker-compose.testnet.yml` — but every port binds
-`127.0.0.1`, no genesis outlives the process that mined it, and there is no
-mainnet. The class of bug that only appears when state is carried across blocks,
-reorged or persisted has had a few thousand blocks to show itself, not a few
-million, and nothing here has ever run under adversarial load or at production
-proof-of-work parameters ([`docs/pow-parameters.md`](docs/pow-parameters.md)).
+**The public network now exists, and it is new.** Mainnet — chain id 7411 —
+serves JSON-RPC at `https://rpc.cloudsforge.online`; blocks are produced,
+validated and reorged, two real nodes partition and converge in
+`node/test/evm-p2p-fork.js`, and three run under `docker-compose.testnet.yml`.
+None of that shortens this list:
+
+- The chain is **hours old and under 250 blocks tall**, and it runs at the
+  `GENESIS_TARGET` difficulty floor. **No block has ever been produced at
+  production proof-of-work parameters**
+  ([`docs/pow-parameters.md`](docs/pow-parameters.md)), and nothing here has ever
+  run under adversarial load.
+- The class of bug that only appears when state is carried across blocks,
+  reorged or persisted has had a few thousand blocks to show itself, not a few
+  million.
+- It runs on **one home server behind one Cloudflare Tunnel**. There is no
+  redundancy, no failover, and no backup has ever been restored. Treat
+  availability as a courtesy, not a guarantee.
+- The node's own ports still bind `127.0.0.1`; the tunnel is the entire
+  perimeter, so a tunnel misconfiguration is an exposure, not just an outage.
+
+There is still **no publicly reachable testnet**, so there is nowhere to
+reproduce a finding against a public chain but mainnet itself.
 
 [`docs/evm-spec.md`](docs/evm-spec.md) §8 tracks the phases,
 [`docs/decisions.md`](docs/decisions.md) records why the non-obvious choices were

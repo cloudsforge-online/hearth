@@ -148,7 +148,7 @@ Hardhat's publicly known default account.
 
 | Variable | Default | Notes |
 | --- | --- | --- |
-| `HEARTH_RPC_URL` | `http://127.0.0.1:8645` | ⬜ no public endpoint exists |
+| `HEARTH_RPC_URL` | `http://127.0.0.1:8645` | ⬜ no faucet is hosted anywhere. Mainnet is at `https://rpc.cloudsforge.online`, but **do not point a faucet at it** — there is no public testnet to fund, and a faucet on mainnet gives away the only EMBER there is |
 | `HEARTH_CHAIN_ID` | `7411` | **A mismatch against the node is fatal at boot.** A testnet faucet pointed at mainnet is an unauthenticated withdrawal endpoint |
 | `HEARTH_FAUCET_PORT` / `_HOST` | `9646` / `127.0.0.1` | |
 | `HEARTH_FAUCET_DRIP_EMBER` | `10` | |

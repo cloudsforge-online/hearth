@@ -34,8 +34,8 @@ Warm, plain, confident, a little defiant. We talk to people, not traders. We say
 "money," "spend," "home," "fire," "you" — not "asset," "hodl," "protocol
 maximalism." We're honest about limits (see the whitepaper threat model); trust is
 part of the brand. When a figure is a model, the page says *"modeled — not a
-promise."* When something is pre-mainnet, it says so in the same breath as the
-claim, not in a footnote.
+promise."* When something is not live yet — or is live but brand new — it says
+so in the same breath as the claim, not in a footnote.
 
 ## Palette
 
@@ -162,4 +162,6 @@ All motion must respect `prefers-reduced-motion`.
   it.
 - **Don't** use cold "crypto-bro" chrome, lambos, or moon/gold hoarding imagery —
   that's the exact aesthetic Hearth rejects.
-- **Don't** imply EMBER has a price. It is pre-mainnet and testnet-only.
+- **Don't** imply EMBER has a price. Mainnet being live changes nothing about
+  this: there is no market, no liquidity and no listed price, so any number
+  presented as a price is false.

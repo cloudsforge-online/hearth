@@ -5,8 +5,10 @@
 [`../WHITEPAPER.md`](../WHITEPAPER.md) or [`coinnomics.md`](coinnomics.md); where
 those disagree with this file, this file is right and the reason is in §9.
 
-> **Status.** There is no mainnet. No EMBER of monetary value exists, there is no
-> market and there is no listed price. Everything below describes the emission
+> **Status.** Mainnet is live (chain id 7411, `https://rpc.cloudsforge.online`)
+> and hours old. That changes nothing here: **no EMBER of monetary value exists,
+> there is no market, there is no liquidity and there is no listed price.** A
+> reachable chain is not a traded asset. Everything below describes the emission
 > rules the reference node enforces today and will continue to enforce across the
 > account-model migration ([`evm-spec.md`](evm-spec.md) §1: *"Emission — existing
 > subsidy schedule — unchanged"*). Read §9 before relying on any figure.

@@ -1,9 +1,14 @@
 # Adding Hearth to MetaMask
 
-> **There is no public Hearth endpoint**, so the RPC URL below is one you run:
-> `hearthd --evm --mine` serves `eth_chainId` on `http://127.0.0.1:8545/`, and
-> `docker-compose.testnet.yml` serves chain id **7412** on the same port. Both
-> work in MetaMask today; neither is reachable by anyone else. See
+> **The public endpoint is `https://rpc.cloudsforge.online`, chain id 7411.** It
+> is hours old, holds no transactions, has not been audited and runs on one home
+> server with no failover — add it knowing that. There is **no publicly
+> reachable testnet**: do not enter any `*.testnet.cloudsforge.online` URL, it
+> fails TLS.
+>
+> You can also point MetaMask at a chain you run: `hearthd --evm --mine` serves
+> `eth_chainId` on `http://127.0.0.1:8545/`, and `docker-compose.testnet.yml`
+> serves chain id **7412** on the same port. See
 > [`../docs/network-config.md`](../docs/network-config.md).
 >
 > Everything below is the exact configuration, and the explanation of every
@@ -17,10 +22,10 @@
 | MetaMask field | Value | Notes |
 | --- | --- | --- |
 | **Network name** | `Hearth` | Display only. |
-| **New RPC URL** | ⬜ *does not exist yet* | Must be HTTPS in production. MetaMask will not add an `http://` network unless it is loopback. |
+| **New RPC URL** | `https://rpc.cloudsforge.online` | HTTPS, publicly trusted certificate. MetaMask will not add an `http://` network unless it is loopback. |
 | **Chain ID** | `7411` | **The UI field takes DECIMAL.** MetaMask converts it to `0x1cf3` itself. |
 | **Currency symbol** | `EMBER` | |
-| **Block explorer URL** | ⬜ *does not exist yet* | Optional. Leave blank rather than guessing — a wrong value makes every "view on explorer" link 404. |
+| **Block explorer URL** | `https://explorer.cloudsforge.online` | Optional, and EIP-3091 conformance has not been verified — if a "view on explorer" link 404s, leave this blank rather than guessing another value. |
 
 Decimals are not a field in the MetaMask UI. They are fixed at 18 for a native
 asset, which is exactly why [`../docs/evm-spec.md`](../docs/evm-spec.md) §1
@@ -52,10 +57,10 @@ await window.ethereum.request({
 
     // At least one, HTTPS, and it must answer eth_chainId with 0x1cf3 or the
     // wallet rejects the whole request.
-    rpcUrls: ['https://rpc.example.invalid'],   // ⬜ replace — no endpoint exists
+    rpcUrls: ['https://rpc.cloudsforge.online'],
 
-    // Optional, and better omitted than wrong.
-    blockExplorerUrls: null,                    // ⬜ no 0x-native explorer yet
+    // Optional, and better omitted than wrong. EIP-3091 conformance unverified.
+    blockExplorerUrls: ['https://explorer.cloudsforge.online'],
   }],
 });
 ```

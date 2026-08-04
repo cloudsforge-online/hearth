@@ -5,11 +5,24 @@ guess and nobody has to ask.
 
 > ### Status, before anything else
 >
-> **There is no public Hearth endpoint.** There is a chain: it produces blocks,
-> it reorgs, and it serves these methods. Nobody has published it.
+> **The public Hearth endpoint is `https://rpc.cloudsforge.online`, chain id
+> 7411 (`0x1cf3`).** JSON-RPC over **POST** — a `GET` answers `405`. The
+> certificate is publicly trusted (Google Trust Services, via Cloudflare), so no
+> `--resolve` and no CA override is needed. An explorer is at
+> `https://explorer.cloudsforge.online`.
 >
-> Those are two different statements and this document used to run them
-> together. Precisely:
+> **Mainnet only.** There is **no publicly reachable testnet**: every
+> `*.testnet.cloudsforge.online` name resolves to Cloudflare but fails the TLS
+> handshake at the edge, because Universal SSL's `*.cloudsforge.online` wildcard
+> is single-label and does not cover a two-label name. Only the bare
+> `testnet.cloudsforge.online` apex answers. Do not configure any testnet
+> subdomain — it cannot work today.
+>
+> **And "live" means reachable, not established.** Block 1 was mined
+> 2026-08-04 19:12 UTC. The chain is hours old, is at the `GENESIS_TARGET`
+> difficulty floor, carries zero transactions so far, and runs on **one home
+> server behind one Cloudflare Tunnel** — no redundancy, no failover, no backup
+> ever restored. Precisely:
 >
 > - **The chain runs.** `node/src/evmnode.js` builds the blockchain, the miner
 >   and the JSON-RPC server and mounts it on 8545 (`evmnode.js:186`).
@@ -27,9 +40,10 @@ guess and nobody has to ask.
 >   [`testing.md`](testing.md) §4, and it is not a short list: no long-range
 >   reorg, no sustained load, and **no run at production PoW parameters**
 >   ([`pow-parameters.md`](pow-parameters.md)).
-> - **Nothing is deployed.** Every port in the compose file binds
->   `127.0.0.1`. There is no HTTPS endpoint, no hostname, no faucet and no
->   explorer anyone else can reach.
+> - **Mainnet is deployed; nothing else is.** Every port in the compose file
+>   still binds `127.0.0.1` — the tunnel, not the bind address, is what makes
+>   mainnet reachable. There is still no public faucet, and no testnet hostname
+>   that completes a TLS handshake.
 >
 > So everything below is **both** the specification you configure against and,
 > where marked **[LOCAL]**, a description of something you can run in a
@@ -59,9 +73,9 @@ guess and nobody has to ask.
 | Block gas limit | 30,000,000 | |
 | Consensus | proof-of-work (Homefire), heaviest-cumulative-work | |
 | Finality | probabilistic, **unbounded reorg depth** | [`exchange-integration.md`](exchange-integration.md) §4 |
-| RPC URL | ⬜ nothing **published**. **[LOCAL]** `http://127.0.0.1:8545` — `hearthd --evm`, or `docker compose -f docker-compose.testnet.yml up`, serves it today. The port and path are settled: 8545, root path — see §3 | [`evm-spec.md`](evm-spec.md) §6 |
+| RPC URL | ✅ **mainnet: `https://rpc.cloudsforge.online`** — POST only, root path, publicly trusted TLS. **[LOCAL]** `http://127.0.0.1:8545` — `hearthd --evm`, or `docker compose -f docker-compose.testnet.yml up`, serves the same surface. The port and path are settled: 8545, root path — see §3. **No testnet URL exists**; see the status block above | [`evm-spec.md`](evm-spec.md) §6 |
 | WebSocket URL | ⬜ not in v1 at all (`eth_subscribe` is v2). Port **8546 is reserved** for it and deliberately left unbound; poll `eth_newFilter`/`eth_getFilterChanges` meanwhile (`node/src/jsonrpc/filters.js`) | [`evm-spec.md`](evm-spec.md) §6 |
-| Block explorer URL | ⬜ nothing published, **and the explorer that was built is no longer in this repository** — `web/` was deleted in `48bc28a`. The estate surface is [`micro-explorer-web`](https://github.com/cloudsforge-online/micro-explorer-web), which reads `micro-indexer` rather than `eth_*`. The Etherscan-compatible `/api` is still here and runs against a real chain in CI ([`../tools/explorer-api`](../tools/explorer-api)) | [`listing-checklist.md`](listing-checklist.md) §3 |
+| Block explorer URL | ✅ **`https://explorer.cloudsforge.online`** (200), **but the explorer that was built is no longer in this repository** — `web/` was deleted in `48bc28a`. The estate surface is [`micro-explorer-web`](https://github.com/cloudsforge-online/micro-explorer-web), which reads `micro-indexer` rather than `eth_*`. The Etherscan-compatible `/api` is still here and runs against a real chain in CI ([`../tools/explorer-api`](../tools/explorer-api)) | [`listing-checklist.md`](listing-checklist.md) §3 |
 | Faucet URL | ⬜ nothing published — the service is built and tested, at [`../tools/faucet`](../tools/faucet) | |
 | Multicall3 | ⬜ not deployed. See §7 | |
 | SLIP-44 coin type | ⬜ unregistered. Derive under coin type **60** (Ethereum) meanwhile | [`listing-checklist.md`](listing-checklist.md) §1.2 |
@@ -139,14 +153,16 @@ is the paired convention and reclaiming it later would break every client that
 guessed.
 
 **These are loopback bindings.** `127.0.0.1:8545` is a chain you can point
-Hardhat at; it is not an endpoint anyone else can reach, and nothing in this
-repository or in the estate's tunnel configuration routes it. That is the whole
-of the "no public endpoint" claim — deployment, not capability.
+Hardhat at. It is not itself reachable from outside; what makes mainnet
+reachable is a **Cloudflare Tunnel** in front of it, not a change of bind
+address. The compose file above is unchanged, and the testnet ports it lists are
+still routed by nothing.
 
-Publicly this is one hostname — `rpc.<apex>` → 8545 — and that URL goes into
-`ethereum-lists/chains` and `chainid.network`, where MetaMask caches it, exchanges
-hardcode it and dapps bake it into configs. **It cannot be changed after
-publication without stranding all of them at once.**
+Publicly this is one hostname — `rpc.cloudsforge.online` → 8545 — and it is now
+serving. That URL is what goes into `ethereum-lists/chains` and
+`chainid.network`, where MetaMask caches it, exchanges hardcode it and dapps bake
+it into configs. **It cannot be changed after publication without stranding all
+of them at once**, which is now a live constraint rather than a future one.
 
 ### Why not 8645, where the REST API already is
 
@@ -213,10 +229,10 @@ The short version:
 | MetaMask field | Value |
 | --- | --- |
 | Network name | `Hearth` |
-| New RPC URL | ⬜ nothing published. **[LOCAL]** `http://127.0.0.1:8545` works today |
-| Chain ID | `7411` — MetaMask's UI takes **decimal**. The local testnet is **`7412`** |
+| New RPC URL | `https://rpc.cloudsforge.online`. **[LOCAL]** `http://127.0.0.1:8545` also works |
+| Chain ID | `7411` — MetaMask's UI takes **decimal**. The local-only testnet is **`7412`** |
 | Currency symbol | `EMBER` |
-| Block explorer URL | ⬜ nothing published (optional field) |
+| Block explorer URL | `https://explorer.cloudsforge.online` (optional field) |
 
 ### 4.2 ethers v6
 
@@ -315,25 +331,31 @@ assert w3.eth.chain_id == 7411
 
 ### 4.7 `ethereum-lists/chains` entry
 
-Not filed, and cannot be until there is an endpoint
-([`listing-checklist.md`](listing-checklist.md) §1.1). The shape it will take,
-so the missing pieces are visible:
+Not filed. The endpoint that used to block it now exists
+([`listing-checklist.md`](listing-checklist.md) §1.1); what is still missing is
+below, marked. The shape it will take:
 
 ```json
 {
   "name": "Hearth",
   "chain": "Hearth",
-  "rpc": ["⬜ https://rpc.…"],
-  "faucets": ["⬜ https://faucet.…"],
+  "rpc": ["https://rpc.cloudsforge.online"],
+  "faucets": ["⬜ https://faucet.… — the service exists, nothing hosts it"],
   "nativeCurrency": { "name": "Ember", "symbol": "EMBER", "decimals": 18 },
-  "infoURL": "https://hearth.cloudsforge.online",
+  "infoURL": "https://cloudsforge.online",
   "shortName": "⬜ undecided — must be globally unique in the registry",
   "chainId": 7411,
   "networkId": 7411,
   "icon": "⬜ needs an entry in _data/icons/",
-  "explorers": [{ "name": "⬜", "url": "⬜", "standard": "EIP3091" }]
+  "explorers": [
+    { "name": "Hearth Explorer", "url": "https://explorer.cloudsforge.online",
+      "standard": "⬜ EIP-3091 conformance not verified" }
+  ]
 }
 ```
+
+`infoURL` is **not** `hearth.cloudsforge.online` — that name has no DNS record.
+Checked 2026-08-05.
 
 `networkId` equals `chainId`. They differ only on chains that forked after
 EIP-155; Hearth never has.

@@ -19,15 +19,18 @@ Start at [`../docs/quickstart.md`](../docs/quickstart.md).
 
 ## The one thing to understand first
 
-**There is no PUBLISHED Hearth network, and there is a chain.**
-`node bin/hearthd.js --evm --mine` produces blocks and serves the `eth_*`
-surface on `http://127.0.0.1:8545/`; `docker-compose.testnet.yml` runs three
-nodes on chain id 7412. What does not exist is an endpoint anyone else can
-reach — every port binds loopback.
+**Mainnet is published: `https://rpc.cloudsforge.online`, chain id 7411** — and
+it is hours old, holds no transactions, is unaudited and runs on a single home
+server. There is **no publicly reachable testnet**; chain 7412 runs on loopback
+only.
 
-So these templates are configured against a frozen specification **and** run
-against a node you start yourself. Where a value cannot exist without a
-deployment it is marked `⬜` rather than filled in with something plausible.
+Locally, `node bin/hearthd.js --evm --mine` produces blocks and serves the
+`eth_*` surface on `http://127.0.0.1:8545/`, and `docker-compose.testnet.yml`
+runs three nodes on chain id 7412.
+
+So these templates are configured against a frozen specification and run against
+either. Where a value still cannot exist it is marked `⬜` rather than filled in
+with something plausible.
 Where a command has never been executed against Hearth, it says so.
 
 ## Keys

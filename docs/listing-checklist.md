@@ -3,16 +3,25 @@
 This is the gap list, not a marketing document. It exists so that nobody —
 including us — mistakes intent for readiness.
 
-**Summary: EMBER is not ready to apply for a listing, and will not be until the
-chain is public.** The blocking item is not paperwork, and it is no longer the
-EVM — the interpreter, the state transition, the receipts, the bloom and the
-`eth_*` surface are all built and gated on published vectors. Nor is it
-consensus any more: **blocks are produced, validated and reorged, and the RPC
-is mounted on 8545**. What blocks a listing now is that **none of it is
-published** — no endpoint anyone else can reach, no genesis that outlives a
-`docker compose down`, and no mainnet parameters that have ever been run (§7,
-and [`pow-parameters.md`](pow-parameters.md)). Everything below is downstream of
-those.
+**Summary: EMBER is not ready to apply for a listing.** The blocking item is not
+paperwork, and it is no longer the EVM — the interpreter, the state transition,
+the receipts, the bloom and the `eth_*` surface are all built and gated on
+published vectors. Nor is it consensus, and it is no longer publication either:
+**mainnet is live at `https://rpc.cloudsforge.online`, chain id 7411**. What
+blocks a listing now is everything that being reachable does not buy you:
+
+- The chain is **hours old and under 250 blocks tall**, with **zero transactions
+  in it so far**. No exchange will risk-assess that.
+- It runs at the `GENESIS_TARGET` difficulty floor. **No block has ever been
+  produced at mainnet proof-of-work parameters** (§7, and
+  [`pow-parameters.md`](pow-parameters.md)) — and there is no demonstrated
+  hashrate to quote.
+- It is **one home server behind one tunnel**, with no redundancy and no
+  restored backup. Exchanges ask about node infrastructure early.
+- **Nothing has been independently audited** ([`../SECURITY.md`](../SECURITY.md)).
+- There is still **no publicly reachable testnet** to integrate against.
+
+Everything below is downstream of those.
 
 **Legend:** ✅ done · 🟡 partial · ⬜ not started · 🚫 blocked on something else
 
@@ -25,13 +34,14 @@ those.
 | B1 | EVM interpreter, state transition, receipts, logs bloom | ✅ **built and vector-gated** — 609/609 VMTests, 20,077/20,077 GeneralStateTests, 188/188 TransactionTests |
 | B2 | `eth_*` JSON-RPC surface | ✅ **built and mounted** — `node/src/evmnode.js:186` serves it on 8545. 41 methods, 422 checks against a fake chain and 170 against a real one over HTTP |
 | B2a | **Header v2, and consensus on the account state model** | ✅ **landed.** Two real nodes partition, reorg and agree state roots byte for byte (`node/test/evm-p2p-fork.js`, 51 checks); three run under `docker-compose.testnet.yml` |
-| B3 | Public account-model testnet with a stable endpoint | ⬜ **the blocker now.** The testnet exists and binds `127.0.0.1`; nothing routes it and no genesis is published |
-| B4 | Mainnet genesis, launch, and demonstrated hashrate | ⬜ |
+| B3 | Public account-model testnet with a stable endpoint | ⬜ **still missing.** Chain 7412 binds `127.0.0.1`, nothing routes it, and its `*.testnet.cloudsforge.online` names fail TLS at Cloudflare's edge |
+| B4 | Mainnet genesis, launch, and demonstrated hashrate | 🟡 **genesis and launch done** — chain 7411 published 2026-08-04, mining, publicly reachable. **Hashrate is not demonstrated**: the chain sits at the difficulty floor, so there is no number to quote |
 | B5 | Independent audit of consensus and the EVM | ⬜ |
 
-Nothing in §1–§8 should be filed before B3–B4. An application submitted against
-a chain nobody outside this repository can reach is a permanent mark against the
-project — and "it runs on my machine" is not an endpoint.
+Nothing in §1–§8 should be filed before the rest of B4 and B5. An application
+submitted against a chain that is hours old, has no transactions and has never
+run at its own production difficulty is a permanent mark against the project —
+and "it answers `eth_chainId`" is not a track record.
 
 ---
 
@@ -58,7 +68,10 @@ discovered after mainnet is a chain-splitting-grade problem for users.
 The PR needs: a `_data/chains/eip155-7411.json` entry with `name`, `shortName`,
 `chain`, `networkId`, `nativeCurrency {name: "Ember", symbol: "EMBER", decimals: 18}`,
 `rpc[]`, `faucets[]`, `infoURL`, `explorers[]`, and an icon in `_data/icons/`.
-Every one of those fields depends on B3/B4.
+`rpc[]` and `explorers[]` can now be filled in (`https://rpc.cloudsforge.online`,
+`https://explorer.cloudsforge.online`); `faucets[]`, `shortName` and the icon
+still cannot. See [`network-config.md`](network-config.md) §4.7 for the exact
+JSON.
 
 ### 1.2 SLIP-44 coin type ⬜
 
@@ -108,7 +121,7 @@ reason. Blocked on the naming decision in §1.2.
 
 | Item | Status | Note |
 | --- | --- | --- |
-| Public HTTPS RPC endpoint (`https://rpc.…`) | ⬜ | Required by §1.1. Needs rate limiting and TLS — the node itself has neither ([`exchange-integration.md`](exchange-integration.md) §2) |
+| Public HTTPS RPC endpoint (`https://rpc.…`) | ✅ | `https://rpc.cloudsforge.online`, publicly trusted certificate. TLS and rate limiting come from Cloudflare, **not** from the node, which still has neither ([`exchange-integration.md`](exchange-integration.md) §2) |
 | Public WSS endpoint | ⬜ | `eth_subscribe` is v2, not v1 |
 | Redundant RPC (≥2 independent providers) | ⬜ | Aggregators and wallets expect more than one |
 | DNS seeds / documented seed nodes | ⬜ | Peers are currently supplied by hand with `--peer` |
@@ -124,12 +137,12 @@ minimum set:
 
 | Endpoint | Returns | Status |
 | --- | --- | --- |
-| Total supply | a plain decimal number, no JSON wrapper, no units | 🟡 — `GET /supply/total` in [`../tools/explorer-api`](../tools/explorer-api). Written; suite green; no *public* chain to serve |
+| Total supply | a plain decimal number, no JSON wrapper, no units | 🟡 — `GET /supply/total` in [`../tools/explorer-api`](../tools/explorer-api). Written; suite green; **nothing hosts it** — mainnet exists to point it at, but the service is not deployed |
 | Circulating supply | total minus the Commons balance, per [`tokenomics.md`](tokenomics.md) §7 | 🟡 — `GET /supply/circulating`, same service. **Refuses rather than serving total** when the Commons address is unset |
 | Rich list / holder count | | ⬜ |
-| Block explorer, `0x`-native | address, tx, block, contract pages with search | 🟡 — **built, but no longer here.** `web/` was deleted in `48bc28a`; the surface is [`micro-explorer-web`](https://github.com/cloudsforge-online/micro-explorer-web), which reads `micro-indexer` rather than `eth_*` and **has no contract disassembly**. The 147-self-test figure described the deleted page and is not carried over. **Not deployed against a chain, because there is none** |
-| Etherscan-compatible `/api` | `module=account&action=balance`, `module=stats&action=…`, `module=logs&action=getLogs` | 🟡 — [`../tools/explorer-api`](../tools/explorer-api), with the address index behind it. `account`, `contract`, `stats`, `transaction`, `logs` and `proxy`; 🚫 on B2/B3 to run |
-| Verified contract sources | source, ABI, compiler settings, constructor args | 🟡 — [`../tools/verify`](../tools/verify), which also speaks the API `forge verify-contract` speaks. 🚫 on B2/B3 |
+| Block explorer, `0x`-native | address, tx, block, contract pages with search | 🟡 — **built, but no longer here.** `web/` was deleted in `48bc28a`; the surface is [`micro-explorer-web`](https://github.com/cloudsforge-online/micro-explorer-web), which reads `micro-indexer` rather than `eth_*` and **has no contract disassembly**. The 147-self-test figure described the deleted page and is not carried over. An explorer is deployed at `https://explorer.cloudsforge.online`, but it is that repository's, not this one's |
+| Etherscan-compatible `/api` | `module=account&action=balance`, `module=stats&action=…`, `module=logs&action=getLogs` | 🟡 — [`../tools/explorer-api`](../tools/explorer-api), with the address index behind it. `account`, `contract`, `stats`, `transaction`, `logs` and `proxy`. B2 is done and mainnet can back it; what is missing is somewhere to host it |
+| Verified contract sources | source, ABI, compiler settings, constructor args | 🟡 — [`../tools/verify`](../tools/verify), which also speaks the API `forge verify-contract` speaks. Nothing hosts it, and no contract is deployed to verify |
 
 **The existing `/supply` REST endpoint is not usable as-is.** Its `circulating`
 field is the sum of the entire UTXO set and *includes* the Commons treasury

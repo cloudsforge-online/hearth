@@ -35,8 +35,15 @@ The EVM is **written here, not imported**: no `@ethereumjs/*`, no `ethers`, no
 vectors for every part of it, so the rule is that no component is done until its
 vectors pass. §4 is the evidence.
 
-**Nothing has produced an account-model block.** Consensus on the new state model
-is being built now, so there is no live endpoint, no testnet and no mainnet.
+**The account model is now the published chain.** Mainnet — chain id 7411 — is
+reachable at `https://rpc.cloudsforge.online` and mining. Verified from outside
+this network on 2026-08-05: `eth_chainId` → `0x1cf3`, `web3_clientVersion` →
+`Hearth/v0.2.0/linux-x64/node22.23.1`, genesis `extraData` → `0x6865617274682f37343131`
+(`"hearth/7411"`, the format `node/src/chain/genesis.js:59` describes). Block 1
+was mined 2026-08-04 19:12 UTC, so the chain is hours old and under 200 blocks
+tall, it is still at the `GENESIS_TARGET` difficulty floor (`difficulty: 0x100`,
+`node/src/params.js:185`), and it runs on one home server behind one Cloudflare
+Tunnel. **There is no publicly reachable testnet.**
 
 ---
 
@@ -63,7 +70,8 @@ here first.
 | Contract verification (`forge verify-contract`-compatible) | `tools/verify/` | ✅ **merged**, 116 checks |
 | Property fuzzing | `node/test/fuzz/` | ✅ **merged**, 82,481 checks; two open findings — §4.7, §11 |
 | **Consensus on the account model** | `node/src/chain/`, `node/src/evmnode.js` | ✅ **merged.** Blocks are produced, validated and reorged — `evmchain` 191 checks, `evm-p2p-fork` 51 across two real nodes; three run under `docker-compose.testnet.yml` |
-| Public testnet, mainnet, any deployed contract | — | ⬜ **unpublished.** The testnet runs on `127.0.0.1` and nothing routes it; no genesis outlives a `docker compose down -v` |
+| **Public mainnet** | — | ✅ **published 2026-08-04.** Chain id 7411 at `https://rpc.cloudsforge.online`, mining, publicly trusted TLS. Under 200 blocks tall, at the difficulty floor, on one home server behind one tunnel — reachable, not established |
+| Public testnet, any deployed contract | — | ⬜ **still unpublished.** Chain 7412 runs on `127.0.0.1` and nothing routes it: the `*.testnet.cloudsforge.online` names resolve but fail the TLS handshake, because Cloudflare Universal SSL's `*.cloudsforge.online` is single-label. Off mainnet, no genesis outlives a `docker compose down -v` |
 | The UTXO chain (ledger, P2P, REST, reorg) | `node/src/chain.js`, `tx.js`, `p2p.js`, `rpc.js` | ✅ runs, and **is being retired** |
 | `rust/hearthd` | `rust/` | 🟡 a self-check and a benchmark. **Not a node, not consensus** — §3.3 |
 
@@ -71,12 +79,14 @@ here first.
 whole Uniswap V2 stack onto our own EVM and executes a real swap — 167/167
 checks, a swap at **112,456 gas**. §4.4.
 
-**The most important gap is no longer phase 5.** Blocks are produced, validated
-and reorged, and the components above have been driven by one. What remains is
-that **nothing is published** — every port binds `127.0.0.1` — and that no block
-has ever been produced at production PoW parameters, which have now been
-measured and found unreachable
-([`docs/pow-parameters.md`](docs/pow-parameters.md)).
+**The most important gap is no longer publication.** Blocks are produced,
+validated and reorged, the components above have been driven by one, and mainnet
+is reachable. What remains is that **no block has ever been produced at
+production PoW parameters** — the live chain is pinned at the `GENESIS_TARGET`
+floor — and those parameters have now been measured and found unreachable
+([`docs/pow-parameters.md`](docs/pow-parameters.md)). Under that sits a
+deployment fact worth stating plainly: one home server, one tunnel, no
+redundancy, and no backup that has ever been restored.
 
 **A "merged" row is still not a "ready" row**, but the thing that made it so is
 fixed: `StateDB` used to re-root both tries on every mutation, at **443 MB and
@@ -1056,10 +1066,13 @@ only externally reachable caller is the unauthenticated `/mining/template`.
 
 ## 10. Not reachable, or not finished
 
-- **Nothing produces an account-model block.** `node/src/jsonrpc/server.js` is
-  never constructed; `node/src/chain.js` is UTXO-only; there is no account-model
-  genesis, no state root to publish, and no endpoint. Everything in §4 is proved
-  against vectors and fixtures, not against a chain.
+- ~~**Nothing produces an account-model block.**~~ Closed, and then published.
+  `node/src/evmnode.js:184` constructs and mounts `node/src/jsonrpc/server.js`
+  over a real account-model chain, and mainnet — chain id 7411 — serves it at
+  `https://rpc.cloudsforge.online`. What is still true of §4 is narrower: its
+  vectors and fixtures are the evidence, and the public chain has not yet added
+  much to them — it is hours old, holds **zero transactions**, and has never run
+  at production proof-of-work parameters.
 - ~~**The browser miner and the node disagree about the coinbase key.**~~ Closed,
   and both bullets here were reading the wrong chain. `node/src/rpc.js:130-134`
   and `node/src/block.js:45` are the **UTXO** REST server and the **UTXO** block

@@ -2,10 +2,11 @@
 
 ### Is this a live coin I can buy?
 
-**No.** There is no mainnet, no testnet, no market, no listed price and no EMBER
-of any monetary value in existence. There is no premine and no sale — when it
-launches you will mine or earn EMBER, not buy it early. See the
-[roadmap](roadmap.md).
+**No.** Mainnet is live — chain id 7411 at `https://rpc.cloudsforge.online` — but
+there is **no market, no listed price, no liquidity and no EMBER of any monetary
+value** in existence. Nobody sells it and nobody quotes it. There is no premine
+and no sale: you mine or earn EMBER, you do not buy it. Anyone offering to sell
+you some is running a scam. See the [roadmap](roadmap.md).
 
 ### What is Hearth, in one sentence?
 
@@ -32,12 +33,16 @@ reproduce all of that are in the [README](../README.md).
 
 ### So can I deploy a contract to it today?
 
-**Not one anyone else runs.** There is a chain: `hearthd --evm --mine` produces
-and validates blocks and serves `eth_*` on 8545, and
-`docker-compose.testnet.yml` runs three nodes on chain id 7412. What does not
-exist is a **published** endpoint — every port binds `127.0.0.1` — so there is
-nothing to point a wallet at but your own machine, and no genesis that survives
-`docker compose down -v`. The throughput defect that used to be the second half
+**Yes — to mainnet.** Point your tooling at `https://rpc.cloudsforge.online`,
+chain id 7411. Locally, `hearthd --evm --mine` produces and validates blocks and
+serves `eth_*` on 8545, and `docker-compose.testnet.yml` runs three nodes on
+chain id 7412 — but that testnet is **not** publicly reachable, so it is your
+machine only.
+
+Two warnings before you do. The chain is hours old and runs on one home server
+behind one tunnel with no failover, so do not deploy anything you cannot afford
+to lose to an outage. And nothing here has been independently audited
+([`../SECURITY.md`](../SECURITY.md)). The throughput defect that used to be the second half
 of this answer (`StateDB` re-rooting both tries per mutation, 443 MB and 65 s for
 one 30M-gas transaction) is fixed and gated at 5.2 s and 9.2 MiB
 ([`robustness-review.md`](robustness-review.md) §1).

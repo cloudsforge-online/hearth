@@ -21,19 +21,21 @@ claim before you read the claim.
 | State transition | **Built. 20,077 of 20,077 GeneralStateTests pass** — the last ten fixed by EIP-7610 — see [`MAP.md`](MAP.md) §4.3 |
 | `eth_*` JSON-RPC surface | **Built and served** on 8545 by `node/src/evmnode.js`. 41 methods, 422 checks against a fake chain and 170 against a real one over HTTP |
 | EVM-aware explorer · secp256k1 browser wallet · `hearth` CLI with an opcode tracer | **Built** |
-| AMM contracts (WEMBER, Factory, Pair, Router, Multicall3) | **Compiled, and executed — on our own EVM.** A full Uniswap V2 deployment and a real swap run in `node/test/dex.js`, and WEMBER deploys to a local node. **Deployed to no chain that outlives the process that mined it** |
+| AMM contracts (WEMBER, Factory, Pair, Router, Multicall3) | **Compiled, and executed — on our own EVM.** A full Uniswap V2 deployment and a real swap run in `node/test/dex.js`, and WEMBER deploys to a local node. **Deployed to no public chain** — every mainnet block so far carries zero transactions |
 | **Consensus on the account model** | **Built.** Blocks are produced, validated and reorged; two real nodes partition and converge (`node/test/evm-p2p-fork.js`). **No block has ever been produced at production PoW parameters** — §2.4 |
-| A public endpoint | **Does not exist.** The three-node testnet binds `127.0.0.1` and nothing routes it |
-| Mainnet | **Does not exist.** Nothing but throwaway testnets has ever run |
+| A public endpoint | **Exists, for mainnet only.** `https://rpc.cloudsforge.online`, publicly trusted TLS, JSON-RPC over POST. The three-node testnet still binds `127.0.0.1` and nothing routes it |
+| Mainnet | **Live and mining.** Chain id 7411; block 1 mined 2026-08-04 19:12 UTC. Under 200 blocks tall, at the `GENESIS_TARGET` difficulty floor, on one home server behind one tunnel |
 
-There is no mainnet, no market, no listed price, and no EMBER of any monetary
-value in existence. Anything in this document written in the present tense is
-running today; anything else is marked.
+There is **no market, no listed price, and no EMBER of any monetary value** in
+existence. A reachable chain is not a traded asset: there is no listing, no
+liquidity and no venue on which a price could form. Anything in this document
+written in the present tense is running today; anything else is marked.
 
-**The single most important line in that table is the second-to-last one.**
-Everything marked "built" above has now been driven by a block. What has not
-happened is publication: every port binds `127.0.0.1`, and no genesis outlives
-the process that mined it.
+**The single most important line in that table is the last one, and it is the
+word "under 200".** Everything marked "built" above has now been driven by a
+block, and those blocks are now public — but the chain is hours old, has never
+run at production proof-of-work parameters, and depends on a single machine.
+Reachable is not the same as established.
 
 **"Built" is still not "ready", and the two remaining gaps are measured rather
 than guessed.** The first is closed and recorded because it shaped this

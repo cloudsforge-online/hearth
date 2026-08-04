@@ -14,7 +14,7 @@
   <img alt="pow" src="https://img.shields.io/badge/PoW-Homefire%20(CPU%2C%20memory--hard)-ff4d00">
 
   <br/><br/>
-  🌐 <b><a href="https://hearth.cloudsforge.online/">hearth.cloudsforge.online</a></b>
+  🌐 <b><a href="https://explorer.cloudsforge.online/">explorer.cloudsforge.online</a></b> · <code>https://rpc.cloudsforge.online</code> · chain id <code>7411</code>
   <br/>
   <sub>Hearth is the <b>Mine</b> in <a href="https://cloudsforge.online/">CloudsForge</a>'s one crypto world — mine it, trade it, mint it, spend it, play in it.</sub>
   <br/><br/>
@@ -25,20 +25,32 @@
 
 ## Status, before anything else
 
-**Hearth is an account-model, EVM-executing proof-of-work chain under
-construction. There is no mainnet, no testnet, no public endpoint and no EMBER of
-any monetary value.**
+**Hearth is an account-model, EVM-executing proof-of-work chain. Mainnet is
+reachable and mining — chain id `7411` at `https://rpc.cloudsforge.online`. There
+is no publicly reachable testnet, and there is no EMBER of any monetary value:
+no market, no listed price, no liquidity.**
 
-The EVM is built and gated on Ethereum's published reference vectors. **Consensus
-on the account model is not** — no block has ever been produced on it. The chain
-that has produced blocks is the original UTXO ledger, and it is being retired.
+**"Live" means reachable, not established, and the difference matters here.**
+Block 1 was mined **2026-08-04 19:12 UTC**; the chain is hours old and under 200
+blocks tall. It sits at its launch difficulty — `eth_getBlockByNumber` returns
+`difficulty: 0x100`, which is exactly the `GENESIS_TARGET` floor in
+`node/src/params.js:185`, so no block has yet been produced at production
+proof-of-work parameters. The first 194 blocks averaged **~49 s apart**; 15 s is
+the protocol *target*, not an observed rate. And the whole thing runs on **one
+home server behind a single Cloudflare Tunnel** — no redundancy, no failover, and
+no backup that has ever been restored.
+
+The EVM is built and gated on Ethereum's published reference vectors, and
+consensus on the account model now runs in public rather than only on loopback.
+The original UTXO ledger is being retired.
 
 | | |
 | --- | --- |
 | **Built and vector-gated** | keccak/RLP/uint256/secp256k1 · Merkle Patricia Trie + StateDB · the interpreter (**609/609 VMTests**) · transactions, receipts, bloom (**188/188 TransactionTests**) · the state transition (**20,077/20,077 GeneralStateTests**) · all nine precompiles including bn128 and blake2f · the `eth_*` JSON-RPC surface · an EVM-aware explorer · the `hearth` CLI with an opcode tracer · a browser wallet on secp256k1 |
 | **Proved end to end** | **Uniswap V2 runs on our own EVM** — `node/test/dex.js`, 167/167, a real swap at **112,456 gas** |
 | **Built and running locally** | Consensus on the account model. `hearthd --evm --mine` produces and validates blocks and serves `eth_*` on 8545; two real nodes partition and reorg in `node/test/evm-p2p-fork.js`; `docker-compose.testnet.yml` runs three on chain id 7412 |
-| **Not published** | No endpoint anyone else can reach. Every port binds `127.0.0.1`, no genesis outlives a `docker compose down -v`, and there is no mainnet |
+| **Published** | **Mainnet, chain id 7411**, at `https://rpc.cloudsforge.online` — publicly trusted TLS, JSON-RPC over POST (a GET answers 405), plus an explorer at [`explorer.cloudsforge.online`](https://explorer.cloudsforge.online). The node ports still bind `127.0.0.1`; a Cloudflare Tunnel on one home server is the only thing routing them, so this is one machine with no failover |
+| **Still not published** | Any **testnet** anyone else can reach — chain 7412 runs on loopback and under `docker-compose.testnet.yml`, and the `*.testnet.cloudsforge.online` names fail TLS. No faucet, no deployed contract, and off mainnet no genesis outlives a `docker compose down -v` |
 | **Measured, and open** | The proof of work is 64 KiB and cannot be raised: a 2 GiB pad measures **185.7 s per evaluation** and a validator pays one per block received ([`docs/pow-parameters.md`](docs/pow-parameters.md)). Making it meaningfully memory-hard needs an amortised dataset, not a constant |
 
 [`MAP.md`](MAP.md) is the verified inventory — every claim in it cites `path:line`
@@ -201,8 +213,15 @@ pnpm --dir contracts install && pnpm --dir contracts compile
 cd node && node test/dex.js                                    # 167/167
 ```
 
-**4 — Point your tooling at something** — there is no endpoint, so serve the real
-RPC layer over a fake chain:
+**4 — Point your tooling at mainnet:**
+
+```bash
+cast chain-id     --rpc-url https://rpc.cloudsforge.online      # 7411
+cast block-number --rpc-url https://rpc.cloudsforge.online      # under 200, and climbing
+```
+
+Or serve the real RPC layer locally over a fake chain, to check your wiring and
+your encodings without mining anything:
 
 ```bash
 node tools/rpc-probe/stub.js --port 8745

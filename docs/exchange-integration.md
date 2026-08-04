@@ -31,27 +31,35 @@ honest account of what is not built yet.
 | `eth_*` JSON-RPC surface | **Built and mounted** on 8545, 41 methods, 422 checks against a fake chain and 170 against a real one — see the caveat below |
 | AMM contracts | **Compiled, and executed on our own EVM** — a full Uniswap V2 deployment and a real swap, `node/test/dex.js`, 167/167 |
 | **Header v2 and consensus on the account model** | **Built.** Blocks are produced, validated and reorged |
-| Public testnet on the account model | **Not published.** It runs on `127.0.0.1` and nothing routes it — this is the blocker |
-| Mainnet | Does not exist |
+| Public testnet on the account model | **Not published.** Chain 7412 runs on `127.0.0.1`, nothing routes it, and its `*.testnet.cloudsforge.online` names fail TLS — so there is nowhere but mainnet to integrate against |
+| Mainnet | **Live.** Chain id 7411 at `https://rpc.cloudsforge.online`. Hours old, under 250 blocks, zero transactions, at the difficulty floor, on one home server with no failover |
 
 **The caveat on the RPC row, because it is the row you care about.** The method
 table, the strict QUANTITY/DATA hex codec, the JSON-RPC 2.0 transport, the error
 mapping and the block/receipt shapes are all built and tested. They are tested
-against an **in-memory fake chain** — `node/src/jsonrpc/methods.js:1-20` says so
-in its own header — and **nothing mounts the server**. So the surface you will
-talk to exists; the thing behind it does not yet.
+against an in-memory fake chain **and** against a real one — 422 checks and 170
+respectively — and `node/src/evmnode.js:184` mounts the server, which mainnet is
+now serving from. (The header comment at `node/src/jsonrpc/methods.js:1-20` still
+says "the chain does not exist yet". That comment is stale; the code around it is
+not.)
 
-**Do not begin integration work yet.** This document exists so that when the chain
-lands you can scope the work in an afternoon rather than a sprint, and so you can
-tell us now if anything below would be a problem for you. The request/response
+**Do not begin integration work yet — but the reason has changed.** It is no
+longer that there is nothing to talk to. It is that mainnet is hours old, holds
+zero transactions, has never run at its production proof-of-work parameters, has
+not been independently audited, and runs on a single home server with no
+failover. Scope the work now; schedule it against a chain with a track record.
+Tell us now if anything below would be a problem for you. The request/response
 shapes in §5 and §6 are the Ethereum JSON-RPC specification, which is what this
 chain implements to — they are the contract, not captures from a running node. The
 signing example in §6.2 *is* real: it is produced by this repository's own
 secp256k1, RLP and Keccak code and you can reproduce it byte for byte.
 
 **What you can do today, at zero cost:** point your stack at
-`node tools/rpc-probe/stub.js`, which serves this repository's real `eth_*` method
-surface and hex encoder over a chain with no state. It will not execute anything,
+`https://rpc.cloudsforge.online` (chain id 7411) and read from it — every `eth_*`
+method below answers. To exercise your write path without touching a public
+chain, point it instead at `node tools/rpc-probe/stub.js`, which serves this
+repository's real `eth_*` method surface and hex encoder over a chain with no
+state. It will not execute anything,
 but it will prove your chain id handling, your encoding assumptions and your
 legacy-pricing path — and it logs every method your client calls, *including the
 ones we do not implement*, which is the fastest way to tell us what you need. See
