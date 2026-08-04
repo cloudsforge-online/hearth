@@ -135,6 +135,23 @@ CI does not build this app. Tauri needs each platform's webview toolchain, and
 adding that job would have meant editing `.github/workflows/`, which another
 agent holds.
 
+### One open advisory, and why it is not fixed here
+
+Adding `src-tauri/Cargo.lock` surfaced RUSTSEC's unsoundness advisory for
+`glib` 0.18.5 (`VariantStrIter`'s `Iterator`/`DoubleEndedIterator` impls,
+medium). It reaches this app **only on Linux**, and only as a transitive
+dependency:
+
+```
+glib 0.18.5 → atk 0.18.2 → gtk 0.18.2 → muda/tao → tauri 2.11
+```
+
+`cargo update -p glib` moves nothing — 0.18.5 is the newest release in that
+series, and the fix is in gtk-rs 0.20, which Tauri 2.11 does not use. So it
+closes when Tauri moves, not before; Dependabot's own attempt at it failed for
+the same reason. Nothing in `src/` touches `glib`, and the macOS build does not
+contain it at all (`cargo tree -i glib` prints nothing there).
+
 ## Prerequisites (to build; a user needs none of this)
 
 * [Rust](https://rustup.rs) (stable)
