@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Hearth — mine EMBER</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+
+<!-- A packaging fault must not present as a window that never loads. -->
+<section id="fatal" hidden>
+  <h1>Hearth cannot start</h1>
+  <p class="err" id="fatal-msg"></p>
+  <p class="muted">Nothing has been lost. Your key, if you have one, is untouched.</p>
+</section>
+
+<!-- ── first run ────────────────────────────────────────────────────────── -->
+<section id="setup" hidden>
+  <h1>Choose a passphrase</h1>
+  <p>
+    Hearth is about to create the key that every block you mine will pay. It is
+    stored on this machine, encrypted with the passphrase you choose here.
+  </p>
+  <p class="warn">
+    <b>This passphrase cannot be reset.</b> Nobody has a copy of it, there is no
+    account to recover, and without it the key — and the coins it holds — are
+    gone. Write it down somewhere that is not this computer.
+  </p>
+
+  <label>Passphrase<input type="password" id="pass1" autocomplete="new-password"></label>
+  <label>Again<input type="password" id="pass2" autocomplete="new-password"></label>
+  <label class="tick"><input type="checkbox" id="remember-new" checked>
+    Remember it in this computer's keychain, so Hearth can start mining without asking</label>
+
+  <details>
+    <summary>I already have a mining key</summary>
+    <p class="muted">
+      If you have been mining with <code>hearth-mine</code> or <code>hearthd</code>,
+      point Hearth at that <code>coinbase-key.json</code> and it will keep the address
+      you have been paid at. The original file is left where it is.
+    </p>
+    <label>Path to <code>coinbase-key.json</code><input type="text" id="import-file" placeholder="/path/to/data/coinbase-key.json"></label>
+    <p class="muted">Or paste a private key (0x + 64 hex characters). It is never shown again once saved.</p>
+    <label>Private key<input type="password" id="import-key" placeholder="0x…"></label>
+  </details>
+
+  <button id="create" class="primary">Create the key</button>
+  <p class="err" id="setup-err"></p>
+</section>
+
+<!-- ── locked ───────────────────────────────────────────────────────────── -->
+<section id="locked" hidden>
+  <h1>Unlock to mine</h1>
+  <p>Blocks are paid to</p>
+  <p class="address" id="locked-address"></p>
+  <label>Passphrase<input type="password" id="unlock-pass" autocomplete="current-password"></label>
+  <label class="tick"><input type="checkbox" id="remember-unlock"> Remember it in this computer's keychain</label>
+  <button id="unlock" class="primary">Unlock</button>
+  <p class="err" id="unlock-err"></p>
+</section>
+
+<!-- ── mining ───────────────────────────────────────────────────────────── -->
+<section id="main" hidden>
+  <header>
+    <div>
+      <h1>Hearth</h1>
+      <p class="muted" id="chain"></p>
+    </div>
+    <div class="right">
+      <span class="dot" id="dot"></span><span id="state">idle</span>
+    </div>
+  </header>
+
+  <!-- The question a miner asks most often and every other miner answers worst. -->
+  <div class="panel paid">
+    <h2>Every block you mine pays</h2>
+    <p class="address" id="address"></p>
+    <button id="copy" class="link">Copy address</button>
+  </div>
+
+  <div class="stats">
+    <div><span id="hashrate">0 H/s</span><label>hashrate</label></div>
+    <div><span id="earned">0</span><label>earned (<span class="coin"></span>)</label></div>
+    <div><span id="found">0</span><label>blocks found</label></div>
+    <div><span id="height">—</span><label>working on</label></div>
+    <div><span id="uptime">00:00:00</span><label>mining for</label></div>
+  </div>
+
+  <div class="panel">
+    <label>Take work from
+      <input type="text" id="url" spellcheck="false" placeholder="http://127.0.0.1:8645">
+    </label>
+    <p class="muted">
+      The node that hands out work and accepts your proofs — your own
+      <code>hearthd</code>, or a remote one at <code>https://rpc.&lt;apex&gt;</code>.
+      Hearth is a <b>light miner</b>: it holds no chain and so cannot check that the
+      work it is given is on the network everyone else is on. Point it at a node
+      you trust.
+    </p>
+    <label>Use <span id="throttle-label">100%</span> of one processor core
+      <input type="range" id="throttle" min="5" max="100" step="5" value="100">
+    </label>
+    <div class="row">
+      <button id="start" class="primary">Start mining</button>
+      <button id="stop" hidden>Stop</button>
+    </div>
+    <p class="err" id="main-err"></p>
+  </div>
+
+  <div class="panel">
+    <h2>What it is doing</h2>
+    <!-- A miner that prints nothing for an hour is indistinguishable from a
+         broken one, so this list never goes quiet: work taken, blocks accepted,
+         a node that stopped answering, a node that started again. -->
+    <ul id="log"></ul>
+  </div>
+
+  <div class="panel">
+    <h2>Your key</h2>
+    <p class="muted">
+      It lives in <code id="keystore-path"></code>, encrypted with your
+      passphrase. <b>Back up that file and remember the passphrase.</b> One
+      without the other opens nothing; losing both loses the coins.
+    </p>
+    <div class="row">
+      <button id="backup">Save a backup copy…</button>
+      <button id="export">Export the raw private key…</button>
+      <button id="change-pass">Change passphrase…</button>
+      <button id="lock">Lock</button>
+    </div>
+    <p class="muted" id="key-note"></p>
+    <p class="err" id="key-err"></p>
+  </div>
+</section>
+
+<!-- A modal that asks for the passphrase again, for the two things that deserve it. -->
+<div id="ask" hidden>
+  <div class="sheet">
+    <h2 id="ask-title"></h2>
+    <p class="muted" id="ask-note"></p>
+    <label id="ask-file-row">Where to save it<input type="text" id="ask-file" spellcheck="false"></label>
+    <label id="ask-pass-row">Passphrase<input type="password" id="ask-pass"></label>
+    <label id="ask-pass2-row">New passphrase<input type="password" id="ask-pass2"></label>
+    <div class="row">
+      <button id="ask-ok" class="primary">Save</button>
+      <button id="ask-cancel">Cancel</button>
+    </div>
+    <p class="err" id="ask-err"></p>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

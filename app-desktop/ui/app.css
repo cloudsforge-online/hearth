@@ -1,0 +1,138 @@
+/* Hearth desktop miner. One column, no framework, no build step.
+ *
+ * The address is the largest thing on the page on purpose: it is the one value
+ * whose wrong answer cannot be undone, and every other miner buries it. */
+
+:root {
+  color-scheme: dark;
+  --bg: #14100d;
+  --panel: #1e1815;
+  --line: #322922;
+  --ink: #f2ece6;
+  --dim: #a89c90;
+  --ember: #ff8a3d;
+  --good: #5fd08a;
+  --bad: #ff6b6b;
+  --warn: #ffc65c;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 24px 28px 40px;
+  background: var(--bg);
+  color: var(--ink);
+  font: 15px/1.55 -apple-system, "Segoe UI", Roboto, Ubuntu, system-ui, sans-serif;
+}
+
+h1 { font-size: 22px; margin: 0 0 4px; letter-spacing: -0.01em; }
+h2 { font-size: 13px; margin: 0 0 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--dim); font-weight: 600; }
+p { margin: 0 0 12px; }
+code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.9em; color: var(--dim); }
+
+.muted { color: var(--dim); font-size: 13px; }
+.err { color: var(--bad); font-size: 13px; min-height: 1em; }
+.err:empty { min-height: 0; }
+.warn { color: var(--warn); }
+
+header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 18px; }
+header .right { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--dim); }
+
+.dot { width: 9px; height: 9px; border-radius: 50%; background: #4a4038; display: inline-block; }
+.dot.on { background: var(--good); box-shadow: 0 0 0 3px rgba(95, 208, 138, 0.18); }
+.dot.warn { background: var(--warn); box-shadow: 0 0 0 3px rgba(255, 198, 92, 0.18); }
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 16px 18px;
+  margin-bottom: 14px;
+}
+
+/* THE ADDRESS. */
+.paid { border-color: #4a3a2a; }
+.address {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 17px;
+  letter-spacing: 0.02em;
+  color: var(--ember);
+  word-break: break-all;
+  margin: 6px 0 10px;
+  user-select: all;
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.stats div {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+.stats span {
+  display: block;
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.stats label { display: block; font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.06em; margin-top: 2px; }
+
+label { display: block; font-size: 13px; color: var(--dim); margin-bottom: 12px; }
+label.tick { display: flex; align-items: flex-start; gap: 8px; color: var(--ink); }
+label.tick input { margin-top: 3px; }
+
+input[type=text], input[type=password] {
+  display: block;
+  width: 100%;
+  margin-top: 5px;
+  padding: 9px 11px;
+  background: #17120f;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: var(--ink);
+  font: inherit;
+}
+input[type=text]:focus, input[type=password]:focus { outline: 2px solid var(--ember); outline-offset: -1px; }
+input:disabled { opacity: 0.5; }
+input[type=range] { width: 100%; margin-top: 6px; accent-color: var(--ember); }
+
+.row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+
+button {
+  padding: 9px 16px;
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  background: #262019;
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+button:hover { border-color: #4a3a2a; }
+button.primary { background: var(--ember); border-color: var(--ember); color: #1a1006; font-weight: 600; }
+button.primary:hover { filter: brightness(1.08); }
+button.link { background: none; border: none; color: var(--dim); padding: 0; text-decoration: underline; }
+
+details { margin: 4px 0 16px; }
+summary { cursor: pointer; color: var(--dim); font-size: 13px; margin-bottom: 8px; }
+
+/* The activity list. It exists so that "nothing has happened for an hour" is
+   visibly different from "this application has crashed". */
+#log { list-style: none; margin: 0; padding: 0; max-height: 240px; overflow-y: auto; font-size: 13px; }
+#log li { display: flex; gap: 10px; padding: 4px 0; border-bottom: 1px solid #241d18; }
+#log li:last-child { border-bottom: none; }
+#log time { color: #6d6259; font-variant-numeric: tabular-nums; flex: 0 0 auto; font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+#log .good span { color: var(--good); }
+#log .bad span { color: var(--bad); }
+#log .dim span { color: var(--dim); }
+
+#setup, #locked, #fatal { max-width: 560px; margin: 24px auto; }
+
+#ask { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.62); display: flex; align-items: center; justify-content: center; }
+#ask[hidden] { display: none; }
+.sheet { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 22px 24px; width: min(520px, 92vw); }

@@ -4,21 +4,22 @@
   "version": "0.1.0",
   "identifier": "online.cloudsforge.hearth",
   "build": {
-    "frontendDist": "../../web"
+    "frontendDist": "../ui"
   },
   "app": {
+    "withGlobalTauri": true,
     "windows": [
       {
-        "title": "Hearth — money mined at home",
-        "width": 1180,
-        "height": 800,
-        "minWidth": 900,
-        "minHeight": 640,
-        "url": "wallet.html"
+        "title": "Hearth — mine EMBER",
+        "width": 820,
+        "height": 900,
+        "minWidth": 560,
+        "minHeight": 620,
+        "url": "index.html"
       }
     ],
     "security": {
-      "csp": "default-src 'self' ipc: http://ipc.localhost; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data:; font-src 'self'; connect-src 'self' ipc: http://ipc.localhost asset: http://asset.localhost http://localhost:* http://127.0.0.1:*; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+      "csp": "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src ipc: http://ipc.localhost; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
     }
   },
   "bundle": {
@@ -29,6 +30,13 @@
       "icons/128x128.png",
       "icons/icon.icns",
       "icons/icon.ico"
+    ],
+    "resources": {
+      "../engine": "engine/",
+      "../../node/src": "hearth/src/"
+    },
+    "externalBin": [
+      "binaries/node"
     ]
   }
 }

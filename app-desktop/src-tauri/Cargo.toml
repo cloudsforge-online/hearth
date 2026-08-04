@@ -2,14 +2,42 @@
 name = "hearth-desktop"
 version = "0.1.0"
 edition = "2021"
-description = "Hearth desktop app — one-click node + wallet + miner"
+description = "Hearth desktop miner — mine EMBER from a Mac, a PC or a Linux box"
 license = "MIT"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
+# The node's zero-dependency rule (node/src/p2p.js) is about CONSENSUS CODE:
+# anything that decides whether a block is valid must be readable end to end and
+# must not move under the project. None of that applies to a window. What does
+# apply is the spirit of it — nothing here is present for convenience:
+#
+#   tauri, serde, serde_json  the framework and its wire format; serde arrives
+#                             as a dependency of tauri regardless.
+#   keyring                   the OS keychain. macOS Security.framework, Windows
+#                             Credential Manager and the Linux Secret Service are
+#                             three unrelated C APIs, and hand-rolling FFI to all
+#                             three to store one string would be the worse call.
+#
+# The mining loop itself is NOT here — it is node/src/mine/session.js, shared
+# with the command-line miner. See src/engine.rs for why.
 [dependencies]
 tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", features = ["apple-native"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+keyring = { version = "3", features = ["windows-native"] }
+
+# zbus rather than libdbus, so the Linux build needs no C library present. A box
+# with no Secret Service running simply has no keychain, which keychain.rs treats
+# as "ask for the passphrase" rather than as an error.
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }
 
 [[bin]]
 name = "hearth-desktop"
