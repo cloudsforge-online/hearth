@@ -9,7 +9,7 @@
     "runtime": "node scripts/fetch-node.mjs",
     "prebuild": "node scripts/fetch-node.mjs",
     "build": "tauri build",
-    "icons": "tauri icon ../web/assets/logo.svg",
+    "icons": "tauri icon ../branding/logo.svg",
     "test": "node test/wiring.js && node test/engine.js && cargo test --manifest-path src-tauri/Cargo.toml",
     "test:wiring": "node test/wiring.js",
     "test:engine": "node test/engine.js",

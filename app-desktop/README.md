@@ -27,7 +27,7 @@ yourself, that is a different program and it is still here: `hearthd --evm
 ```bash
 cd app-desktop
 npm install
-npm run icons          # once: generates the app icons from ../web/assets/logo.svg
+npm run icons          # once: generates the app icons from ../branding/logo.svg
 npm run runtime        # once: fetches + SHA-256-verifies the bundled Node runtime
 npm run dev            # the app, in dev mode
 npm run build          # a distributable bundle

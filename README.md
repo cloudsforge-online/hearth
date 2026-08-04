@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="web/assets/logo.svg" width="104" alt="Hearth logo"/>
+  <img src="branding/logo.svg" width="104" alt="Hearth logo"/>
   <h1>Hearth — Money Mined at Home</h1>
   <b>A people-mined, ASIC-resistant proof-of-work chain that speaks Ethereum.</b>
   <br/>
@@ -116,13 +116,16 @@ Everything below **runs**, and every number was produced by running it:
 - ✅ **`hearth`, the terminal tool** — `trace` (an opcode-level debugger with gas,
   stack, memory and storage deltas per step), `watch`, `wallet`, `call`, `send`,
   `deploy`, `devnet`. 310 checks
-- ✅ **an EVM-aware block explorer** (`web/`) — decoded logs, revert reasons,
-  EOA-vs-contract with disassembly, ERC-20s, `eth_getLogs` search. Zero
-  dependencies, no build step, and it **renders "no node answered" rather than
-  inventing data**
-- ✅ **a non-custodial browser wallet on secp256k1** — its crypto is a port of the
-  node's, and CI runs both over the same random inputs and compares them. That
-  cross-check found a real gas bug in the node on its first run
+- ✅ **an EVM-aware block explorer** — decoded logs, revert reasons,
+  EOA-vs-contract with disassembly, ERC-20s, `eth_getLogs` search, and it
+  **renders "no node answered" rather than inventing data**. It lived in `web/`
+  until 2026-08-04 and is now [`micro-explorer-web`](https://github.com/cloudsforge-online/micro-explorer-web)
+- ✅ **a non-custodial wallet on secp256k1** — its crypto is a port of the node's,
+  and the two are run over the same random inputs and compared. That cross-check
+  found a real gas bug in the node on its first run. Now
+  [`micro-hearth-wallet-core`](https://github.com/cloudsforge-online/micro-hearth-wallet-core),
+  where the comparison is made **in-process against `node/src`** and nothing is
+  checked against a fixture the library produced itself
 - ✅ **a developer kit** (`tools/`) — a faucet, working Hardhat and Foundry
   templates, and an RPC probe that serves the real method surface over a fake chain
 - ✅ **contract verification** (`tools/verify/`, 116/116) — including the API
@@ -135,16 +138,19 @@ Everything below **runs**, and every number was produced by running it:
   code and **reports rather than patches**; both are listed in [SECURITY.md](SECURITY.md)
 - ✅ **a real proof-of-work network** (the UTXO chain) — most-work fork choice with
   reorg over real sockets, P2P gossip, LWMA difficulty, disk persistence
-- ✅ **browser mining** — a Web Worker pool running real Homefire, checked
-  digest-for-digest against the node in CI
+- ✅ **mining you can run** — `hearth-mine` on the command line and a **desktop
+  app** (`app-desktop/`, Tauri) for macOS, Windows and Linux, both over
+  `/mining/template` and `/mining/submit`. The browser miner that stood here was
+  removed with `web/`: it signed 64-byte signatures where the node requires 65,
+  so **every block it ever found was refused**
 - 🟡 a **Rust crate** (`rust/hearthd`) — a self-check and a PoW benchmark.
   **Not a node and not consensus-compatible**, and it has no EVM at all — see
   [docs/why-two-implementations.md](docs/why-two-implementations.md)
 
 > **Two honest caveats about that list.** None of it has been driven by a block —
-> consensus on the account model is the missing phase. And `web/pay-demo.html` is
-> a merchant-button *mockup* that simulates settlement on a timer; there is no
-> payment SDK.
+> consensus on the account model is the missing phase. The merchant-button
+> *mockup* that used to sit in `web/pay-demo.html` — it simulated settlement on a
+> timer — went with that directory; there is still no payment SDK.
 
 **`npm test` passes from a clean clone** — 27 suites, no install, no corpus and no
 network. Verified by cloning this repository into an empty directory and running
@@ -234,8 +240,7 @@ hearth/
 ├── contracts/                           WEMBER, a Uniswap V2 port, Multicall3 (compiled, undeployed)
 ├── tools/                               faucet · hardhat · foundry · rpc-probe · metamask.md ·
 │                                        explorer-api (Etherscan-compatible /api) · verify
-├── web/                                 EVM explorer + secp256k1 wallet + browser miner
-├── site/                                the marketing site (React)
+├── app-desktop/                         the desktop miner (Tauri) — macOS, Windows, Linux
 ├── rust/hearthd/                        a self-check and a benchmark — not a node
 ├── proto/                               teaching scripts (the emission model is NOT consensus)
 └── .github/workflows/ci.yml             six jobs; `npm test` is the single source of truth

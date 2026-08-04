@@ -6,17 +6,18 @@
 #   seed     — non-mining bootstrap node (RPC on host :8645)
 #   miner1   — mining node, peers to seed
 #   miner2   — mining node, peers to seed
-#   web      — explorer + wallet + merchant demo (host :8080)
 #
-# Open http://localhost:8080 — the explorer reads the live chain from the seed
-# node's Ethereum JSON-RPC at http://localhost:8545, and mine.html reads the
-# REST API at http://localhost:8645. The Hearth marketing site is a separate
-# app in ../site (port 3003); this bundle is the explorer and the wallet.
+# The seed's Ethereum JSON-RPC is on http://localhost:8545 and its REST API on
+# http://localhost:8645. There is no web service here any more: `./web` and
+# `./site` were the pre-migration single-repo front ends and were removed on
+# 2026-08-04, superseded by `micro-explorer-web`, `micro-wallet-extension` and
+# `micro-hearth-wallet-core`. Point a browser at the estate's own surfaces, or
+# at these ports directly.
 #
 # THE ACCOUNT-MODEL CHAIN, not the retired UTXO one. `hearthd` runs the UTXO
 # chain unless told otherwise and this bundle used to say nothing, so it served
-# a chain the explorer and wallet in ./web cannot read a single field of: they
-# are eth_*-native, and the UTXO node has no eth_* surface at all. HEARTH_DATA
+# a chain the eth_*-native front ends could not read a single field of: the
+# UTXO node has no eth_* surface at all. HEARTH_DATA
 # keeps the account-model blocks in a subdirectory, because both chains write
 # the same `blocks.ndjson` filename and an EVM node pointed at UTXO history
 # reads garbage rather than refusing.
@@ -63,48 +64,6 @@ services:
     depends_on: [seed]
     volumes:
       - miner2-data:/data
-
-  web:
-    image: nginx:alpine
-    container_name: hearth-web
-    ports:
-      - "8080:80"
-    environment:
-      # The config proxies /rpc/ to the node's REST/SSE server and /eth-rpc/ to
-      # its Ethereum JSON-RPC server; here that node is `seed`, not the testnet
-      # name baked into the image. Both are REQUIRED for the same reason the CSP
-      # variable below is — this service runs stock nginx:alpine and inherits no
-      # default from web/Dockerfile.
-      #
-      # Two variables because they are two servers. The REST one answers an
-      # eth_* POST with HTTP 404 and a body saying "this is the REST API", and
-      # the explorer reports that as MalformedResponse — a live chain rendered
-      # as a dead one.
-      HEARTH_RPC_UPSTREAM: seed:8645
-      HEARTH_ETH_RPC_UPSTREAM: seed:8545
-      # The chain the bundle signs and banners for, templated into
-      # <meta name="hearth-chain-id"> and read by web/assets/chain.js. This
-      # bundle sets no HEARTH_NETWORK, so its seed is `hearth` — chain id 7411
-      # (node/src/params.js). Point the same web image at the estate's testnet
-      # and this becomes 7412.
-      HEARTH_CHAIN_ID: "7411"
-      # The CSP connect-src allowlist. REQUIRED: this service runs stock
-      # nginx:alpine, NOT web/Dockerfile, so it does not inherit that image's
-      # default. envsubst leaves an unset variable in place rather than blanking
-      # it, so nginx then reads `$HEARTH_CSP_CONNECT` as one of its own runtime
-      # variables and refuses to start — `unknown "hearth_csp_connect" variable`,
-      # and no web container at all. Same-origin covers the proxied node at
-      # /rpc and /eth-rpc; loopback covers assets/obs.js reporting to a local
-      # Lantern and the documented `?rpc=http://localhost:8545` override.
-      HEARTH_CSP_CONNECT: "'self' http://localhost:* http://127.0.0.1:*"
-      NGINX_ENVSUBST_FILTER: HEARTH_
-    volumes:
-      - ./web:/usr/share/nginx/html:ro
-      # bind-mounted rather than baked so editing a page still needs no rebuild,
-      # which also means the config has to come in the same way — as a template,
-      # because it now carries a deployment variable
-      - ./web/nginx.conf:/etc/nginx/templates/default.conf.template:ro
-    depends_on: [seed]
 
 volumes:
   seed-data:
