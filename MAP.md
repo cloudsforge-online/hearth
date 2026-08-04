@@ -54,8 +54,8 @@ here first.
 | Transactions, receipts, logs bloom | `node/src/chain/` | ✅ **merged**, **188/188 TransactionTests** *(unverified here — see §4.3)* |
 | State transition | `node/src/chain/statetransition.js` | ✅ **merged**, **20,077/20,077 GeneralStateTests** — the last ten fixed by EIP-7610 (`c93a524`) |
 | `eth_*` JSON-RPC surface | `node/src/jsonrpc/` | ✅ **merged**, 41 methods, 422 checks against a fake chain plus 170 against the real one over HTTP; mounted by `src/evmnode.js` on :8545 |
-| EVM-aware explorer | `web/index.html`, `web/assets/explorer/` | ✅ **merged**, 147 self-test checks |
-| Browser wallet on secp256k1 | `web/wallet.html`, `web/assets/wallet/` | ✅ **merged**, 141 cross-check assertions |
+| EVM-aware explorer | left this repo — [`micro-explorer-web`](https://github.com/cloudsforge-online/micro-explorer-web) | ➡️ **moved 2026-08-04** (`48bc28a`). The successor is **not a port**: it reads `micro-indexer`'s REST routes, not `eth_*`, and has no contract disassembly — §3.4 |
+| Browser wallet on secp256k1 | left this repo — [`micro-hearth-wallet-core`](https://github.com/cloudsforge-online/micro-hearth-wallet-core) + [`micro-wallet-extension`](https://github.com/cloudsforge-online/micro-wallet-extension) | ➡️ **moved 2026-08-04**, and the cross-check against this node got *stronger* — §9.1 |
 | `hearth` CLI + opcode tracer | `node/bin/hearth.js`, `node/src/cli/` | ✅ **merged**, 310 checks |
 | AMM contracts (WEMBER, V2 Factory/Pair/Router, Multicall3) | `contracts/` | ✅ **compile**, and **Uniswap V2 runs on our own EVM** — see §4.4 |
 | Developer kit (faucet, Hardhat/Foundry templates, RPC probe) | `tools/` | ✅ **merged**, faucet 66 checks |
@@ -94,8 +94,7 @@ and `node/test/bench/block-execution.js` fails if that regresses. §11.
 | `node/` | The reference full node, wallet, miner, P2P, REST API — **and the entire EVM implementation.** JavaScript, zero runtime dependencies | **This is the network, and this is the EVM** |
 | `contracts/` | WEMBER, a Uniswap V2 port, Multicall3. Solidity, compiled with solc 0.8.26 / shanghai | Compiles in CI; **nothing deployed anywhere** |
 | `tools/` | The developer onboarding kit: faucet, Hardhat and Foundry templates, an RPC probe stub | Real and runnable; §3.5 |
-| `web/` | EVM-aware block explorer, secp256k1 browser wallet, browser miner, merchant-button mockup | Ships; served by nginx and GitHub Pages |
-| `site/` | React + Vite marketing site for hearth.cloudsforge.online | Ships; copy corrected against the code |
+| `branding/` | The brand note, the vector lockup (`logo.svg`) and the generated PNG marks and cards | The lockup moved here from `web/assets/` in `48bc28a`; it is the only vector source and `app-desktop` generates its icons from it |
 | `rust/hearthd/` | A self-check binary and a Homefire benchmark over some library modules | **Not a node. Not consensus.** Two known divergences — §3.3 |
 | `proto/` | Two teaching scripts: an emission *model* and a toy PoW miner | Prototype; **the emission model is not the consensus schedule** — §11 |
 | `app-desktop/` | Tauri v2 **desktop miner** — window, encrypted keystore, OS keychain, bundled Node runtime | Ships on macOS; Windows/Linux configured but never compiled — §3.7 |
@@ -283,80 +282,63 @@ still Ed25519 and UTXO-shaped. [`docs/why-two-implementations.md`](docs/why-two-
 describes Rust as the target implementation; nothing in this tree contradicts that
 as an *intention*, but no work has been done toward it since the EVM began.
 
-### 3.4 `web/` — explorer, wallet, miner, merchant mockup
+### 3.4 The front ends that used to live here, and where each one went
 
-Static pages, no build step, served by nginx (`web/nginx.conf`) or published to
-GitHub Pages (`.github/workflows/pages.yml`).
+**`web/` and `site/` were deleted on 2026-08-04 (`48bc28a`, 102 files).** They were
+the pre-migration single-repo front ends. Nothing is served from this repository
+any more: there is no `web` service in `docker-compose.yml`, and the Pages deploy
+that published `web/` was removed one commit earlier (`88a1552` — there is no
+`.github/workflows/pages.yml`).
 
-| Page | What it is |
+This section exists so that "where is the explorer / the wallet / the miner" has an
+answer rather than a gap.
+
+| What it was | Where it is now |
 | --- | --- |
-| `web/index.html` + `web/assets/explorer/*.js` | Block explorer for the **account-model EVM chain**, written against the `eth_*` contract. Blocks, transactions with decoded logs and revert reasons, EOA-vs-contract addresses with disassembly, ERC-20 tokens, `eth_getLogs` search, a `/supply` view. Hash-routed, zero dependencies. §3.4.1 |
-| `web/wallet.html` + `web/assets/wallet/*.js` | Non-custodial **secp256k1** wallet — generate, unlock, read balances, build/sign/broadcast legacy transactions at 18 decimals. §9.1 |
-| `web/mine.html` + `web/assets/mining/*.js` | Browser miner over `/mining/template` and `/mining/submit`. §9.2 |
-| `web/pay-demo.html` | Merchant-button **mockup** — see §10 |
-| `web/explorer.html` | 0-second redirect to `./`, kept so old links land |
+| `web/index.html` + `web/assets/explorer/` — block explorer | ➡️ [`micro-explorer-web`](https://github.com/cloudsforge-online/micro-explorer-web), **but see the warning below — it is a different program, not a port** |
+| `web/wallet.html` + `web/assets/wallet/` — secp256k1 wallet | ➡️ [`micro-hearth-wallet-core`](https://github.com/cloudsforge-online/micro-hearth-wallet-core) (the signing library) and [`micro-wallet-extension`](https://github.com/cloudsforge-online/micro-wallet-extension) (the MV3 browser surface). §9.1 |
+| `web/mine.html` + `web/assets/mining/` — browser miner | ❌ **Gone, not moved.** `node/bin/hearth-mine.js` and `app-desktop/` cover mining. §9.2 |
+| `web/pay-demo.html` — merchant-button mockup | ❌ **Gone, and nothing replaces it.** It simulated settlement on a 1,200 ms timer. There is still no payment SDK — §10 |
+| `web/explorer.html` — 0-second redirect | ❌ Gone with the page it redirected to |
+| `web/nginx.conf`, `web/Dockerfile` | ❌ Gone. Each successor serves itself |
+| `web/assets/logo.svg` | ➡️ **Moved, not deleted** — `branding/logo.svg`. It was the only vector source in the repository and `app-desktop` generates its icons from it |
 
-Node URL resolution is split by protocol, because the pages no longer all speak
-one. The miner's `/mining/*` calls and the pay mockup resolve `?rpc=` →
-`<meta name="hearth-rpc">` → same-origin `/rpc` → `:8645` (`web/assets/api.js:20-27`)
-and speak the REST API. The explorer and the wallet speak `eth_*` JSON-RPC and
-resolve `?rpc=` → `<meta name="hearth-eth-rpc">` → same-origin `/eth-rpc/` →
-`:8545` (`web/assets/explorer/rpc.js`).
+> **The explorer successor is not the explorer that was deleted.** `micro-explorer-web`
+> is a Vite/React SPA that reads **`micro-indexer`'s REST routes** — its route table is
+> transcribed with citations in its `src/lib/indexer.ts` header — rather than speaking
+> `eth_*` JSON-RPC to a Hearth node directly. It has blocks, transactions, addresses,
+> tokens, chains and search (`src/pages/`), and a token page that reports supply and
+> authorities. It does **not** carry the deleted explorer's EVM contract disassembly;
+> nothing in its `src/` mentions disassembly at all. Treat the move as a replacement of
+> the surface, not a transplant of the code.
 
-**Two same-origin prefixes, because the node runs two servers.** nginx proxies
-`/rpc/` to `HEARTH_RPC_UPSTREAM` (REST + SSE, `:8645`) and `/eth-rpc/` to
-`HEARTH_ETH_RPC_UPSTREAM` (Ethereum JSON-RPC, `:8545`); both are envsubst
-variables set by the deployment (`web/Dockerfile`, and the `hearth-web` service
-in the estate's `docker-compose.yml`). The explorer used to default to `/rpc/`
-as well, so every `eth_*` call reached the REST server, which answers HTTP 404
-with `{"err":"this is the REST API — the Ethereum JSON-RPC endpoint is a
-different port"}` — a body carrying neither `result` nor `error`, which the
-client reports as `MalformedResponse`. The public explorer read as a dead chain
-while the chain was fine. Repointing `/rpc/` itself was not the fix: `mine.html`
-reads `/rpc/info`, `/rpc/events` and `/rpc/mining/*` through the same prefix.
+**No count is carried across from the deleted tree.** The old explorer self-test
+claimed 147 checks and the old wallet self-test 141; neither number describes anything
+that exists now, so neither is repeated here. The successors report their own totals
+from their own runners — `npm test` in each — and those totals are theirs to state.
 
-**The chain id is deployment configuration, not a constant.** `web/assets/chain.js`
-resolves `?chainid=` → `<meta name="hearth-chain-id">` → `DEFAULT_CHAIN_ID`
-(7412, hearth-testnet), and nginx templates that meta from `HEARTH_CHAIN_ID`
-with `sub_filter`. The wallet signs with it, the explorer banners on it, and
-both fixture sets report it, so the number cannot drift between them. It is
-never taken from `eth_chainId`: the pages accept a `?rpc=` override, so a node
-that chose the chain id would choose what its visitor's signature is valid on.
+**Two ports, and the lesson is about the node, not the page.** This is kept because it
+is a fact about `node/`, which is still here. The node runs two servers: the REST API
++ SSE on `:8645` (`node/src/rpc.js`) and Ethereum JSON-RPC 2.0 on `:8545`
+(`node/src/evmnode.js`). They are a different **port**, not a different path, because
+`node/src/rpc.js:139` already owns `POST /rpc` with the legacy `{method:'getinfo'}`
+shape. A client that sends `eth_*` to the REST port is answered HTTP 404 with
+`{"err":"this is the REST API — the Ethereum JSON-RPC endpoint is a different port"}`,
+plus the port and path it should have used (`node/src/evmnode.js:481-486`) — a
+deliberate pointer, because it is "the single most likely first mistake". A body
+carrying neither `result` nor `error` reads to a JSON-RPC client as a malformed
+response rather than as a wrong address, which is how the deployed explorer once
+reported a dead chain while the chain was fine (CF-13). Any new client points at 8545.
+[`docs/evm-spec.md`](docs/evm-spec.md) §6 settles this.
 
-[`docs/evm-spec.md`](docs/evm-spec.md) §6 settles the Ethereum RPC on port 8545
-at the root path, with the REST API staying on 8645.
-
-#### 3.4.1 The explorer
-
-`web/index.html` is a shell; every view is an ES module under
-`web/assets/explorer/`, loaded with `<script type="module">`. No framework, no
-bundler, no npm dependency — deliberately, so it stays a directory of files nginx
-can serve.
-
-| Module | Responsibility |
-| --- | --- |
-| `app.js` | Hash router, boot, the search box |
-| `rpc.js` | JSON-RPC 2.0 client; batches matched by id; three distinct failure types |
-| `views.js` | One function per view |
-| `chaindata.js` | Multi-call queries and caches; the bounded address scan |
-| `abi.js` | Event/selector hashing, log decoding, revert decoding |
-| `disasm.js` | EVM disassembly; a transcription of `node/src/evm/opcodes.js` |
-| `keccak.js` | Keccak-256 — EIP-55 checksums, code hashes, signature hashing |
-| `emission.js` | A port of `node/src/params.js:140-151`, for the supply figure |
-| `format.js`, `dom.js`, `search.js` | Pure formatting, DOM builders, query dispatch |
-| `fixtures.js` | A canned chain answering the same wire protocol; opt-in with `?fixtures=1` |
-| `selftest.js` | **147 checks**, runnable as `node web/assets/explorer/selftest.js` |
-
-**It does not invent data.** The old page fell back to a sample-data generator
-when no node answered; this one renders an explicit "no node answered" state
-naming the endpoint and the failure, and offers the fixture chain as an opt-in
-link. Fixtures are never engaged automatically and are labelled in the mode pill,
-in a banner, and on every page.
-
-`selftest.js` cross-checks the three modules that are *copies* of something in
-`node/src` — `keccak.js`, `disasm.js` against all 256 opcode entries, and
-`emission.js` — so the copies cannot drift silently. CI runs it
-(`.github/workflows/ci.yml:92-93`).
+**The chain id is deployment configuration, not a constant**, and that is still true of
+the node. `CHAIN_IDS` is `{hearth: 7411, 'hearth-testnet': 7412}`
+(`node/src/params.js:36-38`), resolved for the running network into the exported
+`CHAIN_ID` (`:87`) and overridable with `HEARTH_CHAIN_ID` for a private network
+(`:47-49`). The refusal to guess is stated in the source itself: a node must never
+guess a chain id (`node/src/params.js:57`). A client must not take the chain id from
+`eth_chainId` on an endpoint its user can override, or the endpoint would be choosing
+what its visitor's signature is valid on.
 
 ### 3.5 `tools/` — the developer kit
 
@@ -402,14 +384,17 @@ and `net_version` is `"7411"` — the same number in two encodings, which is the
 mistake that makes MetaMask refuse a network outright
 (`.github/workflows/ci.yml:184-200`).
 
-### 3.6 `site/` — marketing
+### 3.6 Marketing — no longer in this repository
 
-React + Vite. All copy is centralised in `site/src/lib/hearth.ts`, which carries
-inline notes recording exactly which claims were corrected and why
-(`site/src/lib/hearth.ts:114-124`). It says Homefire is memory-hard and that *work
-handed to a hasher cannot be redirected*, and explicitly declines to claim
-non-outsourceability (`:128-133`). **It has not been updated for the account
-model** and still describes the UTXO chain's user-facing story.
+`site/`, a React + Vite marketing site for hearth.cloudsforge.online, was deleted in
+`48bc28a`. Marketing is served by the estate's own sites, not from here.
+
+**It was removed carrying a known defect, which is part of why it went.** Its copy had
+never been updated for the account model and still told the UTXO chain's user-facing
+story — a marketing site describing a chain the code no longer implements. That defect
+does not survive the deletion, but it is recorded here rather than quietly dropped: the
+successor sites are written against the account model, and nobody should go looking in
+this repository for the UTXO copy to fix.
 
 ### 3.7 `app-desktop/` — the desktop miner
 
@@ -906,103 +891,108 @@ CI.
 
 ## 9. Wallets, miners and the CLI
 
-### 9.1 Browser wallet (`web/wallet.html`, `web/assets/wallet/`)
+### 9.1 The self-custody wallet — now `micro-hearth-wallet-core`
 
-**Account-model, and a clean break.** The wallet was Ed25519, `ember1…` and UTXOs;
-it is now secp256k1, `0x…` and `[nonce, gasPrice, gasLimit, to, value, data]` at 18
-decimals. Nothing carries over and nothing pretends to: there is no migration path
-and deliberately no export machinery for one, because an Ed25519 key names no
-account on an EVM chain and nobody holds EMBER. The pre-EVM modules
-(`web/assets/wallet-core.js`, `keystore.js`, `vendor/noble-ed25519.js`) have been
-deleted, along with the `node/test/keystore.js` that was the last thing importing
-them. `wallet/keystore.js` is the only keystore in `web/`, and
-`web/assets/wallet-selftest.js` is what tests it.
+**The browser wallet left this repository on 2026-08-04 (`48bc28a`).** `web/wallet.html`
+and `web/assets/wallet/` are gone. The successor is
+[`micro-hearth-wallet-core`](https://github.com/cloudsforge-online/micro-hearth-wallet-core),
+a zero-dependency TypeScript signing library, with
+[`micro-wallet-extension`](https://github.com/cloudsforge-online/micro-wallet-extension)
+as the MV3 browser surface on top of it. The library is shared across Tauri desktop,
+React Native mobile, three MV3 browsers and the `hearth` CLI.
 
-Non-custodial and genuinely so. The key is generated in the tab with
-`crypto.getRandomValues`; the address is `keccak256(uncompressed_pubkey[1:])[12:]`,
-rendered EIP-55 (`wallet/account.js:39-57`).
+**Why this section still matters to this repository: the successor is gated against
+`node/src`, and more strictly than the deleted one was.** The old `wallet-selftest.js`
+compared two implementations over random inputs and claimed 141 checks. That number is
+**not carried over** — it described a file that no longer exists, and repeating it here
+is exactly how a stale citation is born.
 
-**The ports, and how they are held honest.** `wallet/secp256k1.js`, `wallet/rlp.js`
-and `wallet/transaction.js` are browser ports of `node/src/crypto/secp256k1.js`,
-`node/src/crypto/rlp.js` and `node/src/chain/transaction.js`.
-`web/assets/wallet-selftest.js` runs both implementations over the same random
-inputs and compares them — 200 random keys, 500 random RLP structures, 120 random
-transactions for the signing hash, the signed bytes, the transaction hash, the
-recovered sender and intrinsic gas, plus the EIP-155 worked example byte for byte.
-**141 checks**, and CI gates on it (`.github/workflows/ci.yml:100-101`).
+What replaced it is stronger in a specific way. `test/hearth-oracle.ts` in the successor
+`createRequire`s this repository's own CommonJS modules — `crypto/keccak.js`,
+`crypto/rlp.js`, `crypto/secp256k1.js`, `chain/transaction.js` and `cli/keystore.js` —
+and **executes them in-process** as the oracle. It locates them via `HEARTH_NODE_SRC` or
+a sibling `hearth/node/src` checkout, and it **fails rather than skips when the node is
+absent**, on the stated reasoning that a suite which quietly skips its only external
+check "would go green in CI having verified nothing".
 
-That cross-check found a real bug on its first run
-(`a670a8a`): the node's "already normalised?" fast path asked only whether `nonce`
-was a `BigInt`, which is safe for a node reading a decoded transaction and wrong
-for a wallet building a draft, where `data.length` counted hex characters and
-charged 192 gas too much for a 10-byte payload. **A second implementation earning
-its keep on day one is the argument for having one.**
+The comparisons that bear on `node/`:
 
-**One extra check the node has no reason to make.** `signAndCheck` signs, decodes
-its own bytes back, recovers the sender and refuses to broadcast unless that sender
-is the unlocked account and every field survived the round trip
-(`wallet/transaction.js:400-433`). A node only has to agree with the network about
-what a transaction *means*; a wallet decides what it *says*, and a one-field
-disagreement there pays the wrong person rather than bouncing.
+| Claim checked against `node/src` | Where |
+| --- | --- |
+| keccak256 agrees at every length across the rate boundary | `test/oracle-primitives.test.ts:22` |
+| RLP encodes byte-identically, and rejects the same non-canonical forms | `:52`, `:89` |
+| signatures are byte-identical and each recovers to the same key | `:127` |
+| public keys, addresses and contract-creation addresses re-derive identically | `:105`, `:163` |
+| a keystore record this library seals is opened by `node/src/cli/keystore.js`, **and the reverse** | `test/oracle-keystore.test.ts:50`, `:68` |
+| the PBKDF2 iteration count matches the node's 600,000 (`node/src/cli/keystore.js:38`) | `test/oracle-keystore.test.ts:82` |
+| a testnet-signed transaction is refused by the node as a mainnet one | `test/oracle-transaction.test.ts:95` |
+| the node refuses an EIP-1559 envelope — which is why the successor marks Hearth as having no base fee | `test/oracle-transaction.test.ts:105` |
 
-**Encryption at rest, versioned this time.** Keys are stored under
-`hearth.wallet.v3` — PBKDF2-HMAC-SHA256 at 600,000 iterations → AES-256-GCM,
-WebCrypto only, passphrase never stored. `open()` refuses any `version` it does not
-recognise by number, and refuses a record whose stored address does not match the
-key that comes out of it. A `v1`/`v2` Ed25519 record is reported as
-`kind: 'pre-evm'`, explained on the page, never read and never deleted.
+The rule the old self-test could not state is stated there: nothing is compared against a
+fixture the library produced itself.
 
-**The private key reaches the DOM in exactly one place**, behind a "Reveal private
-key" button that re-asks for the passphrase and re-derives from storage rather than
-printing the copy already unlocked in memory (`wallet/app.js:498-516`).
+> **This repository is a load-bearing dependency of that suite.** A change to
+> `node/src/crypto/`, `node/src/chain/transaction.js` or `node/src/cli/keystore.js` that
+> alters a byte will turn `micro-hearth-wallet-core` red. That is the intended direction —
+> the node is the oracle "precisely because it is not ours to adjust when the test goes
+> red" — but it means a consensus-relevant edit here has a consumer that will notice.
 
-**The chain does not exist yet**, so `?fixtures=1` serves a canned account chain
-over the real transport. It is opt-in from the URL, labelled on screen, and its
-`eth_sendRawTransaction` validates with the same module the node uses — so a
-signing bug is rejected there exactly as it would be on the wire.
+**The history worth keeping.** The original cross-check earned its keep on its first run
+(`a670a8a`): the node's "already normalised?" fast path asked only whether `nonce` was a
+`BigInt`, which is safe for a node reading a decoded transaction and wrong for a wallet
+building a draft, where `data.length` counted hex characters and charged 192 gas too much
+for a 10-byte payload. **The bug was in the node, and a second implementation is what
+found it.** That is the argument for keeping the successor's oracle pointed here.
 
-### 9.2 Browser miner (`web/mine.html`, `web/assets/mining/`)
+**The clean break still stands.** The wallet was Ed25519, `ember1…` and UTXOs; it is now
+secp256k1, `0x…` and 18 decimals. There is no migration path and deliberately no export
+machinery for one, because an Ed25519 key names no account on an EVM chain and nobody
+holds EMBER.
 
-`homefire.js` is a line-for-line port of `node/src/pow.js` with two deliberate,
-unobservable differences: the pad is allocated once per `Miner` rather than per
-attempt, and the 64-bit read/xor/write is done byte-wise. `sha256.js` is a
-synchronous SHA-256 so it can run inside a Worker — measured at ~225 H/s per thread
-at dev params, about 1.37× the node's own native-crypto implementation, because
-`createHash`'s per-call overhead dominates at thousands of calls per attempt.
+### 9.2 The browser miner — deleted, and not replaced in kind
 
-**Conformance is enforced in CI.** `node/test/browser-pow.js` compares the browser
-modules to the node's digest for digest including SHA-256 padding edges at 55/56/64
-bytes; `node/test/mining-api.js` stands up a node, grinds nonces with the *browser*
-implementation, signs locally and posts the proof over real HTTP.
+**`web/mine.html` and `web/assets/mining/` were deleted on 2026-08-04 (`48bc28a`).
+Nothing in this estate mines in a browser tab any more, and that is deliberate.**
 
-**The signature is secp256k1 now, not Ed25519** — spec §4 makes `coinbasePub` a
-secp256k1 key. The hashing half is untouched and `browser-pow` still passes. The
-miner imports the wallet's port rather than carrying a second one. The wire form it
-assumes is named in one place, `POW_SIG_FORM` (`web/assets/mining/miner.js`):
-`r || s || recoveryId`, 65 bytes — the node's header carries no separate public key
-and `verifyPow` recovers one from the signature (`node/src/chain/header.js`).
+Mining you can actually run is elsewhere in this repository:
 
-> **This disagreement is closed, and it was real while it lasted.** `POW_SIG_FORM`
-> said 64 bytes with no recovery id, on the reasoning that the header already
-> carried the key. The node had chosen the 65-byte recoverable form, so every block
-> the browser miner ever found was answered `bad signature` — after all the work,
-> and indistinguishable from bad luck. The constant existed precisely so a mismatch
-> would be "a grep, not an investigation", and it was faithfully kept in sync with
-> the wrong answer, which is the limit of what a constant naming a format can do.
->
-> So the format is now CHECKED rather than described. `node/test/browser-proof.js`
-> imports `proofSignature` from `web/assets/mining/miner.js` — the browser's own
-> code, not a reconstruction — signs a real winning digest with it, and requires
-> the node's template flow to accept the resulting block; it also requires a proof
-> signed by a different key to be refused. `web/assets/wallet-selftest.js` cross-
-> checks the same function against the node's `signProof` and recovers the coinbase
-> key from its 65th byte.
->
-> Note which endpoint this is. `GET /mining/template?pub=` on the **UTXO** REST
-> server still requires an 88-hex SPKI DER Ed25519 key (`node/src/rpc.js:130-134`),
-> and always will — that is the other chain. The browser miner talks to the
-> **account model**'s REST server (`node/src/evmnode.js`), which takes a 65-byte
-> uncompressed secp256k1 key.
+| How to mine | Where |
+| --- | --- |
+| Command line, light miner over HTTP | `node/bin/hearth-mine.js` |
+| Desktop app for macOS, Windows and Linux (Tauri) | `app-desktop/` — §3.7 |
+| Full node that validates what it mines | `hearthd --evm --mine` |
+
+**Why it was not worth carrying.** The browser miner signed its proofs in a 64-byte
+form with no recovery id, on the reasoning that the header already carried the coinbase
+key. The node had chosen the **65-byte recoverable form** — `r || s || recoveryId`,
+`node/src/chain/header.js:213-223` — because `verifyPow` recovers the signer from the
+signature rather than trusting a key supplied alongside it. So every block the browser
+miner ever found was answered `bad signature`: after all the work, and indistinguishable
+from bad luck.
+
+The form was named in a constant precisely so that a mismatch would be "a grep, not an
+investigation" — and the constant was faithfully kept in sync with the **wrong** answer,
+which is the limit of what a constant naming a format can do.
+
+> **The honest version of this history.** The 64-vs-65 defect *was* fixed, on the last
+> night the tree existed — but the fix landed in code nothing executed, which is what
+> settled the argument for deleting it rather than maintaining it. The lesson is not
+> "the miner was broken"; it is that a front end nobody runs will absorb real fixes and
+> return nothing for them.
+
+**The conformance gates that stood here are gone with the code they tested.**
+`node/test/browser-pow.js`, `node/test/browser-proof.js` and `node/test/mining-api.js`
+imported `web/assets/mining/` and were removed in the same commit. The node's `/mining/*`
+path is still covered, by suites that test the node rather than a browser port of it:
+`evmchain`, `mine-session`, `miner-cli` and `mining-budget` (`node/package.json`).
+The surviving signing path is `HDR.signProof`, used by `node/src/chain/miner.js:85` and
+`node/src/mine/session.js:247`.
+
+**Which endpoint, because there are two chains here.** `GET /mining/template?pub=` on the
+**UTXO** REST server still requires an 88-hex SPKI DER Ed25519 key
+(`node/src/rpc.js:130-134`), and always will — that is the other chain. The light miners
+above talk to the **account model**'s REST server (`node/src/evmnode.js`), which takes a
+65-byte uncompressed secp256k1 key (`node/bin/hearth-mine.js:11`).
 
 `/mining/submit` **does not trust the submission**: only `nonce`, `powDigest` and
 `powSig` are taken from it; the header core and the transactions come from the
@@ -1085,24 +1075,23 @@ only externally reachable caller is the unauthenticated `/mining/template`.
   no account-model successor at all (§5.4).
 - **API surface nothing in-repo consumes.** `POST /rpc`
   (`getinfo`/`getbalance`/`getblockcount`/`sendtx`) has no in-repo client.
-  `/mempool` is read by no current page — the explorer is `eth_*`-only now, so
-  records and the mempool have no explorer surface.
+  `/mempool` is read by no in-repo client. Since `web/` was deleted there is **no
+  explorer surface in this repository at all**, so records and the mempool have none
+  either — and neither does anything else.
 - **The `eth_*` JSON-RPC server mounts on port 8545, path `/`** — settled, and
   implemented by `node/src/evmnode.js` for `hearthd --evm` (`docs/evm-spec.md`
   §6). It is a different PORT from the REST API, not a different path, because
-  `node/src/rpc.js:152` owns `POST /rpc` with the legacy `{method:'getinfo'}`
-  shape. **The explorer defaults to same-origin `/eth-rpc/`**
-  (`web/assets/explorer/rpc.js`), a second nginx location proxying to
-  `HEARTH_ETH_RPC_UPSTREAM` on 8545, while `/rpc/` stays on the REST port for
-  `mine.html`. It defaulted to `/rpc/` until CF-13, which meant the deployed
-  explorer asked the REST server for `eth_*` and correctly reported "answered,
-  but not with JSON-RPC 2.0" against a perfectly healthy chain.
-- **`web/pay-demo.html` is a mockup, and says so on the control.**
-  `web/assets/hearth-pay-demo.js` builds a real `hearth:` URI and then **simulates**
-  settlement on a 1,200 ms timer; the txid is deliberately not 64 hex characters so
-  it can never be mistaken for a real one. The disclaimer is rendered next to the
-  button so it survives a screenshot. **There is no payment SDK.**
-- **`site/` still tells the UTXO story.** §3.6.
+  `node/src/rpc.js:139` owns `POST /rpc` with the legacy `{method:'getinfo'}`
+  shape. A client that sends `eth_*` to the REST port is answered with a pointer to
+  the right port rather than `{"err":"no route"}` (`node/src/evmnode.js:481-486`).
+  CF-13 was exactly this mistake made in a deployment: the explorer defaulted to the
+  REST prefix, asked it for `eth_*`, and correctly reported "answered, but not with
+  JSON-RPC 2.0" against a perfectly healthy chain. §3.4.
+- **There is no payment SDK, and now not even a mockup of one.** `web/pay-demo.html`
+  built a real `hearth:` URI and then **simulated** settlement on a 1,200 ms timer,
+  with a txid deliberately not 64 hex characters so it could never be mistaken for a
+  real one. It was deleted with `web/` in `48bc28a` and nothing replaces it. The gap
+  it stood in front of is unchanged: **no merchant handoff exists.**
 - **The Rust core** — §3.3. Also `src/tab.rs` (payment channels), `src/netmsg.rs`
   and `src/mempool.rs` are libraries wired to nothing but the self-check.
 - **Chain replay is silent about rejects.** `Chain.load()` re-validates every
@@ -1201,7 +1190,9 @@ the consensus numbers and is the file to use.
   `COINBASE_MATURITY` 10 is read only by the retired UTXO path — the account
   model has no maturity rule.
 - **No authentication anywhere on the RPC.** No API key, no rate limit beyond the
-  body cap. The node is meant to sit behind a proxy; `web/nginx.conf` is that proxy.
+  body cap. The node is meant to sit behind a proxy. **This repository no longer ships
+  one** — `web/nginx.conf` went with `web/` in `48bc28a` — so the proxy is now the
+  deployment's responsibility, and an exposed node has nothing in front of it by default.
 - **Persistence is an append-only NDJSON file** (`chain.js:407`), never rewritten
   and never compacted. Forked blocks are appended too.
 - **The whole chain state is in memory** — `store`, `utxo`, `txIndex` and
@@ -1252,22 +1243,40 @@ skipped case (§11).
 | --- | --- |
 | Node reference client | `npm test` — **one command, not a list**, so a new suite is covered the moment it is added to `package.json` (`ci.yml:19-49`). Plus the coinnomics model sanity check |
 | Rust production core | `cargo fmt --check`, `clippy -D warnings`, build, test |
-| Web assets | `find web/assets -name '*.js'` piped through `node --check` — **`find`, not a glob**, because the old glob was `web/assets/*.js` and silently skipped every module under `web/assets/explorer/` — plus the explorer self-test and the wallet self-test (`ci.yml:85-101`) |
-| Secret hygiene | `.env` untracked; no API tokens; a private-key matcher that requires a PEM header **followed by real base64**, so the legitimate PEM literals in `web/` do not force the check to be muted |
+| Web assets | ⚠️ **Runs nothing.** The syntax check, explorer self-test and wallet self-test that stood here all read `web/assets`, and went with it in `48bc28a` (`ci.yml:86-106`). The job still checks out the repo, reports green, and gates nothing. Its remaining body is a comment recording where the wallet gate went — §9.1. **A green job that executes no assertion is worth deleting rather than reading as a pass** |
+| Secret hygiene | `.env` untracked; no API tokens; a private-key matcher that requires a PEM header **followed by real base64** rather than the header alone, so a bare PEM literal in source cannot force the check to be muted (`ci.yml:126-140`) |
 | DeFi contracts | `pnpm compile` (which refuses on an init-code-hash mismatch) and the build tests |
 | Developer kit | The faucet's 66 checks; `tools/explorer-api`'s 177 fixture checks **and its 27-check live-chain gate**; `tools/verify`'s 116; the templates and probe parse; the probe boots and answers the chain id in both encodings. Every step carries `if: ${{ !cancelled() }}`, because one failing step used to skip every step after it |
 
-**One CI job is still failing on `main`.** The node job **passes** (run
-[30402531669](https://github.com/cloudsforge-online/hearth/actions/runs/30402531669),
-*Node reference client (tests)*: success), because the blake2f break in §11 is
-fixed. *Developer kit* was red on `tools/explorer-api`'s
-`receipt.logs[0].logIndex is missing` and is fixed — §3.5. What remains:
+**One CI job is failing on `main`, and it is a different one from the job this
+paragraph used to name.** The *DeFi contracts* failure recorded here
+(`Error: No pnpm version is specified.`) is **fixed** — that job passed on run
+[30918746545](https://github.com/cloudsforge-online/hearth/actions/runs/30918746545),
+as did *Developer kit*, *Rust production core*, *Web assets* and *Secret hygiene*.
+What is red now:
 
 | Job | Failure | Is it an implementation failure? |
 | --- | --- | --- |
-| DeFi contracts | `Error: No pnpm version is specified.` from `pnpm/action-setup@v4` — `contracts/package.json` has no `packageManager` field and the step passes no `version` | No. Tooling configuration |
+| Node reference client | `node/test/mine-session.js` — `FAIL — 68/71 checks`, on the group *"but real refusals do stop it, rather than burning a core into a wall"* | **No — it is a flaky deadline.** The check races a real proof-of-work search against a fixed 20-second wall clock (`node/test/mine-session.js:285`). A win is geometrically distributed, so on a slow runner the search simply has not finished and the assertion reports `TIMED OUT`. The sibling group immediately above it allows 120 seconds for the same kind of wait (`:262`) |
 
-That one is not fixed here.
+**Both of the failures below are intermittent, and that is the diagnosis, not an
+excuse.** Three consecutive local runs of `npm test` gave: `mine-session` red, then
+fully green, then fully green (exit 0). Nothing in the mining path changed between
+them. **These are wall-clock deadlines racing a geometrically distributed
+proof-of-work search, so the same code passes or fails on the speed of the machine
+and the luck of the nonce.**
+
+| Suite | The deadline | Why it can lose |
+| --- | --- | --- |
+| `node/test/mine-session.js:285` | 20 s for a real PoW win plus two refusals | The group immediately above allows **120 s** for the same class of wait (`:262`), and its comment says explicitly to "WAIT FOR THE EVENT, NOT FOR THE CLOCK" (`:257-261`) — advice this assertion does not take |
+| `node/test/bench/block-execution.js:219` | widening the state trie 5× must cost **< 1.15×** the time | Measured 1.18× on one local run and passed on the next. It is a performance ratio on whatever hardware runs it, not a consensus assertion |
+
+**Neither is a defect in the node**, and neither is fixed here — this is a
+documentation pass, and retuning a mining test's deadline is a change to what that
+test guarantees, which belongs to whoever owns that suite. They are recorded so the
+next person reads a red `main` as *known and diagnosed* rather than as the
+documentation being wrong again. The obvious fix for the first is to give it the same
+120-second budget its sibling already uses.
 
 **A red step used to disable the steps after it.** Actions skips the rest of a
 job at the first failure, so for as long as the explorer API step was red,
@@ -1275,8 +1284,13 @@ job at the first failure, so for as long as the explorer API step was red,
 never executed — `tools/verify`'s 116 checks had never gated a push. Every step
 in that job now carries `if: ${{ !cancelled() }}` and reports its own result.
 
-**Deploys.** `.github/workflows/pages.yml` publishes `web/` to GitHub Pages. The
-marketing site in `site/` builds separately.
+**Deploys.** **This repository publishes no web surface.** The Pages workflow that
+served `web/` was removed in `88a1552` and `.github/workflows/pages.yml` no longer
+exists; the `hearth-web` and `hearth-site` publish-matrix entries went with `web/` and
+`site/` in `48bc28a`. What remains is `.github/workflows/publish.yml`, which builds the
+node images. Already-published `hearth-web` and `hearth-site` tags were **left in the
+registry on purpose** — deleting a published tag breaks anyone who pinned it — so their
+presence there is history, not a live deploy.
 
 ---
 

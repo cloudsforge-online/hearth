@@ -9,7 +9,9 @@
  * Scraping a status line is not an interface, and a second loop drifts: this
  * repository has already paid for that once, when the browser miner signed a
  * 64-byte proof for months while the node required 65 and every block it found
- * was refused after the work was done (see web/assets/mining/miner.js).
+ * was refused after the work was done. That miner lived in web/ and was deleted in
+ * 48bc28a; this file is why the mistake cannot be made twice, since there is now
+ * one loop and one signer for every front-end.
  *
  * So the loop lives here, headless, and BOTH front-ends drive it: the CLI
  * renders these events as a terminal status line, and app-desktop/engine/

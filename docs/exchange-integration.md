@@ -144,8 +144,8 @@ it. When it does, it will listen on **8545** per §1.
 - **There is no RPC authentication and no rate limiting** beyond a 108,192-byte
   request body cap, and CORS is `*` on every response (`node/src/rpc.js:19-25`).
   **Do not expose a node to the internet.** Bind it to loopback and put it behind
-  your own proxy. The repository ships an nginx config that does exactly this
-  (`web/nginx.conf`).
+  your own proxy. **The repository no longer ships an nginx config** — `web/nginx.conf`
+  was deleted with `web/` in `48bc28a` — so the proxy is entirely yours to provide.
 - **The whole chain state is held in memory.** `store`, the state map and the
   indexes are all JavaScript `Map`s (`node/src/chain.js:31-40`). Memory grows with
   chain length and there is no pruning.

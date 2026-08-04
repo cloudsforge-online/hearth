@@ -116,7 +116,7 @@ promised them and someone will ask.
 | --- | --- |
 | **Stealth addresses and view keys** | Not in the spec. An account-model EVM chain has transparent balances by construction |
 | **Tab payment channels** | `rust/hearthd/src/tab.rs` is a signed state machine nothing calls. Not on the EVM plan |
-| **The Hearth Pay merchant SDK** | `web/pay-demo.html` is a mockup that settles nothing on a timer |
+| **The Hearth Pay merchant SDK** | Nothing exists. The `pay-demo.html` mockup that settled nothing on a timer was deleted with `web/` in `48bc28a` |
 | **Warmshares / uncles** | Never implemented, not in the spec |
 | **A RandomX-class VM** | Homefire compiles nothing. Growing it into one is not scheduled and is not claimed |
 | **Hybrid coin-weighted / one-node-one-vote governance** | A design sketch, never a mechanism |

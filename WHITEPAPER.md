@@ -203,9 +203,11 @@ foundation wallet, no "ecosystem fund" that turns out to be 20% of supply.
    that mints one spark more than `subsidy + tips`
    (`node/src/chain.js:304-315`). There is no other mint.
 3. **The puzzle runs on hardware people already own.** A CPU is competitive by
-   construction; a browser tab is a working miner
-   (`web/mine.html`, digest-conformance-tested against the node in CI at
-   `node/test/browser-pow.js`).
+   construction, and mining needs neither a full node nor a sync: `node/bin/hearth-mine.js`
+   and the desktop app in `app-desktop/` are light miners that take work over HTTP,
+   grind Homefire locally and sign the winning digest with a key that never leaves the
+   machine. *(A browser tab was also a working miner until 2026-08-04; that page has
+   been deleted — see `MAP.md` §9.2.)*
 
 ### 3.3 Check it yourself
 
@@ -410,8 +412,8 @@ EIP-1559, so it pushes zero.
 | `node/test/conformance/` | The vector harness and a committed offline subset; the full corpus is gitignored and fetched |
 | `contracts/` | Uniswap-V2-derived AMM sources, WEMBER, Multicall3. **Compiled in CI** (`.github/workflows/ci.yml`), and executed against our own EVM by `node/test/dex.js`. **Deployed nowhere** |
 | `tools/` | The developer kit: a faucet, Hardhat and Foundry templates, and an RPC probe that serves the real method surface over a fake chain |
-| `web/` | EVM-aware block explorer, non-custodial secp256k1 browser wallet, browser miner |
-| `site/` | Marketing site. Its copy still describes the UTXO chain |
+| `app-desktop/` | The Tauri desktop miner for macOS, Windows and Linux. A light miner, not a node |
+| `branding/` | The brand note and marks, including `logo.svg` — the only vector source in the tree |
 | `rust/hearthd/` | A self-check binary and a Homefire benchmark. **Not a node, not consensus** — two known divergences, documented in `MAP.md` §3.3. It has no EVM at all |
 | `proto/` | Teaching scripts. Not consensus, not imported — and `proto/emission.js` is a *model*, not the schedule |
 
@@ -439,14 +441,17 @@ believe `MAP.md`.
    block-size limit governed by a penalty function", "warmshares", "trustless
    mining co-ops", "on-chain governance", "light-client mode", "Hearth Pay SDK",
    "reproducible builds".** None of these are implemented. `rust/hearthd/src/tab.rs`
-   contains a signed state machine that nothing calls. `web/pay-demo.html` is a
-   mockup that settles nothing on a 1,200 ms timer, and says so on the control.
-   They have been removed rather than restated as roadmap, because a paper that
-   lists twelve unbuilt features reads as a product.
-5. **"Mines only on AC power or when idle."** The browser miner has a real duty
-   cycle and drops to ≤15% in a background tab, and pauses on unplug **only where
-   the Battery Status API exists** — Firefox and Safari removed it. There is no
-   idle detection anywhere and a web page cannot implement one.
+   contains a signed state machine that nothing calls. The Hearth Pay merchant
+   button never got past a mockup that settled nothing on a 1,200 ms timer, and that
+   mockup has itself been **deleted** (`48bc28a`) — so there is not even a
+   demonstration of it now. They have been removed rather than restated as roadmap,
+   because a paper that lists twelve unbuilt features reads as a product.
+5. **"Mines only on AC power or when idle."** **Nothing here is power-aware or
+   idle-aware.** `hearth-mine`, the desktop app and `hearthd --mine` have a duty-cycle
+   throttle and nothing else. The partial version of this claim that once held — a
+   browser tab dropping to ≤15% in the background and pausing on unplug where the
+   Battery Status API existed — went with the browser miner. There is no idle detection
+   anywhere.
 
 **Standing limitations of the current design:**
 

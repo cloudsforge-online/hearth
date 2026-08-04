@@ -61,7 +61,7 @@ guess and nobody has to ask.
 | Finality | probabilistic, **unbounded reorg depth** | [`exchange-integration.md`](exchange-integration.md) §4 |
 | RPC URL | ⬜ nothing **published**. **[LOCAL]** `http://127.0.0.1:8545` — `hearthd --evm`, or `docker compose -f docker-compose.testnet.yml up`, serves it today. The port and path are settled: 8545, root path — see §3 | [`evm-spec.md`](evm-spec.md) §6 |
 | WebSocket URL | ⬜ not in v1 at all (`eth_subscribe` is v2). Port **8546 is reserved** for it and deliberately left unbound; poll `eth_newFilter`/`eth_getFilterChanges` meanwhile (`node/src/jsonrpc/filters.js`) | [`evm-spec.md`](evm-spec.md) §6 |
-| Block explorer URL | ⬜ nothing published. The **explorer is built** and is `0x`-native (`web/index.html`), and the Etherscan-compatible `/api` behind it now runs against a real chain in CI ([`../tools/explorer-api`](../tools/explorer-api)) | [`listing-checklist.md`](listing-checklist.md) §3 |
+| Block explorer URL | ⬜ nothing published, **and the explorer that was built is no longer in this repository** — `web/` was deleted in `48bc28a`. The estate surface is [`micro-explorer-web`](https://github.com/cloudsforge-online/micro-explorer-web), which reads `micro-indexer` rather than `eth_*`. The Etherscan-compatible `/api` is still here and runs against a real chain in CI ([`../tools/explorer-api`](../tools/explorer-api)) | [`listing-checklist.md`](listing-checklist.md) §3 |
 | Faucet URL | ⬜ nothing published — the service is built and tested, at [`../tools/faucet`](../tools/faucet) | |
 | Multicall3 | ⬜ not deployed. See §7 | |
 | SLIP-44 coin type | ⬜ unregistered. Derive under coin type **60** (Ethereum) meanwhile | [`listing-checklist.md`](listing-checklist.md) §1.2 |

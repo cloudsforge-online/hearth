@@ -13,8 +13,8 @@
  * ADDRESS is being paid — and the last of those is given the most room on the
  * page because it is the one whose wrong answer is unrecoverable.
  *
- * NO FRAMEWORK AND NO BUILD STEP, matching web/: this file is what ships, so
- * what you read is what runs.
+ * NO FRAMEWORK AND NO BUILD STEP: this file is what ships, so what you read is
+ * what runs. (The convention was inherited from web/, deleted in 48bc28a.)
  */
 
 const { invoke } = window.__TAURI__.core;

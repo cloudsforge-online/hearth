@@ -143,8 +143,9 @@ pays the whole pad on every attempt, so pad size is a direct multiplier on both
 mining and verification, and verification is the side with a hard deadline.
 
 Closing that gap means an epoch-cached dataset with a light per-attempt access
-pattern and a light verification path. That is a redesign of `node/src/pow.js`,
-`web/assets/mining/homefire.js` and `rust/hearthd/src/pow.rs` together, plus new
+pattern and a light verification path. That is a redesign of `node/src/pow.js` and
+`rust/hearthd/src/pow.rs` together (the browser twin `web/assets/mining/homefire.js`
+was deleted in `48bc28a`), plus new
 cross-implementation vectors — **not an edit to `params.js`**, and not something
 to attempt in the week before a genesis.
 

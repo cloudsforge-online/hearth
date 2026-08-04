@@ -290,10 +290,11 @@ and piece of in-game art was regenerated with FLUX 2 Pro. An attribution that su
 describes is just a stale sentence with a credit in it.
 
 The generated originals carry **C2PA provenance metadata** written by the model, so the claim above
-is checkable rather than merely asserted — `branding/hearth-logo.png`, `branding/mark-hearth.png`
-and `web/art/mine-hero.png` all hold it. The favicon, Open Graph, social and wordmark files do not,
-because they are derived from those originals by downscaling and cropping, and resampling discards
-the metadata along with the pixels.
+is checkable rather than merely asserted — `branding/hearth-logo.png` and `branding/mark-hearth.png`
+hold it. The wordmark, favicon, Open Graph and social files do not, because they are derived from
+those originals by downscaling and cropping, and resampling discards the metadata along with the
+pixels. *(This list named a third holder, `web/art/mine-hero.png`, until that tree was deleted in
+`48bc28a`.)*
 
 The models were used under paid API access and the output is the project's to use. Nothing here is
 claimed to be hand-written that is not, and nothing is claimed to work that has not been tested.

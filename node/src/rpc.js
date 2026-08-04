@@ -6,7 +6,9 @@
  *   submit: POST /tx        (broadcast a signed tx)
  *   JSONRPC POST /rpc       ({method, params})
  *   live:   GET  /events    (SSE: new blocks, or ?app= for that app's records)
- * CORS is open so the static web/ front-ends can talk to it from anywhere. */
+ * CORS is open so a browser front-end on any origin can talk to it. The static
+ * pages that motivated this were deleted in 48bc28a; the setting stays because the
+ * estate's own surfaces are separately hosted and are cross-origin by construction. */
 
 const http = require('http');
 const P = require('./params');

@@ -223,11 +223,18 @@ and moving it later requires the very key you are trying to stop relying on.
 | **`hearthd`** | The node. Full node + wallet + miner in one process. JavaScript, zero runtime dependencies — including the EVM |
 | **`hearth`** | The terminal tool for the EVM chain: `trace` (an opcode-level debugger — gas, stack, memory and storage deltas per step, with call depth and decoded revert reasons), `watch`, `wallet`, `call`, `send`, `deploy`, `devnet` |
 | **`hearth-cli`** | The UTXO-era wallet and query client. Deliberately **not** merged with `hearth` — merging them would mean one address format silently accepting the other's |
-| **Web explorer** | `web/index.html` + `web/assets/explorer/`. EVM-aware: decoded logs, revert reasons, contract disassembly, ERC-20s, `eth_getLogs` search. ES modules, no framework, no bundler, no npm dependency. **It renders an explicit "no node answered" state rather than inventing data** |
-| **Browser wallet** | `web/wallet.html` + `web/assets/wallet/`. secp256k1, `0x…`, 18 decimals, keys sealed at rest with PBKDF2 → AES-256-GCM. Its crypto is a *port* of the node's, and CI runs both over the same random inputs and compares them |
-| **Browser miner** | `web/mine.html` + `web/assets/mining/`. A Web Worker pool running real Homefire against `/mining/template`. Not WASM: the bottleneck was `crypto.subtle.digest` being async at ~8,450 hashes per attempt, so the win came from a synchronous SHA-256, not a different language |
+| **`hearth-mine`** | `node/bin/hearth-mine.js`. A **light miner**: takes work over the HTTP mining API, grinds Homefire, signs the winning digest with a key it alone holds, posts the proof. No chain, no sync, no inbound port — so it works through a tunnel. `--throttle` is a real duty cycle |
+| **Desktop app** | `app-desktop/`. Tauri v2 for macOS, Windows and Linux, wrapping the same light miner behind one window and a throttle slider. It is **not** a node |
 | **Developer kit** | `tools/`: a faucet, Hardhat and Foundry templates, and an RPC probe that serves the **real** method surface over a fake chain — so an integrator can prove their wiring before an endpoint exists |
-| **Desktop app** *(not built)* | `app-desktop/` is a Tauri shell whose three native commands have zero callers |
+
+**The web front ends are no longer part of this system.** The explorer, the browser
+wallet and the browser miner lived in `web/` and were deleted on 2026-08-04 (`48bc28a`);
+`site/` went with them. The explorer is now
+[`micro-explorer-web`](https://github.com/cloudsforge-online/micro-explorer-web) — which
+reads `micro-indexer`, not `eth_*`, and is a replacement rather than a port — and the
+wallet is [`micro-hearth-wallet-core`](https://github.com/cloudsforge-online/micro-hearth-wallet-core)
+plus [`micro-wallet-extension`](https://github.com/cloudsforge-online/micro-wallet-extension).
+The browser miner has no successor at all. See [`MAP.md`](../MAP.md) §3.4 and §9.2.
 
 **The tracer is not an afterthought.** `node/src/cli/trace.js` was written *during*
 the interpreter work, for a selfish reason: when a GeneralStateTests vector fails,
@@ -250,7 +257,7 @@ None of the following exists. Do not describe them as features.
 | --- | --- |
 | **Consensus on the account model** | The blocker. No account-model block has ever been produced |
 | **Tab payment channels** | `rust/hearthd/src/tab.rs` is a signed state machine that nothing calls |
-| **A payment SDK / merchant handoff** | `web/pay-demo.html` is a mockup that simulates settlement on a 1,200 ms timer and says so on the control |
+| **A payment SDK / merchant handoff** | Nothing exists. The `pay-demo.html` mockup that simulated settlement on a 1,200 ms timer was deleted with `web/` (`48bc28a`) |
 | **Stealth addresses, view keys** | §5 |
 | **Warmshares / uncles** | Near-miss blocks referenced for a fraction of the reward. Never implemented |
 | **A RandomX-class VM** | Homefire compiles nothing. It is chained SHA-256 over a scratchpad |

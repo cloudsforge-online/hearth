@@ -128,10 +128,11 @@ desktop app is scaffolding, not something you can download.
 
 ### How do merchants accept it?
 
-**They can't.** `web/pay-demo.html` is a **mockup** that simulates its own
-settlement on a 1,200 ms timer and says so on the control. There is no SDK, no
-wallet handoff and no payment channel layer. When there is a chain, accepting
-EMBER will be the same job as accepting ETH.
+**They can't.** There is no SDK, no wallet handoff and no payment channel layer. The
+closest thing that ever existed was `pay-demo.html`, a **mockup** that simulated its own
+settlement on a 1,200 ms timer and said so on the control — and it was deleted with
+`web/` in `48bc28a` rather than finished. When there is a chain, accepting EMBER will be
+the same job as accepting ETH.
 
 ### Who funds development if there's no ICO?
 
@@ -159,7 +160,8 @@ Conformance vectors make writing an EVM tractable. They do not make it audited.
   benchmark, with two modules that would produce the wrong answer if wired up.
 - `proto/emission.js` as the emission schedule — it is a smooth-exponential
   *model* and differs from the chain by ~3.5% in year one.
-- `site/` — the marketing site still tells the UTXO story.
+- Any front end in this repository — there is none. `web/` and `site/` were deleted in
+  `48bc28a`; the successors are listed in [`../MAP.md`](../MAP.md) §3.4.
 - Any status line anywhere that disagrees with [`../MAP.md`](../MAP.md), which
   cites `path:line` for every claim.
 

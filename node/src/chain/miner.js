@@ -18,9 +18,9 @@
  * THE KEY IS secp256k1 NOW (spec §4). The coinbase has to receive the reward and
  * the fees, so it must be an account this chain can credit. Homefire is untouched
  * — same seed, same pad, same walk — and a remote miner still grinds nonces over a
- * `coreHash` and never executes anything. The browser miner in web/ therefore needs
- * exactly one change to work here, its Ed25519 keystore, and no change at all to
- * its hash loop; test/browser-pow.js still pins that loop against ../pow.js.
+ * `coreHash` and never executes anything. The remote miners are bin/hearth-mine.js
+ * and app-desktop/, both driving src/mine/session.js; the browser miner that also
+ * used this endpoint was deleted in 48bc28a, along with test/browser-pow.js.
  */
 
 const crypto = require('crypto');

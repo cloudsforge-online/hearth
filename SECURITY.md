@@ -19,8 +19,8 @@ Please include:
 - what the issue is and what an attacker gains,
 - how to reproduce it — a proof of concept, a failing test, or a transaction or
   block that triggers it,
-- the affected component (`node/`, `web/`, `contracts/`, `rust/hearthd/`) and the
-  commit hash or published version,
+- the affected component (`node/`, `contracts/`, `rust/hearthd/`, `app-desktop/`) and
+  the commit hash or published version,
 - whether you believe it is already being exploited.
 
 **A note on contact channels.** There is currently **no monitored `security@`
@@ -66,22 +66,34 @@ sounds impressive.
   client read a wrong value as a correct one (the QUANTITY/DATA distinction above
   all).
 - `node/src/pow.js`, `node/src/mining.js` and the template/submit protocol.
-- `web/assets/wallet/` — the current secp256k1 browser wallet: key generation,
-  PBKDF2/AES-GCM sealing at rest, the signing path, and anything that could expose
-  a private key. **Any divergence between `web/assets/wallet/{secp256k1,rlp,transaction}.js`
-  and their `node/src` originals is in scope**, because a wallet that signs
-  slightly differently from the node does not bounce — it pays the wrong person.
-- `web/assets/mining/` — the browser miner, including any divergence from the
-  node's Homefire digest.
 - `node/src/cli/` and `node/bin/hearth.js` — the terminal tool, particularly the
-  keystore.
+  keystore (`node/src/cli/keystore.js`: PBKDF2-HMAC-SHA256 → AES-256-GCM).
+- `node/bin/hearth-mine.js` and `app-desktop/` — the light miners. The key is
+  generated and held locally and signs every winning digest, so anything that could
+  expose it, or that lets a proof be redeemed by a key it was not issued to, is in
+  scope.
 - `contracts/src/` — the AMM sources, even though nothing is deployed.
 
-The **retired pre-EVM** modules — `web/assets/wallet-core.js`,
-`web/assets/keystore.js` and `web/assets/vendor/noble-ed25519.js` — have been
-deleted. They were imported by no page and survived only because a test still
-exercised them; there is no longer any Ed25519 key handling in `web/`, and a
-report about it is a report about code that is not shipped.
+**The browser wallet and the browser miner are no longer in this repository.**
+`web/` was deleted on 2026-08-04 (`48bc28a`). Report against the successor instead:
+
+| Was | Report to |
+| --- | --- |
+| `web/assets/wallet/` — secp256k1, keystore sealing, signing path | [`micro-hearth-wallet-core`](https://github.com/cloudsforge-online/micro-hearth-wallet-core) (signing library) and [`micro-wallet-extension`](https://github.com/cloudsforge-online/micro-wallet-extension) (browser surface) |
+| `web/index.html` — the explorer | [`micro-explorer-web`](https://github.com/cloudsforge-online/micro-explorer-web) |
+| `web/assets/mining/` — the browser miner | **Nothing. It was deleted, not moved.** Mining is `node/bin/hearth-mine.js` and `app-desktop/`, both in scope above |
+
+**One class of report is still in scope here, and it is the important one.** A
+divergence between `micro-hearth-wallet-core` and its `node/src` originals —
+`crypto/secp256k1.js`, `crypto/rlp.js`, `chain/transaction.js`, `cli/keystore.js` — is
+a finding **about this repository**, because a wallet that signs slightly differently
+from the node does not bounce, it pays the wrong person. That library's suite executes
+this repository's modules in-process as its oracle, so such a divergence should surface
+as a red build there; if you find one it did not catch, report it against `node/`.
+
+The **retired pre-EVM** Ed25519 modules were deleted before `web/` itself was. There is
+no Ed25519 key handling on the account-model path at all, and a report about it is a
+report about code that is not shipped.
 
 **Out of scope**
 
@@ -91,10 +103,11 @@ report about it is a report about code that is not shipped.
   being a second implementation. Findings are welcome but are not treated as
   consensus issues.
 - `proto/` — teaching scripts, not imported by the node.
-- `web/pay-demo.html` — a mockup that settles nothing on a timer and says so on
-  the control.
-- `site/` — the marketing site, except for anything that could compromise a
-  visitor.
+- The front ends that used to be here. `web/` (explorer, wallet, browser miner, a
+  merchant-button mockup that settled nothing on a timer) and `site/` (marketing) were
+  deleted in `48bc28a`. They are not "out of scope" so much as **absent**: a report
+  against a path under `web/` or `site/` is a report about code no longer shipped from
+  this repository. See the table above for where the live successors are.
 - Missing hardening on the node's HTTP interface. **The RPC has no
   authentication, no API key and no rate limiting beyond a request-body cap, and
   CORS is `*`.** This is documented, deliberate for a node intended to sit behind

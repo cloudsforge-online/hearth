@@ -1,10 +1,12 @@
 'use strict';
 /* Encrypted secp256k1 keys at rest, for the Node-side wallet.
  *
- * The browser wallet seals its keys under PBKDF2-HMAC-SHA256 then AES-256-GCM
- * (`web/assets/wallet/keystore.js`), and this is deliberately the same construction
- * with the same parameters so that one threat model covers both and neither has
- * to be reasoned about separately. Node's `crypto` rather than WebCrypto, and a
+ * The self-custody wallet seals its keys under PBKDF2-HMAC-SHA256 then AES-256-GCM,
+ * and this is deliberately the same construction with the same parameters so that one
+ * threat model covers both and neither has to be reasoned about separately. That wallet
+ * is now micro-hearth-wallet-core, and the agreement is CHECKED rather than asserted:
+ * its test/oracle-keystore.test.ts seals a record there and opens it with THIS file,
+ * and the reverse, in-process. Node's `crypto` rather than WebCrypto, and a
  * 32-byte secp256k1 scalar rather than a PKCS#8 PEM — everything else matches,
  * including the OWASP-2023 iteration floor and the convention that the GCM tag
  * is appended to the ciphertext.

@@ -633,7 +633,7 @@ Do not plan around any of these:
 | --- | --- |
 | A **published** RPC endpoint | ⬜ nothing is deployed. The port and path **are** settled — 8545, root path ([`evm-spec.md`](evm-spec.md) §6) — and a node serves them on loopback today |
 | A **public** testnet | ⬜ the three-node testnet runs on `127.0.0.1` and nothing routes it. Its chain id **is** chosen: **7412**, and its genesis hash is published in [`../TESTNET.md`](../TESTNET.md) |
-| A **deployed** `0x`-native block explorer | 🟡 `web/index.html` is EVM-aware and built — decoded logs, revert reasons, disassembly, `eth_getLogs` search. Point it at your own node; nobody has hosted it |
+| A **deployed** `0x`-native block explorer | ⬜ **not in this repository any more.** `web/` was deleted in `48bc28a`. The estate surface is [`micro-explorer-web`](https://github.com/cloudsforge-online/micro-explorer-web), which reads `micro-indexer` rather than talking `eth_*` to your node — so there is currently **nothing here you can point at your own node** |
 | Contract source verification | 🟡 the services are written — [`../tools/verify`](../tools/verify) (116/116, and it speaks what `forge verify-contract` speaks) and [`../tools/explorer-api`](../tools/explorer-api) (the Etherscan-compatible `/api`, 177/177 plus 27/27 against a real chain). Neither is hosted |
 | A deployed faucet | ⬜ the service is written and tested; nowhere public to run it. Mine instead — §4 |
 | Any **persistently** deployed contract | ⬜ WEMBER, the AMM and Multicall3 deploy and run (§5.0, §7) but no chain holding them outlives the process that mined them |

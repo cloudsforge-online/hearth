@@ -159,8 +159,9 @@ module.exports = {
   // So the memory-hardness argument cannot be strengthened by editing these
   // two numbers. It needs an epoch-cached or otherwise amortised dataset —
   // Ethash's shape, where the expensive part is paid once per epoch and an
-  // attempt is O(1) against it — which is a redesign of this file's PoW, of
-  // web/assets/mining/homefire.js and of rust/hearthd/src/pow.rs, not a retune.
+  // attempt is O(1) against it — which is a redesign of this file's PoW and of
+  // rust/hearthd/src/pow.rs, not a retune. (A third implementation,
+  // web/assets/mining/homefire.js, was deleted in 48bc28a.)
   POW_SCRATCH_KIB: IS_TEST_NETWORK ? 1 : 64,    // (dev)  and see POW_MAX_SCRATCH_KIB
   POW_WALK_STEPS: IS_TEST_NETWORK ? 8 : 256,    // (dev)  the walk IS raisable — it is the cheap half
   // The ceiling this file refuses to start above, and the reason it exists is a

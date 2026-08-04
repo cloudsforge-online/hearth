@@ -43,9 +43,9 @@ exactly this, and no more.
 becomes a **secp256k1** public key, because the coinbase has to *receive* the block
 reward and the fees and so must be an account this chain can credit
 ([`evm-spec.md`](evm-spec.md) §4). Homefire — the pad fill, the walk, the digest —
-is untouched, as is LWMA. The browser miner has already moved
-(`web/assets/mining/miner.js:24-46`) and `node/test/browser-pow.js` still passes
-digest for digest.
+is untouched, as is LWMA. The miners follow the key: `node/bin/hearth-mine.js` and
+`app-desktop/` both request a template with a 65-byte uncompressed secp256k1 key and
+sign the winning digest with it (`node/src/chain/header.js:213-223`).
 
 **The node moved, and this paragraph did not.** It used to say the node still
 required an 88-hex SPKI DER *Ed25519* key, citing `node/src/rpc.js:130-134` and
@@ -58,17 +58,20 @@ exist, because it is a different chain with a different curve.
 The account model has its own REST server and its own template issuer, and they
 require secp256k1: `node/src/chain/miner.js` `issue()` refuses anything that is
 not a 65-byte uncompressed secp256k1 key, and `node/src/chain/header.js`
-`verifyPow` recovers a secp256k1 key from the proof signature. That is exactly
-what the browser miner signs with. Four documents agreeing is not one of them
-agreeing with the node.
+`verifyPow` recovers a secp256k1 key from the proof signature. That is exactly what
+`node/bin/hearth-mine.js` and `app-desktop/` sign with. Four documents agreeing is not
+one of them agreeing with the node.
 
-**There WAS a real mismatch, and it was one byte.** `POW_SIG_FORM` said `r || s`,
-64 bytes, no recovery id; the node requires 65 — `r || s || recoveryId` — because
-`verifyPow` recovers the coinbase key from the signature rather than reading one.
-Every block the browser miner found was answered `bad signature` after the work
-was done. Fixed, and now checked rather than described:
-`node/test/browser-proof.js` imports the browser's own `proofSignature`, signs a
-real winning digest and requires the node's template flow to produce a block.
+**There WAS a real mismatch, and it was one byte.** The browser miner's `POW_SIG_FORM`
+said `r || s`, 64 bytes, no recovery id; the node requires 65 — `r || s || recoveryId`
+(`node/src/chain/header.js:213-223`) — because `verifyPow` recovers the coinbase key
+from the signature rather than reading one. Every block the browser miner found was
+answered `bad signature` after the work was done. It was fixed — and then the whole
+tree was deleted in `48bc28a`, along with the `node/test/browser-proof.js` that had
+started checking the form rather than describing it. **The mismatch cannot recur,
+because there is no second signing implementation left to drift**: every miner in this
+repository calls `HDR.signProof` (`node/src/chain/miner.js:85`,
+`node/src/mine/session.js:247`).
 
 **This is not non-outsourceability, and this document used to say it was.** The
 private key is used *after* a nonce wins (`node/src/miner.js`), never inside the
@@ -77,23 +80,32 @@ therefore hand out `coreHash` plus its **own** pubkey, collect `(nonce, digest)`
 pairs from hashers who genuinely cannot steal the reward, and sign the blocks
 itself. Nothing in consensus notices.
 
-Closing that means committing to the private key inside the loop — a consensus
-change that forks the chain and invalidates the CI-conformance-tested browser
-miner. It is deliberately open, not overlooked.
+Closing that means committing to the private key inside the loop — a consensus change
+that forks the chain and rewrites every miner. It is deliberately open, not overlooked.
 
 ### 3. Low variance, so far
 - **15-second blocks** → frequent wins even for small miners.
 - **Per-block LWMA difficulty** → smooth, no wild swings.
 
-### 4. Polite mining, in the browser miner
-`web/assets/mining/` implements, and `web/mine.html` exposes:
+### 4. Polite mining
 
-- an **effort slider** that is a real duty cycle — workers sleep proportionally
-  between batches rather than pinning a core;
-- a **background-tab trickle**: a hidden tab is clamped to 15% effort;
-- **pause on battery**, where the browser reports power state. The Battery Status
-  API is Chromium-only (Firefox and Safari removed it), so the page says which of
-  the two it got rather than promising power-awareness everywhere.
+**Partly moved, partly gone.** The browser miner that implemented this was deleted with
+`web/` on 2026-08-04 (`48bc28a`). What survived into the light miners:
+
+- the **effort control** is a real duty cycle — the miner sleeps proportionally between
+  batches rather than pinning a core. It is `--throttle F` (0..1) on the command line
+  (`node/bin/hearth-mine.js:109`), a percentage slider in the desktop app
+  (`app-desktop/ui/index.html:100-101`), and it is enforced in one place for both
+  (`node/src/mine/session.js:346`).
+
+What did **not** survive, because both were properties of a browser tab and nothing
+replaces them:
+
+- the **background-tab trickle** that clamped a hidden tab to 15% effort;
+- **pause on battery**. This relied on the Battery Status API, which is Chromium-only
+  (Firefox and Safari removed it), so it was never universal even in the browser. **The
+  desktop miner and `hearth-mine` have no power awareness at all** — they have a duty
+  cycle and nothing more.
 
 ## What is still design
 
@@ -112,16 +124,23 @@ None of the following exists in this repository. Do not describe them as feature
 - **A non-outsourceable puzzle** — see §2 above.
 - **A RandomX-class VM** — see §1 above. Not scheduled.
 
-## Mining in a browser
+## Mining as a light client
 
-`web/mine.html` is a real miner, not a demo: the same Homefire the node runs,
-hashing in a pool of Web Workers, submitting blocks to a live chain.
+> **There is no browser miner any more.** `web/mine.html` and `web/assets/mining/` were
+> deleted on 2026-08-04 (`48bc28a`). Mine with `node/bin/hearth-mine.js` on the command
+> line, the desktop app in `app-desktop/` (Tauri; macOS, Windows, Linux), or
+> `hearthd --evm --mine` if you want to validate the chain as well.
+>
+> It was removed rather than fixed because it had spent its whole life signing proofs in
+> a 64-byte form while the node required the 65-byte recoverable form, so **every block
+> it ever found was answered `bad signature`** — indistinguishable from bad luck. The
+> defect was eventually fixed, but into a tree nothing ran, which is what settled the
+> case for deleting it.
 
-**Why a browser can do this at all.** The winner must sign the digest with the key
-the coinbase pays, so a browser has to hold its own key — which it already does,
-in the wallet. The node hands out a candidate built for *your* public key and
-keeps the transactions; you return a nonce, a digest and a signature. Your
-private key never leaves the page.
+**Why a light client can do this at all.** The winner must sign the digest with the key
+the coinbase pays, so the miner has to hold its own key. The node hands out a candidate
+built for *your* public key and keeps the transactions; you return a nonce, a digest and
+a signature. Your private key never leaves the machine.
 
   GET  /mining/template?pub=<65-byte uncompressed secp256k1, hex>
                                             → header core, target, PoW params,
@@ -138,20 +157,23 @@ The node cannot mine on your behalf and cannot take work built for your key.
 That is a real guarantee about *this* endpoint; it is not a guarantee that no
 pool can exist (§2).
 
-**Why it is not slow.** One attempt is ~8,450 SHA-256 rounds — 8,192 to fill the
-scratchpad, 256 to walk it. `crypto.subtle.digest` is async, so WebCrypto would
-mean thousands of promises per nonce. `web/assets/mining/sha256.js` is a
-synchronous implementation that allocates nothing in the hot path, and
-`homefire.js` keeps one scratchpad across attempts. Measured at the dev params
-(64 KiB / 256 steps), that is **~225 H/s per thread — about 1.37× the node's own
-native-crypto implementation**, because `createHash`'s per-call overhead
-dominates when you need thousands of calls.
+**What one attempt costs.** ~8,450 SHA-256 rounds — 8,192 to fill the scratchpad, 256 to
+walk it. That number is a property of the parameters, not of any one implementation, and
+it is why the hot path matters more than the language.
 
-**Politeness, concretely.** An effort slider sets a duty cycle; workers sleep
-proportionally between batches rather than pinning a core. A hidden tab drops to
-a trickle, and an unplugged laptop stops entirely where the browser will say so.
-The loop yields for a second reason too: a Worker that never yields cannot
-receive `postMessage`, so it could not be stopped or handed new work.
+> **A measurement that no longer has a subject.** This section used to report ~225 H/s
+> per thread for the browser's synchronous SHA-256, "about 1.37× the node's own
+> native-crypto implementation", because `crypto.subtle.digest` is async and WebCrypto
+> would have meant thousands of promises per nonce. Both the module and the figure went
+> with `web/`. **It is not carried over to the light miners**, which use the node's own
+> `createHash` path and have never been benchmarked against that number. Anyone wanting
+> a current figure has to measure one.
+
+**Politeness, concretely.** The effort setting is a duty cycle: the miner sleeps
+proportionally between batches rather than pinning a core
+(`node/src/mine/session.js:346`). The loop yields for a second reason too — a grind that
+never yields cannot notice a stop request or take new work. The hidden-tab trickle and
+the stop-on-battery behaviour were browser-tab properties and did not survive; see §4.
 
 **Correctness.** A digest that differs from the node's in one bit would mine
 nothing while looking busy for hours. `node/test/browser-pow.js` compares the two
@@ -215,14 +237,15 @@ key.
   the protocol prevents one from being built — a pool would hand out work under
   its own key and pay hashers off chain. What consensus *does* guarantee is that
   work handed to you under your own key cannot be taken from you.
-- **Will it drain my battery?** The browser miner pauses on battery where the
-  browser reports power state, and throttles to your effort setting otherwise.
-  `hearthd --mine` has a duty-cycle throttle and no power awareness at all.
+- **Will it drain my battery?** It will use whatever share of a core you give it and
+  **nothing here is power-aware.** `hearth-mine`, the desktop app and `hearthd --mine`
+  all have a duty-cycle throttle and no power awareness at all. The pause-on-battery
+  behaviour belonged to the browser miner, which is gone — set the throttle down, or
+  stop it, when you are unplugged.
 - **How do I start?** Easiest is the desktop app (`app-desktop/`): it brings its
   own runtime and asks for a passphrase. Otherwise `hearth-mine --url <node>` on
-  the command line, `web/mine.html` in a browser, or `hearthd --evm --mine` if you
-  want to validate the chain yourself as well. There is no WASM light-miner and
-  never was — this line used to promise one in `web/wallet.html`.
+  the command line, or `hearthd --evm --mine` if you want to validate the chain
+  yourself as well. **There is no browser miner and no WASM light-miner.**
 - **Do I have to trust the node I mine against?** For *validity*, yes: a light
   miner holds no chain, so it cannot tell whether the work is on the network
   everyone else is on. Point it at a node you trust — your own, ideally. For
@@ -231,8 +254,17 @@ key.
 
 ## Production vs. proof-of-concept
 `node/src/pow.js` is the algorithm the chain actually runs, and
-`web/assets/mining/homefire.js` is its conformance-tested browser twin. The JS in
-`proto/` is an earlier sketch of the same memory-hard core.
+and there is now **only one implementation of it in this repository**. The
+conformance-tested browser twin (`web/assets/mining/homefire.js`) and the CI suites that
+compared them digest-for-digest — `node/test/browser-pow.js` and
+`node/test/browser-proof.js` — were deleted with `web/` in `48bc28a`. The JS in `proto/`
+is an earlier sketch of the same memory-hard core and is not conformance-tested.
+
+> **This is a real reduction in coverage, and it should be named rather than glossed.**
+> Homefire no longer has a second implementation checking it inside this repository. The
+> remaining cross-implementation check is `rust/hearthd/src/pow.rs`, and that one is
+> **known to diverge** — it omits the coinbase pubkey from the seed, so it computes a
+> different digest for the same header.
 
 `rust/hearthd/src/pow.rs` is **not** a second implementation of consensus: it
 omits the coinbase pubkey from the seed, so it computes a different digest for

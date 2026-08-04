@@ -38,40 +38,69 @@ promise."* When something is pre-mainnet, it says so in the same breath as the
 claim, not in a footnote.
 
 ## Palette
-**One substrate, one accent.** The darks, the type colours, the hairlines and the
-radii are the CloudsForge house tokens from `@cloudsforge/ui`'s `tokens.css` — the
-same ones every sibling product uses. The fire on top of them is Hearth's accent,
-declared once in the surface registry (`@cloudsforge/shared/products`, `key:
-'crypto'`) and selected by putting `data-cf-product="crypto"` on `<html>`.
 
-Nothing in this repository declares an ember of its own. `site/src/index.css` and
-`web/assets/styles.css` only *map* the shared tokens onto the names their markup
-already used.
+> **The CSS that this section used to describe is not in this repository any more.**
+> `web/assets/styles.css` and `site/src/index.css` were deleted on 2026-08-04
+> (`48bc28a`). Nothing here declares, maps or ships a design token. **The tokens are
+> real, but they live in `@cloudsforge/ui`** — `packages/ui/src/tokens.css` in
+> [`micro-ui`](https://github.com/cloudsforge-online/micro-ui) — and that package is
+> the only thing that should be cited for a value.
+
+**One substrate, one accent.** The darks, the type colours, the hairlines and the radii
+are the CloudsForge house tokens, the same ones every sibling product uses. The fire on
+top of them is the product accent, declared once in the surface registry
+(`@cloudsforge/ui`'s `src/surfaces.ts`) and selected by a `data-cf-product` attribute
+on `<html>`.
+
+> ### Three claims in this file were wrong, and they are corrected below
+>
+> 1. **The accent is not `#ff5a1e`.** That value is on the estate's `RETIRED_ACCENTS`
+>    list (`ui/packages/ui/src/surfaces.ts:193`), which exists so a retired colour can
+>    "never reappear anywhere in the registry". It was retired because the switcher
+>    could not tell Hearth's orange from the company ember `#e8622c` — dE 4.1 (`:132`).
+> 2. **There is no `crypto` product key.** Hearth is the **`network`** surface —
+>    `key: 'network'`, `name: 'Forge Network'`, `verb: 'Mine'`
+>    (`ui/packages/ui/src/surfaces.ts:235-247`). The selector is
+>    `data-cf-product="network"` (`ui/packages/ui/src/tokens.css:519`).
+> 3. **The registry is not `@cloudsforge/shared/products`.** No such package exists in
+>    the estate. It is `@cloudsforge/ui`.
+
+Hearth's accent, as the registry actually declares it
+(`ui/packages/ui/src/tokens.css:519-525`):
 
 | Role | Token | Resolves to | Use |
 |---|---|---|---|
-| Page | `--cf-bg` | `#0e0c0a` | the coal-dark ground |
-| Raised | `--cf-bg-raised` | `#141110` | panels, menus |
-| Sunken | `--cf-bg-sunken` | `#0b0908` | code blocks, scrollbar track |
-| Surfaces | `--cf-ash-800` … `--cf-ash-500` | `#1b1710` → `#493c2d` | cards, borders, dividers |
-| Text | `--cf-fg` | `#ece5d6` | body and headings (*ash*) |
-| Text, dim | `--cf-fg-dim` | `#b7ae9b` | secondary prose |
-| Text, mute | `--cf-fg-mute` | `#8e866f` | eyebrows, labels (*soot*) |
-| **Accent** | `--cf-accent` | **`#ff5a1e`** | the molten ember — buttons, focus, the one bright thing |
-| Accent hover | `--cf-accent-hover` | `#ff8a3d` | hover, emphasis |
-| Accent ink | `--cf-accent-ink` | `#1a0d05` | text laid on an ember fill |
+| Page | `--cf-bg` | `#0e0c0a` | the coal-dark ground (`--cf-ash-900`, `tokens.css:126`) |
+| Raised | `--cf-bg-raised` | `#141110` | panels, menus (`--cf-ash-850`, `:127`) |
+| Sunken | `--cf-bg-sunken` | `#0b0908` | code blocks, scrollbar track (`--cf-ash-950`, `:125`) |
+| Surfaces | `--cf-ash-800` … `--cf-ash-500` | `#1b1710` → `#493c2d` | cards, borders, dividers (`:128`, `:131`) |
+| Text | `--cf-fg` | `#ece5d6` | body and headings (`--cf-bone`, `:134`) |
+| Text, dim | `--cf-fg-dim` | `#b7ae9b` | secondary prose (`:135`) |
+| Text, mute | `--cf-fg-mute` | `#8e866f` | eyebrows, labels (`:136`) |
+| **Accent** | `--cf-accent` | **`#d6412f`** | the ember — buttons, focus, the one bright thing |
+| Accent hover | `--cf-accent-hover` | `#ef5a45` | hover, emphasis |
+| Accent ink | `--cf-accent-ink` | `#0a0202` | text laid on an ember fill |
+| Accent **text** | `--cf-accent-text` | `#ff5b43` | accent-coloured *type*. `#d6412f` is 3.11:1 — the worst in the set — so type never uses the raw accent |
+| Accent glow | `--cf-accent-glow` | `rgba(214, 65, 47, 0.26)` | the hero glow |
 
-Two values are Hearth's own and are *not* registry tokens: **flame `#ffb648`** and
-**coal glow `#b62f18`**. They exist only as the two ends of the flame gradient —
-the `.text-ember-wash` heading treatment, the rising sparks, and the mark — so the
-accent has somewhere to burn to and cool into.
+**Use `--cf-accent-text`, not `--cf-accent`, for text.** That is not a preference: the
+registry records the raw accent at 3.11:1, below the contrast floor, and ships a
+separate token for type at 4.55:1.
 
-The signature gradient runs **flame → ember → coal glow** for anything "lit":
-emphasised display words, the mark, the hero glow.
+**A product accent is drawn as an outline, not as a fill with type on it**
+(`ui/packages/ui/src/tokens.css:515-518`).
 
-> An earlier version of this file documented a different palette — ember `#ff4d00`,
-> gold `#ffc24b`, cream `#f5ece0`, ink `#120d0a`. That was `web/`'s, it never
-> matched what the site shipped, and it is gone.
+> **Flame `#ffb648` and coal glow `#b62f18` no longer exist anywhere.** They were never
+> registry tokens — they were declared only in the two stylesheets that have been
+> deleted, as the ends of a flame gradient. A search of the estate finds neither value
+> in any `.css`, `.ts`, `.tsx` or `.svg`. **The flame → ember → coal-glow gradient this
+> file used to specify is therefore not implemented by anything.** Either it is
+> reintroduced in `@cloudsforge/ui` as real tokens, or it stops being described as
+> though it ships. It is recorded here as *removed*, not as *available*.
+
+> An earlier version of this file documented a different palette again — ember
+> `#ff4d00`, gold `#ffc24b`, cream `#f5ece0`, ink `#120d0a`. That was `web/`'s, it
+> never matched what the site shipped, and `#ff4d00` is also on `RETIRED_ACCENTS`.
 
 ## Type
 All three faces come from the shared tokens; the site loads them from Google Fonts.
@@ -82,31 +111,47 @@ All three faces come from the shared tokens; the site loads them from Google Fon
   (`--cf-font-mono`)
 
 ## Marks
-- **The mark** — `site/public/favicon.svg`, mirrored byte-for-byte at
-  `web/assets/favicon.svg`: a single flame in the flame → ember → coal-glow
-  gradient on a rounded coal square. It is the favicon everywhere, and the inline
-  `FlameMark` fallback in `site/src/components/Logo.tsx` draws the same shape.
-  There is exactly one Hearth mark; there used to be two.
-- **The lockup** — `web/assets/logo.svg`: a hearthstone arch (the home) cradling
-  that flame. Used at 24–120px in the explorer/wallet nav and in the README.
-- **Social card** — `site/public/og-hearth.png`, 1200×630, served at
-  `https://hearth.cloudsforge.online/og-hearth.png`. It is the `og:image` for
-  the site *and* for the explorer, wallet and merchant demo. **Never point
-  `og:image` at an SVG** — most scrapers will not render one, which is exactly
-  what these pages used to do.
-- **GitHub social preview** — `branding/social-hearth.png`, 1280×640. Same card
-  at the dimensions GitHub rejects anything else for. Uploaded by hand in repo
-  settings; it is never served.
+
+Everything below is in `branding/`, and that is now the whole of it — this repository
+serves no pages, so nothing here is referenced by a stylesheet or a `<link>` any more.
+
+- **The lockup** — `branding/logo.svg`: a hearthstone arch (the home) cradling the
+  flame. **It moved here from `web/assets/logo.svg` in `48bc28a` rather than being
+  deleted with the rest**, because it is the only vector source in the repository and
+  `app-desktop` generates its application icons from it.
+- **The raster marks** — `branding/mark-hearth.png`, `branding/hearth-logo.png`,
+  `branding/wordmark-hearth.png`, `branding/favicon-hearth.png`.
+- **Social card** — `branding/og-hearth.png`, 1200×630. It **is** still in this
+  repository, but nothing in this repository serves it; it is no longer the `og:image`
+  of anything here, because the pages that set that tag are gone. The rule it was
+  written for still holds wherever it is used: **never point `og:image` at an SVG** —
+  most scrapers will not render one.
+- **GitHub social preview** — `branding/social-hearth.png`, 1280×640. Same card at the
+  dimensions GitHub rejects anything else for. Uploaded by hand in repo settings; it is
+  never served.
+
+> **There is no SVG favicon in this repository.** `site/public/favicon.svg` and its
+> byte-for-byte mirror `web/assets/favicon.svg` were deleted, as was the inline
+> `FlameMark` fallback in `site/src/components/Logo.tsx`. `branding/favicon-hearth.png`
+> is a raster, not the vector source. The mark's vector form now exists only inside
+> `branding/logo.svg` and in the generated assets held by
+> [`micro-brand`](https://github.com/cloudsforge-online/micro-brand).
 
 The mark, wordmark, favicon source and both cards are generated by `asset-forge`
 from the surface registry (`pnpm generate --track=brand`), not drawn by hand.
 
 ## Motion
-The core motif is a **living fire**: a gentle flicker and rising embers (`.flame`
-/ `.ember-dot` in `web/assets/styles.css`, ignited by `Hearth.igniteHearth`;
-`.spark` / `.flame-flicker` / `.ember-pulse` on the site). In the app the fire
-visibly grows with your mining activity — your contribution, made warm and
-visible. All motion respects `prefers-reduced-motion`.
+
+The core motif is a **living fire**: a gentle flicker and rising embers, and in a mining
+surface the fire grows with your activity — your contribution, made warm and visible.
+All motion must respect `prefers-reduced-motion`.
+
+> **This is now an intent, not a description of shipped code.** The classes that
+> implemented it — `.flame` and `.ember-dot`, ignited by `Hearth.igniteHearth`, and the
+> site's `.spark` / `.flame-flicker` / `.ember-pulse` — were declared in
+> `web/assets/styles.css` and `site/src/index.css`, both deleted in `48bc28a`. **No
+> stylesheet in this repository implements any of them.** Anything rebuilding this motif
+> is writing it fresh, against `@cloudsforge/ui`, not restoring something described here.
 
 ## Do / Don't
 - **Do** lean into warmth, home, and people-power.

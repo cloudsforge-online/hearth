@@ -255,8 +255,9 @@ Two further notes an integrator will hit:
 
 - The Commons address is **not checksum-valid** — it fails `isValidAddress`
   (`node/src/crypto.js:64-71`). It is a deliberately unspendable sink in the
-  UTXO model. The explorer's address search skips the checksum test for this
-  reason (`web/index.html:308-313`).
+  UTXO model. The deleted explorer's address search skipped the checksum test for
+  this reason; that page went with `web/` in `48bc28a`, so any replacement surface has
+  to rediscover the exception rather than inherit it.
 - Under the account model the Commons becomes a `0x…` address and this changes.
   **The replacement address has still not been chosen.** Phase 5 made that a
   genesis field (`commonsAddress` in `genesis.json`, defaulted from

@@ -43,7 +43,7 @@ Hearth local network is up.
 Try:
   curl -s localhost:8645/info
   cd node && node bin/hearth-cli.js --rpc http://localhost:8645 blocks 5
-  open web/index.html      (the explorer; append ?rpc=http://localhost:8645)
+  node bin/hearth-mine.js --url http://localhost:8645   (mine against it)
 
 Press Ctrl-C to stop.
 EOF

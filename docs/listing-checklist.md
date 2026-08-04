@@ -127,7 +127,7 @@ minimum set:
 | Total supply | a plain decimal number, no JSON wrapper, no units | 🟡 — `GET /supply/total` in [`../tools/explorer-api`](../tools/explorer-api). Written; suite green; no *public* chain to serve |
 | Circulating supply | total minus the Commons balance, per [`tokenomics.md`](tokenomics.md) §7 | 🟡 — `GET /supply/circulating`, same service. **Refuses rather than serving total** when the Commons address is unset |
 | Rich list / holder count | | ⬜ |
-| Block explorer, `0x`-native | address, tx, block, contract pages with search | 🟡 — **built** (`web/index.html` + `web/assets/explorer/`: decoded logs, revert reasons, contract disassembly, ERC-20s, `eth_getLogs` search, 147 self-test checks). **Not deployed against a chain, because there is none** |
+| Block explorer, `0x`-native | address, tx, block, contract pages with search | 🟡 — **built, but no longer here.** `web/` was deleted in `48bc28a`; the surface is [`micro-explorer-web`](https://github.com/cloudsforge-online/micro-explorer-web), which reads `micro-indexer` rather than `eth_*` and **has no contract disassembly**. The 147-self-test figure described the deleted page and is not carried over. **Not deployed against a chain, because there is none** |
 | Etherscan-compatible `/api` | `module=account&action=balance`, `module=stats&action=…`, `module=logs&action=getLogs` | 🟡 — [`../tools/explorer-api`](../tools/explorer-api), with the address index behind it. `account`, `contract`, `stats`, `transaction`, `logs` and `proxy`; 🚫 on B2/B3 to run |
 | Verified contract sources | source, ABI, compiler settings, constructor args | 🟡 — [`../tools/verify`](../tools/verify), which also speaks the API `forge verify-contract` speaks. 🚫 on B2/B3 |
 

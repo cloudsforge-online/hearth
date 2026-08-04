@@ -105,14 +105,14 @@ block reward and the fees — so it must be an account this chain can credit.
 becomes a secp256k1 signature.
 
 **Homefire is not changed by this.** The pad fill, the walk and the digest are
-untouched, as are LWMA and everything in `node/src/pow.js`. The browser miner has
-already moved (`web/assets/mining/miner.js:24-46`, `:252-253`) and
-`node/test/browser-pow.js` still passes digest-for-digest, which is the point:
-the hashing half was never in question.
+untouched, as are LWMA and everything in `node/src/pow.js`. The hashing half was never
+in question; only the key type changed.
 
-The wire form of the proof signature is named in exactly one place —
-`POW_SIG_FORM` (`web/assets/mining/miner.js`): `r || s || recoveryId`, 65 bytes.
-Settled, and checked rather than described: see §2.5.
+The wire form of the proof signature is `r || s || recoveryId`, 65 bytes, and it is now
+defined in exactly one place that is also the only implementation of it — `signProof`
+in `node/src/chain/header.js:213-223`. The `POW_SIG_FORM` constant that used to mirror
+it in the browser miner is gone, along with the miner
+(`48bc28a`). See §2.5.
 
 Reasoning: [`evm-spec.md`](evm-spec.md) §4.
 
@@ -282,12 +282,16 @@ a grep, not an investigation" — and it did not, because it was kept faithfully
 sync with the wrong answer. A constant that names a format is documentation, and
 documentation cannot be wrong loudly.
 
-The lesson is in the fix, not in the value. `proofSignature` is now exported from
-`web/assets/mining/miner.js` rather than inlined in `_submit`, purely so that it
-can be run outside a browser; `node/test/browser-proof.js` calls that function,
-signs a real winning digest and requires the node's own template flow to produce
-a block from it. Getting the two out of step again fails a test rather than a
-miner.
+The lesson is in the fix, not in the value: a format must be **executed** by the test,
+not described by a constant. The fix at the time was to export `proofSignature` from the
+browser miner so `node/test/browser-proof.js` could call the browser's own code, sign a
+real winning digest and require the node's template flow to accept the block.
+
+**That machinery is gone, and so is the failure mode.** The browser miner and both
+suites were deleted in `48bc28a`. There is now exactly one implementation of the proof
+signature — `HDR.signProof` — and every miner calls it (`node/src/chain/miner.js:85`,
+`node/src/mine/session.js:247`). Two implementations cannot drift when there is one.
+The principle still applies to the next port anyone writes.
 
 ### 2.6 `SPARKS_PER_EMBER` is still 1e8
 

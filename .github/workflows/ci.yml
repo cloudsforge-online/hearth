@@ -37,15 +37,19 @@ jobs:
       #   conformance --selftest              proves the harness can still FAIL;
       #                                       a harness that cannot is worse than none
       #   unit / e2e / records                the UTXO-era chain rules
-      #   browser-pow                         the browser miner reimplements SHA-256
-      #                                       and Homefire to hash in a Worker; one
-      #                                       differing bit and it mines nothing
-      #                                       while looking busy
-      # The browser wallet's key sealing is NOT in this list any more. It used
-      # to be (`keystore`), against the Ed25519 keystore that the account-model
-      # rebuild superseded; that module is deleted and the suite with it. The
-      # current keystore is covered by `wallet-selftest` in the `web` job.
-      #   mining-api / p2p-fork               two real nodes on real sockets:
+      # `browser-pow` and `mining-api` are NOT in this list any more. They tested
+      # web/assets/mining — the browser miner — and were deleted with it on
+      # 2026-08-04. The node's own /mining/* path is still covered, by suites that
+      # test the node rather than a browser port of it:
+      #   mine-session / miner-cli /          the light-miner path: templates,
+      #   mining-budget / evmchain            submission, staleness, refusals
+      # The browser wallet's key sealing is not here either. It was `keystore`,
+      # against the Ed25519 keystore the account-model rebuild superseded; that
+      # module is gone and the suite with it. The current keystore is covered
+      # OUTSIDE this repository — micro-hearth-wallet-core's test/oracle-keystore
+      # seals a record here and opens it with node/src/cli/keystore.js, and the
+      # reverse, in-process. See the `web` job below.
+      #   p2p-fork                            two real nodes on real sockets:
       #                                       partition, compete, reconnect, reorg
       #   pow-params                          what the PoW parameters COST. The
       #                                       production sizes in params.js had
@@ -124,8 +128,9 @@ jobs:
           fi
           echo "ok: no committed API tokens found"
       # Matches a PEM header followed by real base64 body, not the header alone.
-      # web/ builds and accepts PEM for wallet key export/import, so the bare
-      # header appears in source as a string literal and an input placeholder —
+      # The tree that made this necessary (web/, which built and accepted PEM for
+      # wallet key export/import) is gone, but the rule stays: a bare PEM header
+      # can legitimately appear in source as a string literal or a placeholder —
       # a check that flags those gets muted, which is how a real key eventually
       # slips through.
       - name: No private keys committed
