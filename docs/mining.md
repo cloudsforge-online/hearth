@@ -157,6 +157,35 @@ The node cannot mine on your behalf and cannot take work built for your key.
 That is a real guarantee about *this* endpoint; it is not a guarantee that no
 pool can exist (§2).
 
+**A NEW TEMPLATE IS NOT NEW WORK, and a miner that assumes otherwise stops
+mining.** Building a candidate executes a full block, so the node memoizes it on
+(tip, mempool version, coinbase key) — `node/src/chain/miner.js:62-77`. While the
+tip is still, every `GET /mining/template` therefore returns a **byte-identical
+`coreHash` with a frozen `timestamp`**; only `templateId` and `expiresAt` change.
+A template lives 120 s, so a miner re-fetches roughly every two minutes and gets
+the same work back.
+
+The seed is `h(coreHash, nonce, coinbasePub)`, so a given nonce over a given
+`coreHash` has exactly one digest, for ever. **Restarting the nonce search on a
+re-fetch therefore re-tests nonces already rejected, and if no winner lies in the
+range one window covers, that miner can never find the block** — at a full, real,
+correctly reported hashrate, with no error, no refusal and nothing in any log. It
+is not a slowdown; it is a permanent stop that looks exactly like bad luck, and
+restarting the process only re-treads the same range. This is what `hearth-mine`
+did in production between heights 11 and 21 on both networks.
+
+So a light miner must:
+
+* **carry its nonce across a re-fetch of unchanged work** — compare `coreHash`,
+  not `templateId`, and only move the search when the hash moves;
+* **begin a fresh search at a random offset, not at 0**, so that a restarted
+  process — or a second machine holding the same key — does not repeat a search
+  that has already failed.
+
+`node/src/mine/session.js` does both (`NONCE_SPACE`), and
+`node/test/mine-session.js` holds it there with a template that is deliberately
+re-issued unchanged and a winning nonce computed before the run.
+
 **What one attempt costs.** ~8,450 SHA-256 rounds — 8,192 to fill the scratchpad, 256 to
 walk it. That number is a property of the parameters, not of any one implementation, and
 it is why the hot path matters more than the language.

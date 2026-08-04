@@ -350,6 +350,149 @@ function fakeFetch(handler) {
   }
 
   // ==========================================================================
+  group('WORK THAT HAS NOT CHANGED IS NOT SEARCHED FROM THE SAME NONCE AGAIN');
+  // THE DEFECT THIS SUITE EXISTS FOR. Both operator miners mined a burst of
+  // blocks and then stopped forever at a real, reported hashrate, at the EASIEST
+  // target the retarget rule allows (params.js MAX_TARGET, difficulty 256), with
+  // no error, no refusal and no expiry anywhere in the logs — and restarting the
+  // process changed nothing.
+  //
+  // The cause is an interaction, which is why neither half looks wrong alone:
+  //
+  //   THE NODE MEMOIZES THE CANDIDATE on (tip, mempool version, coinbase key)
+  //   — src/chain/miner.js:62-77 — because /mining/template is unauthenticated
+  //   and building one EXECUTES a full block. So while the tip is still, every
+  //   request returns a byte-identical `coreHash` with a frozen `timestamp`;
+  //   only `templateId` and `expiresAt` change. That is asserted below rather
+  //   than assumed.
+  //
+  //   THE MINER RESTARTED ITS SEARCH AT NONCE 0 on every re-fetch, and a
+  //   template expires every 120 s (src/chain/miner.js:35), so it re-fetched
+  //   every 115 s (EXPIRY_MARGIN_MS). The seed is h(coreHash, nonce,
+  //   coinbasePub) (src/pow.js:56-58): the same nonce over the same coreHash has
+  //   the same digest, forever. So the miner re-tested exactly the nonces it had
+  //   already rejected, at full speed, and if no winner lay in the range one
+  //   window covers it could NEVER find one. Six blocks a second of honest work,
+  //   zero blocks, permanently — and a restart re-treads the same range.
+  //
+  // The check is deterministic, not statistical: the first winning nonce from a
+  // pinned start is COMPUTED first, and the template is then made to expire
+  // after a third of the way to it. Nothing here can pass by luck, and nothing
+  // here can pass vacuously — a specific nonce must come back from a submission
+  // that only happens on a real win.
+  // ==========================================================================
+  {
+    /* Two issues from a still tip. The node's own behaviour, checked, because
+     * every line below depends on it. */
+    const t1 = fixtureNode.templates.issue(minerKey.publicKey.toString('hex'));
+    await sleep(1100);                          // long enough for a second to tick over
+    const t2 = fixtureNode.templates.issue(minerKey.publicKey.toString('hex'));
+    assert(t1.coreHash === t2.coreHash,
+      'a node re-issues the SAME work while its tip is still — identical core hash');
+    assert(t1.timestamp === t2.timestamp && t1.templateId !== t2.templateId,
+      '— same frozen timestamp under a new template id, so "fresh work" is not fresh');
+
+    const POW = require('../src/pow');
+    const work = t2;
+
+    /* What one evaluation costs HERE — a CI runner and a laptop differ by 3x, and
+     * the window below has to be a number of attempts, not a number of ms. */
+    const c0 = Date.now();
+    const CAL = 15;
+    for (let i = 0; i < CAL; i++) POW.homefireHash(POW.powSeed(work.coreHash, 9e6 + i, work.coinbasePub));
+    const perMs = (Date.now() - c0) / CAL;
+
+    /* A START WITH NO WINNER NEAR IT, and this is the whole of what makes the
+     * check deterministic rather than a coin toss. The distance to the first
+     * winner is geometric with mean 256, so a pinned start can happen to have one
+     * ten nonces away — and then a miner that restarts its search finds it inside
+     * the first window and the bug passes. So: take the first winner from a
+     * candidate start, and if it is too close to be a real test, step the start
+     * past it and look again. What comes out is a start with NO winner in
+     * [start, winner), so a search that keeps restarting inside that range cannot
+     * succeed by luck. Bounded on both axes; at difficulty 256 the loop needs a
+     * second or two. */
+    const MIN_DISTANCE = 90;
+    let START = 1_000_000, winner = null;
+    const wins = n => POW.meetsTarget(
+      POW.homefireHash(POW.powSeed(work.coreHash, n, work.coinbasePub)).toString('hex'), work.target);
+    for (let round = 0; round < 25 && winner === null; round++) {
+      let w = null;
+      for (let n = START; n < START + 6000 && w === null; n++) if (wins(n)) w = n;
+      if (w === null) break;                    // ~1-in-10^10 at difficulty 256
+      if (w - START >= MIN_DISTANCE) winner = w; else START = w + 1;
+    }
+    assert(winner !== null && winner - START >= MIN_DISTANCE,
+      `the first winning nonce at or after ${START} is ${winner}, ${winner - START} away `
+      + `(difficulty ${HDR.difficulty(work.target)}) — and nothing before it wins`);
+
+    /* A window that reaches a THIRD of the way there. A miner that restarts its
+     * search cannot ever arrive; one that carries it arrives on the third fetch. */
+    const reach = Math.max(4, Math.floor((winner - START) / 3));
+    const windowMs = Math.round(perMs * reach) + 5000;   // + EXPIRY_MARGIN_MS
+
+    let fetches = 0, submittedNonce = null, submits = 0;
+    const backwards = [];
+    const f = fakeFetch(async (url, init) => {
+      if (url.includes('/mining/template')) {
+        fetches++;
+        // Exactly what the node does: same candidate, new id, new expiry.
+        return { status: 200, body: { ...work, templateId: 'id' + fetches, expiresAt: Date.now() + windowMs } };
+      }
+      submits++;
+      submittedNonce = JSON.parse(init.body).nonce;
+      return { status: 200, body: { ok: true, height: work.height, id: 'a1b2c3d4e5f6' } };
+    });
+
+    const sess = new MineSession({ url: 'http://frozen.invalid', key: minerKey, throttle: 1, fetch: f, retryMs: 10, startNonce: START });
+    /* The search position must never move BACKWARDS while the work is unchanged.
+     * Sampled on the same loop the miner runs on, so it sees every re-fetch. */
+    let last = -1;
+    const watch = setInterval(() => {
+      if (sess.nonce < last) backwards.push({ from: last, to: sess.nonce });
+      last = sess.nonce;
+    }, 20);
+    const running = sess.run();
+    const deadline3 = Date.now() + 180_000;
+    while (sess.found < 1 && Date.now() < deadline3) await sleep(50);
+    clearInterval(watch);
+    sess.stop();
+    await running;
+
+    assert(fetches >= 3, `the template expired and was re-fetched ${fetches} times, unchanged each time`);
+    assert(sess.found === 1, `IT STILL FOUND THE BLOCK — ${sess.found} found across ${fetches} identical templates`);
+    assert(submits === 1 && submittedNonce === winner,
+      `at nonce ${submittedNonce}, which is the winner computed before the run (${winner}) — `
+      + `${winner - START} evaluations past a window that only reaches ${reach}`);
+    assert(backwards.length === 0,
+      `and the search never went backwards over unchanged work (${backwards.length} restarts observed)`);
+  }
+
+  // ==========================================================================
+  group('…and a RESTARTED miner does not re-tread the range it already rejected');
+  // The operator restarted the stalled miner and it still produced nothing. It
+  // could not have: a fresh process began at nonce 0 over the same frozen
+  // coreHash, so it re-evaluated the identical digests and rejected them again.
+  // ==========================================================================
+  {
+    const work = fixtureNode.templates.issue(minerKey.publicKey.toString('hex'));
+    const starts = [];
+    for (let i = 0; i < 3; i++) {
+      const f = fakeFetch(async () => ({ status: 200, body: { ...work, expiresAt: Date.now() + 60_000 } }));
+      const sess = new MineSession({ url: 'http://frozen.invalid', key: minerKey, fetch: f, retryMs: 10 });
+      const running = sess.run();
+      while (!sess.work) await sleep(5);
+      starts.push(sess.nonce);
+      sess.stop();
+      await running;
+    }
+    assert(new Set(starts).size === 3,
+      `three fresh sessions on IDENTICAL work began at three different nonces (${starts.join(', ')})`);
+    assert(starts.every(n => Number.isInteger(n) && n >= 0 && Number.isSafeInteger(n + 1e9)),
+      '— each a non-negative integer the node will accept (src/chain/miner.js:213)');
+  }
+
+  // ==========================================================================
   group('it refuses to be built without the two things it cannot work without');
   // ==========================================================================
   {

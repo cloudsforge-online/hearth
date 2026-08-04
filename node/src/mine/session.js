@@ -53,6 +53,32 @@ const GIVE_UP_AFTER_REFUSALS = 5;
 /** Take fresh work this long before a template expires, rather than after. */
 const EXPIRY_MARGIN_MS = 5000;
 
+/**
+ * Where a search over BRAND NEW work begins. Not zero, and this is the whole
+ * reason the miner works at all.
+ *
+ * A node's template is MEMOIZED on (tip, mempool version, coinbase key) —
+ * src/chain/miner.js:62-77 — so while the tip is still, every request returns a
+ * byte-identical `coreHash` with a frozen `timestamp`; only `templateId` and
+ * `expiresAt` differ. The seed is `h(coreHash, nonce, coinbasePub)`
+ * (src/pow.js:56-58), so a given nonce over a given template has ONE digest,
+ * forever. Re-searching a range already searched is therefore not merely
+ * wasteful, it is guaranteed to fail.
+ *
+ * That makes the starting point load-bearing in two places. `run()` below keeps
+ * the position across a re-fetch of unchanged work; this constant covers the
+ * other one — a RESTART. Beginning every process at 0 means a miner that was
+ * killed and started again re-treads exactly the nonces it has already rejected
+ * and finds nothing, which is what the operator saw when restarting the stalled
+ * miner changed nothing. The same applies to two machines sharing one key: at 0
+ * they duplicate each other's search, and from a random offset they do not.
+ *
+ * 2^32 is picked to stay far inside a safe integer even after days of grinding,
+ * and the node accepts any non-negative integer nonce (src/chain/miner.js:213;
+ * the header field is 8 bytes, src/chain/header.js:95-99).
+ */
+const NONCE_SPACE = 2 ** 32;
+
 class MineSession {
   /**
    * @param {object} o
@@ -60,6 +86,11 @@ class MineSession {
    * @param {object} o.key        a coinbase key: { privateKey, publicKey, addressHex }
    * @param {number} [o.throttle] share of a core, 0..1
    * @param {function} [o.fetch]  injected for tests; defaults to global fetch
+   * @param {number} [o.startNonce] where to begin each fresh search. Defaults to
+   *   a random point in the nonce space, which is what a restarted process needs
+   *   (see NONCE_SPACE). Pinning it makes the search reproducible — which is how
+   *   test/mine-session.js can assert a specific winning nonce, and how two
+   *   machines sharing one key could be given disjoint ranges on purpose.
    */
   constructor(o) {
     if (!o || !o.url) throw new Error('MineSession needs a url to take work from');
@@ -71,6 +102,7 @@ class MineSession {
     this._fetch = o.fetch || ((...a) => globalThis.fetch(...a));
     this._retryMs = o.retryMs === undefined ? RETRY_MS : o.retryMs;
     this._giveUpAfter = o.giveUpAfterRefusals === undefined ? GIVE_UP_AFTER_REFUSALS : o.giveUpAfterRefusals;
+    this._startNonce = Number.isInteger(o.startNonce) && o.startNonce >= 0 ? o.startNonce : null;
 
     this._handlers = new Map();
     this._running = false;
@@ -86,6 +118,12 @@ class MineSession {
     this.earnedWei = 0n;
     this.reachable = null;          // null = not tried yet
     this.work = null;
+
+    /* WHERE THE SEARCH IS, not where this template's search is. It survives a
+     * re-fetch of work that has not changed, and only moves back to a fresh
+     * random offset when the `coreHash` does — see NONCE_SPACE and `run()`. */
+    this.nonce = 0;
+    this._ground = null;            // the coreHash `this.nonce` is a position in
 
     this._hashes = 0;
     this._rateStart = 0;
@@ -304,7 +342,11 @@ class MineSession {
    * (src/minerloop.js), because this process still has to run its HTTP calls and
    * whatever UI is watching it. A fixed batch of nonces is a variable and
    * unbounded amount of blocked event loop when one nonce is a full evaluation:
-   * the fixed batch of 150 was 1.43 s per turn, and the slice is 25 ms.
+   * the fixed batch of 150 was 1.43 s per turn, and the slice is SLICE_MS.
+   *
+   * THE NONCE BELONGS TO THE SESSION, NOT TO THE TEMPLATE, and that distinction
+   * is the difference between a miner that mines and one that stops. See
+   * NONCE_SPACE above for why.
    */
   async run() {
     if (this._running) throw new Error('this session is already running');
@@ -313,24 +355,31 @@ class MineSession {
     this._rateStart = Date.now();
     this._emit('started', { address: this.key.addressHex, url: this.base, throttle: this.throttle });
 
-    let nonce = 0;
     try {
       for (;;) {
         if (this._stopping) break;
         if (!this.work) {
           this.work = await this._fetchWork();
-          nonce = 0;
           if (!this.work) {
             if (this._stopping) break;
             await sleep(this._retryMs);
             continue;
           }
+          /* ONLY MOVE THE SEARCH WHEN THE WORK ACTUALLY MOVED. A template
+           * expiring is not new work: the node re-issues the same memoized
+           * candidate under a new id, so restarting at 0 here re-tested the
+           * exact nonces already rejected — every 115 s, forever, at a full and
+           * entirely real hashrate. That is the stall this compares away. */
+          if (this.work.coreHash !== this._ground) {
+            this._ground = this.work.coreHash;
+            this.nonce = this._startNonce === null ? Math.floor(Math.random() * NONCE_SPACE) : this._startNonce;
+          }
         }
         if (Date.now() > (this.work.expiresAt || 0) - EXPIRY_MARGIN_MS) { this.work = null; continue; }
 
         const t = this.work;
-        const spent = this._grind(t, nonce);
-        nonce = spent.nextNonce;
+        const spent = this._grind(t, this.nonce);
+        this.nonce = spent.nextNonce;
 
         const dt = (Date.now() - this._rateStart) / 1000;
         if (dt >= 1) {
@@ -381,4 +430,4 @@ class MineSession {
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-module.exports = { MineSession, RETRY_MS, GIVE_UP_AFTER_REFUSALS, EXPIRY_MARGIN_MS };
+module.exports = { MineSession, RETRY_MS, GIVE_UP_AFTER_REFUSALS, EXPIRY_MARGIN_MS, NONCE_SPACE };
