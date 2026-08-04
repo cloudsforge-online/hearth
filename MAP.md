@@ -1259,24 +1259,33 @@ What is red now:
 | --- | --- | --- |
 | Node reference client | `node/test/mine-session.js` — `FAIL — 68/71 checks`, on the group *"but real refusals do stop it, rather than burning a core into a wall"* | **No — it is a flaky deadline.** The check races a real proof-of-work search against a fixed 20-second wall clock (`node/test/mine-session.js:285`). A win is geometrically distributed, so on a slow runner the search simply has not finished and the assertion reports `TIMED OUT`. The sibling group immediately above it allows 120 seconds for the same kind of wait (`:262`) |
 
-**Both of the failures below are intermittent, and that is the diagnosis, not an
-excuse.** Three consecutive local runs of `npm test` gave: `mine-session` red, then
-fully green, then fully green (exit 0). Nothing in the mining path changed between
-them. **These are wall-clock deadlines racing a geometrically distributed
-proof-of-work search, so the same code passes or fails on the speed of the machine
-and the luck of the nonce.**
+**It was a deadline, not a defect, and it is fixed.** `node/test/mine-session.js`
+raced a **real proof-of-work search against a 20-second clock**, and it had to win
+five times before its assertion could hold (`sess.refused === 5`). A win at
+`MAX_TARGET` is 256 expected evaluations and the distribution is geometric, so on a
+slow runner the search had simply not finished — and the test then reported the
+session as "mining forever" when it was still working.
 
-| Suite | The deadline | Why it can lose |
-| --- | --- | --- |
-| `node/test/mine-session.js:285` | 20 s for a real PoW win plus two refusals | The group immediately above allows **120 s** for the same class of wait (`:262`), and its comment says explicitly to "WAIT FOR THE EVENT, NOT FOR THE CLOCK" (`:257-261`) — advice this assertion does not take |
-| `node/test/bench/block-execution.js:219` | widening the state trie 5× must cost **< 1.15×** the time | Measured 1.18× on one local run and passed on the next. It is a performance ratio on whatever hardware runs it, not a consensus assertion |
+The signature was unmistakable once both sides were measured: **red on CI twice
+running (30918746545, 30922381837) while passing locally on two runs out of three**,
+with nothing in `node/src/mine/session.js` differing between them. The failing count
+even varied between runs — "after exactly 2 refusals", then "3" — because the message
+interpolates however far the search had got.
 
-**Neither is a defect in the node**, and neither is fixed here — this is a
-documentation pass, and retuning a mining test's deadline is a change to what that
-test guarantees, which belongs to whoever owns that suite. They are recorded so the
-next person reads a red `main` as *known and diagnosed* rather than as the
-documentation being wrong again. The obvious fix for the first is to give it the same
-120-second budget its sibling already uses.
+The deadline is now **120 seconds, the same budget the group immediately above it
+already allows** (`:262`), whose own comment states the rule this assertion was not
+taking: *wait for the event, not for the clock* (`:257-261`). The guarantee is
+unchanged — it still distinguishes a session that stops itself after five refusals
+from one that grinds forever.
+
+> **The benchmark beside it is healthy, and an earlier note here was wrong about
+> that.** `node/test/bench/block-execution.js:219` asserts that widening the state
+> trie 5× costs **< 1.15×** the time. It measured 1.18× once and was briefly recorded
+> here as a second flaky threshold — but that reading was taken while two other test
+> suites were running on the same machine. Four clean sequential runs measured
+> **0.94×, 1.05×, 1.03× and 1.00×**. The bound is not marginal; the measurement was
+> contended. Recorded because a wrong diagnosis left standing is worse than no
+> diagnosis.
 
 **A red step used to disable the steps after it.** Actions skips the rest of a
 job at the first failure, so for as long as the explorer API step was red,

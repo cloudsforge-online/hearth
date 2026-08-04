@@ -282,7 +282,23 @@ function fakeFetch(handler) {
     });
     const sess = new MineSession({ url: 'http://wall.invalid', key: minerKey, fetch: f, retryMs: 10 });
     const l = record(sess);
-    const why = await Promise.race([sess.run(), sleep(20_000).then(() => 'TIMED OUT')]);
+    /* THE SAME 120 SECONDS THE GROUP ABOVE ALLOWS, AND FOR THE SAME REASON.
+     *
+     * This raced a real proof-of-work search against a 20-second clock, and it had to
+     * win FIVE times before the assertion below could hold — `sess.refused === 5`. A
+     * win at MAX_TARGET is 256 expected evaluations and the distribution is geometric,
+     * so on a slow runner the search simply had not finished and the session was
+     * reported as "mining forever" when it was in fact still working.
+     *
+     * It failed that way on CI twice running (30918746545, 30922381837) while passing
+     * locally on two runs out of three, which is the signature of a deadline rather
+     * than a defect: nothing in src/mine/session.js differed between them.
+     *
+     * The guarantee is unchanged. This still distinguishes a session that stops itself
+     * after five refusals from one that grinds forever — it just stops calling a slow
+     * machine a broken one. :257-261 above already made this argument: wait for the
+     * event, not for the clock. */
+    const why = await Promise.race([sess.run(), sleep(120_000).then(() => 'TIMED OUT')]);
     assert(why !== 'TIMED OUT', 'it stops by itself rather than mining forever');
     assert(/refused/i.test(String(why)), `and says why — "${String(why).slice(0, 60)}"`);
     assert(sess.refused === 5, `after exactly ${sess.refused} refusals, not one and not fifty`);
