@@ -576,22 +576,38 @@ export async function run({ verbose = true } = {}) {
     ok(!mineNC.ok && !theirsNC.ok && mineNC.code === theirsNC.code,
       `a leading-zero nonce is refused by both, with the same code (${mineNC.code})`);
 
-    // --- the miner's proof signature ---
-    // web/assets/mining/miner.js signs the Homefire digest with the same module.
-    // Spec §4: Homefire is unchanged, the key it binds is not.
-    const { POW_SIG_FORM } = await import('./mining/miner.js').catch(() => ({ POW_SIG_FORM: null }));
+    /* --- the miner's proof signature ---
+     *
+     * The miner's OWN function, not a reconstruction of it. This block used to
+     * rebuild the wire format from `sign()` here and assert that the rebuilt
+     * thing was 64 bytes; it passed for as long as the miner was wrong, because
+     * both halves of the comparison lived in this file. The node requires 65 —
+     * `r || s || recoveryId` — and node/test/browser-proof.js now drives this
+     * exact function through the node's template flow and requires a block out
+     * of it. What is left here is the cross-check against the node's `signProof`
+     * over the same digest, which is the part only this file can do. */
+    const { POW_SIG_FORM, proofSignature } = await import('./mining/miner.js')
+      .catch(() => ({ POW_SIG_FORM: null, proofSignature: null }));
     if (POW_SIG_FORM) {
-      eq(POW_SIG_FORM, 'secp256k1-r||s-64-lowS',
-        'the miner names the proof-signature form it assumes, so a phase-5 mismatch is a grep');
+      eq(POW_SIG_FORM, 'secp256k1-r||s||recoveryId-65',
+        'the miner names the proof-signature form, and it is the one the node verifies');
     }
     const digest = nodeCrypto.randomBytes(32);
     const mkey = nodeSecp.randomPrivateKey();
-    const msig = secp.sign(new Uint8Array(digest), new Uint8Array(mkey));
-    const wire = hex(secp.bigToBuf32(msig.r)) + hex(secp.bigToBuf32(msig.s));
-    eq(wire.length, 128, 'a proof signature is 64 bytes on the wire');
-    ok(nodeSecp.verify(digest, { r: BigInt('0x' + wire.slice(0, 64)), s: BigInt('0x' + wire.slice(64)) },
-      nodeSecp.publicKeyFromPrivate(mkey)),
+    const wire = proofSignature(hex(digest), new Uint8Array(mkey));
+    eq(wire.length, 130, 'a proof signature is 65 bytes on the wire');
+    const sigBuf = Buffer.from(wire, 'hex');
+    ok(nodeSecp.verify(digest, {
+      r: BigInt('0x' + wire.slice(0, 64)), s: BigInt('0x' + wire.slice(64, 128)),
+    }, nodeSecp.publicKeyFromPrivate(mkey), { lowS: false }),
     'and the node verifies it against the coinbase public key');
+    // The recovery byte is the point of the 65th byte: the header carries no key
+    // for the verifier to use, so a wrong id is a proof credited to nobody.
+    const recovered = nodeSecp.recoverPublicKey(digest, {
+      r: BigInt('0x' + wire.slice(0, 64)), s: BigInt('0x' + wire.slice(64, 128)), recoveryId: sigBuf[64],
+    });
+    ok(recovered && Buffer.from(recovered).equals(Buffer.from(nodeSecp.publicKeyFromPrivate(mkey, false))),
+      'and RECOVERS the coinbase key from it, which is what the node actually does');
   }
 
   say('');

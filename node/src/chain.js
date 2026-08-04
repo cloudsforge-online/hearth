@@ -19,6 +19,7 @@ const EventEmitter = require('events');
 const C = require('./crypto');
 const P = require('./params');
 const TX = require('./tx');
+const { readLines } = require('./lines');
 const BLOCK = require('./block');
 
 const TWO256 = 1n << 256n;
@@ -41,14 +42,54 @@ class Chain extends EventEmitter {
   }
 
   // ---- lifecycle ----------------------------------------------------------
+  /**
+   * Replay the on-disk chain, revalidating every block as if it had arrived from
+   * a peer.
+   *
+   * STREAMED, one line at a time. This read the whole file into a single string
+   * and split it, which throws ERR_STRING_TOO_LONG past V8's 536,870,888-byte
+   * limit — about 350,000 blocks, or sixty-one days at a 15 s interval — after
+   * which the node cannot start and its own chain is unreadable. See
+   * src/lines.js for the whole argument and test/chain-replay.js for a chain
+   * past that ceiling.
+   *
+   * AND A CORRUPT LINE NO LONGER KILLS THE PROCESS. `JSON.parse` was called
+   * bare, so a single truncated append — a power cut mid-write is exactly that —
+   * threw out of the constructor and the node would not boot. It is now counted
+   * and skipped, and the count is emitted as `replay-rejected`, which is what
+   * the account-model chain already did and what MAP.md §8 records as missing
+   * here: a data directory holding an invalid block loads a SHORTER CHAIN, and
+   * saying nothing about it leaves an operator to discover a height that went
+   * backwards on their own.
+   */
   load() {
     fs.mkdirSync(this.dataDir, { recursive: true });
     this.store = new Map();
     this._addGenesis();
-    if (fs.existsSync(this.file)) {
-      const lines = fs.readFileSync(this.file, 'utf8').split('\n').filter(Boolean);
-      for (const l of lines) this._ingest(JSON.parse(l), /*persist*/ false); // re-validated on replay
-    }
+    if (!fs.existsSync(this.file)) return this;
+    let rejected = 0, total = 0;
+    readLines(this.file, line => {
+      if (!line) return;                            // blank: not a block, not damage
+      total++;
+      /* Both the parse AND the ingest, because `_ingest` here THROWS on a
+       * malformed block rather than returning `{ ok: false }` the way the
+       * account model's does — `{"filler":1}` reaches `block.header.version` and
+       * dies on undefined. So a line that is valid JSON and is not a block took
+       * the node down at boot just as surely as a truncated one did.
+       *
+       * Caught at this boundary rather than by making `_ingest` defensive: it is
+       * also `addBlock`, which is the hot path for peer blocks, and those are
+       * already shape-checked by `UTXO_WIRE.isBlock` in src/p2p.js before they
+       * reach it. Replay is the caller with untrusted input and no gate. */
+      let b;
+      try { b = JSON.parse(line); } catch { rejected++; return; }
+      let r;
+      try { r = this._ingest(b, /* persist */ false); } catch { rejected++; return; }
+      if (r && !r.ok && r.err !== 'known') rejected++;
+    }, {
+      onOversized: () => { total++; rejected++; },
+    });
+    if (rejected) this.emit('replay-rejected', { rejected, total });
     return this;
   }
 

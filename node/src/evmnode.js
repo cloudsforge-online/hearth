@@ -205,9 +205,16 @@ class EvmNode {
 
   // ---- lifecycle -----------------------------------------------------------
 
+  /* A PORT OF 0 MEANS "DO NOT LISTEN", on all four servers, and not "pick an
+   * ephemeral one". The distinction exists because of `bin/hearth-mine.js`: a
+   * miner on somebody's laptop dials out and serves nothing, and a listener on a
+   * port nobody can be told about is not a feature — it is an open port on a
+   * personal machine with no purpose. A suite that wants an ephemeral port calls
+   * `listenRest(0)` / `listenJsonRpc(0)` / `p2p.listen(0)` directly, which is
+   * what every one of them already does; only this function reads the option. */
   start() {
-    this.listenRest(this.opts.rpcPort === undefined ? P.DEFAULT_RPC_PORT : this.opts.rpcPort);
-    this.listenJsonRpc(this.opts.jsonRpcPort === undefined ? P.DEFAULT_JSONRPC_PORT : this.opts.jsonRpcPort);
+    if (this.opts.rpcPort !== 0) this.listenRest(this.opts.rpcPort === undefined ? P.DEFAULT_RPC_PORT : this.opts.rpcPort);
+    if (this.opts.jsonRpcPort !== 0) this.listenJsonRpc(this.opts.jsonRpcPort === undefined ? P.DEFAULT_JSONRPC_PORT : this.opts.jsonRpcPort);
     /* `--p2p 0` means DO NOT LISTEN, not "pick a port". A miner dialling out to a
      * seed through a tunnel has nothing to serve and no reason to open a port on
      * a laptop; an ephemeral listener nobody can be told about is strictly worse

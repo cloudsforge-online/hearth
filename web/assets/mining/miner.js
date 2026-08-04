@@ -31,19 +31,51 @@
  * one curve is how they drift apart, so this file imports that one rather than
  * carrying its own.
  *
- * THE WIRE FORMAT THIS ASSUMES, which phase 5 owns and had not landed when this
- * was written. `powSig` is r || s, 32 bytes each, 128 lowercase hex characters,
- * with s in the low half of the group order (EIP-2). No recovery id: the header
- * already carries `coinbasePub`, so the verifier has the key and does not need
- * to recover it. If phase 5 chooses a 65-byte recoverable form instead, this is
- * the one line to change — `POW_SIG_FORM` below names it.
+ * THE WIRE FORMAT. `powSig` is r || s || recoveryId — 32 + 32 + 1 bytes, 130
+ * lowercase hex characters — signed over the winning digest as-is.
+ *
+ * This file used to say 64 bytes with no recovery id, on the reasoning that the
+ * header already carries `coinbasePub` so a verifier needs no recovery. It reads
+ * as sound and it was wrong: the node requires 65 (`node/src/chain/miner.js`
+ * `submit` tests /^[0-9a-f]{130}$/, and `node/src/chain/header.js` `verifyPow`
+ * refuses anything that is not 65 bytes and recovers the key from it). The
+ * comment predicted its own failure — "if phase 5 chooses a 65-byte recoverable
+ * form instead, this is the one line to change" — and phase 5 did, and nobody
+ * changed the line. Every block this miner ever found was answered `bad
+ * signature` AFTER doing the work, with no way to tell that from bad luck.
+ *
+ * `POW_SIG_FORM` below exists so a mismatch is a grep rather than an
+ * investigation, and it was faithfully kept in sync with the wrong answer. So
+ * the format is now checked instead of described: `node/test/browser-proof.js`
+ * imports `proofSignature` from this file, signs a real winning digest with it,
+ * and requires the node's own template flow to accept the block.
  * ---------------------------------------------------------------------------
  */
 
 import { sign as secpSign, bigToBuf32 } from '../wallet/secp256k1.js';
 
 /** Named so a mismatch with the node is a grep, not an investigation. */
-export const POW_SIG_FORM = 'secp256k1-r||s-64-lowS';
+export const POW_SIG_FORM = 'secp256k1-r||s||recoveryId-65';
+
+/**
+ * Sign a winning digest with the coinbase key, in the form the node verifies.
+ *
+ * The digest is 32 bytes, which is exactly an ECDSA message hash, so it is
+ * signed as-is rather than hashed again — the node verifies over the same bytes
+ * it handed out. RFC 6979 makes the nonce deterministic, so re-signing the same
+ * digest is idempotent and a tab that has been open all week never risks a
+ * repeated k.
+ *
+ * Exported, and separate from `_submit`, for one reason: `_submit` needs a
+ * Worker pool and a `fetch`, so it cannot run outside a browser — and a step
+ * that cannot be exercised outside a browser is a step nothing checks. The
+ * mirror of this function is `signProof` in node/src/chain/header.js.
+ */
+export function proofSignature(digestHex, priv) {
+  const sig = secpSign(hexToBytes(digestHex), priv);
+  return toHex(bigToBuf32(sig.r)) + toHex(bigToBuf32(sig.s))
+    + sig.recoveryId.toString(16).padStart(2, '0');   // see POW_SIG_FORM
+}
 
 const DEFAULT_WORKERS = () => Math.max(1, (navigator.hardwareConcurrency || 4) - 1);
 
@@ -244,13 +276,8 @@ export class Miner extends EventTarget {
   }
 
   async _submit({ templateId, nonce, digest }) {
-    /* The one place the key is used. The digest is 32 bytes, which is exactly an
-     * ECDSA message hash, so it is signed as-is rather than hashed again — the
-     * node verifies over the same bytes it handed out. RFC 6979 makes the nonce
-     * deterministic, so re-signing the same digest is idempotent and a tab that
-     * has been open all week never risks a repeated k. */
-    const sig = secpSign(hexToBytes(digest), this.key.priv);
-    const powSig = toHex(bigToBuf32(sig.r)) + toHex(bigToBuf32(sig.s));   // see POW_SIG_FORM
+    // The one place the key is used. See `proofSignature` at the top of the file.
+    const powSig = proofSignature(digest, this.key.priv);
 
     const res = await fetch(`${this.rpc}/mining/submit`, {
       method: 'POST',

@@ -29,6 +29,7 @@ const P = require('../params');
 const POW = require('../pow');
 const HDR = require('./header');
 const secp = require('../crypto/secp256k1');
+const { SLICE_MS, schedule } = require('../minerloop');
 
 /** Enough for a browser to keep working across a couple of blocks. */
 const TEMPLATE_TTL_MS = 120_000;
@@ -91,14 +92,19 @@ class Miner {
     const key = this.node.coinbaseKey;
     if (!key) return;
     const cand = this.candidateFor(key.publicKey.toString('hex'));
-    const BATCH = 150;
     const startHeight = cand.header.height;
     let nonce = 0;
 
     const step = () => {
       if (!this.running) return;
       if (this.node.chain.height + 1 !== startHeight) return this._mineOne();  // someone mined
-      for (let i = 0; i < BATCH; i++) {
+      /* A TURN IS A SLICE OF WALL CLOCK, NOT A COUNT OF NONCES — see
+       * ../minerloop.js. One nonce is one full Homefire evaluation, so a fixed
+       * count is a variable and unbounded amount of blocked event loop, and on
+       * this chain the loop is also carrying gossip, two HTTP servers and the
+       * WebSocket keepalive. */
+      const t0 = Date.now();
+      do {
         const n = nonce++;
         const digest = POW.homefireHash(POW.powSeed(cand.coreHash, n, cand.header.coinbasePub)).toString('hex');
         this.hashes++;
@@ -106,11 +112,10 @@ class Miner {
           this.node.onMinedBlock(Miner.seal(cand, n, digest, key.privateKey), cand);
           return this._mineOne();
         }
-      }
+      } while (Date.now() - t0 < SLICE_MS);
       const dt = (Date.now() - this._rateStart) / 1000;
       if (dt >= 1) { this.hashrate = Math.round(this.hashes / dt); this.hashes = 0; this._rateStart = Date.now(); }
-      if (this.throttle >= 1) setImmediate(step);
-      else setTimeout(step, Math.round((1 - this.throttle) * 12));
+      schedule(step, Date.now() - t0, this.throttle);
     };
     step();
   }
@@ -153,9 +158,35 @@ class Templates {
       txRoot: cand.header.txRoot,
       txCount: cand.txs.length,
       gasUsed: Number(cand.gasUsed),
+      /* THE REST OF THE CORE HEADER, so a miner can CHECK the work instead of
+       * trusting it. `coreHash` above is the only thing a remote miner actually
+       * grinds, and on its own it is an opaque 32 bytes: nothing tied it to the
+       * `coinbasePub` alongside it, so an endpoint could advertise one coinbase
+       * and issue work paying another. It could not have STOLEN a block that way
+       * — the proof is signed by the coinbase key and `HDR.verifyPow` recovers it
+       * — but the miner would have ground for hours and had every submission
+       * refused, which is the same loss and much harder to diagnose.
+       *
+       * With these, `HDR.coreHash({...})` is recomputable from the response, and
+       * bin/hearth-mine.js refuses any template whose core hash does not commit
+       * to the fields it arrived with. They are exactly `coreFields` in
+       * header.js; nothing here is secret, and all of it is in the block a
+       * moment later. */
+      version: cand.header.version,
+      receiptsRoot: cand.header.receiptsRoot,
+      logsBloom: cand.header.logsBloom,
+      gasLimit: Number(cand.header.gasLimit),
+      extraData: cand.header.extraData,
       /* The full subsidy for this height, in wei as a decimal string — JSON has no
        * integer wide enough for wei and a float would silently round it. */
       reward: P.subsidyWei(cand.header.height).toString(),
+      /* …and what the COINBASE actually receives, which is not the same number:
+       * 10% of every subsidy goes to the Commons (`_creditReward`). A remote
+       * miner has no chain to check its balance against, so quoting it the full
+       * subsidy means its running total is 10% higher than the coins it has —
+       * a figure that never reconciles with a wallet and looks like theft.
+       * Tips are not included: they are not known until the block is sealed. */
+      coinbaseReward: P.coinbaseRewardWei(cand.header.height).toString(),
       /* Consensus parameters travel WITH the work: a miner that hardcodes them
        * keeps hashing happily after a retune and produces nothing valid, while one
        * that reads them here stops, which is the failure you want. */

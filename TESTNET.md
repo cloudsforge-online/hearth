@@ -148,6 +148,58 @@ Inside every container the RPC binds to `8645` and P2P to `8646`; only the
 `:8645`). Each container has its own named volume so its chain persists across
 restarts.
 
+## Mining from your own machine
+
+**`hearth-mine` is the way in, and it is not a node.** It takes work from a node
+over HTTP, grinds it, and posts the proof back. No chain on your disk, no sync,
+no open ports:
+
+```bash
+cd node && node bin/hearth-mine.js --url https://<host>
+```
+
+Two commands before that one are worth knowing:
+
+```bash
+node bin/hearth-mine.js --address    # the address every block you mine will pay
+node bin/hearth-mine.js --help
+```
+
+The key is created on first run in `<data>/coinbase-key.json`, mode `600`. **Back
+it up.** Whoever holds it holds the coins, and nothing else in the system can
+recover it. It is never printed and never leaves the machine — the node issues
+work for your *public* key and you sign the winning digest yourself
+(`node/src/chain/header.js` `signProof`), which is what makes work issued to you
+redeemable only by you.
+
+`--url` points at the **REST** API — the port serving `/info` and `/mining/*`,
+container `8645` — not the Ethereum JSON-RPC one.
+
+### What a light miner gives up, and what it does not
+
+It **cannot validate the chain it mines on.** It does not hold the chain, so it
+does not know whether the parent is real or whether the endpoint is the network
+everyone else is on. Point it at a node you trust. If you want to check for
+yourself, run a full node that mines instead:
+
+```bash
+node bin/hearthd.js --evm --mine --p2p 0 --peer wss://p2p.<apex>/p2p
+```
+
+What it does **not** give up is anything about the money or the electricity:
+
+| It checks | Because |
+|---|---|
+| the core hash commits to the header it arrived with | otherwise "this work pays you" is only the endpoint's word for it |
+| the coinbase is this machine's own key | work paying someone else is refused after you have paid for it |
+| the proof-of-work parameters are this build's | after a retune, a miner that does not check hashes happily and produces nothing valid |
+
+None of these is theoretical politeness: a proof cannot be *stolen* — `verifyPow`
+recovers the signing key and compares it to the header's coinbase — but work you
+should never have ground costs you exactly as much as a stolen block, and is far
+harder to notice. `node/test/miner-cli.js` runs the miner against a deliberately
+lying endpoint for each row above.
+
 ## Joining from another machine
 
 The seed speaks the **same gossip protocol over two transports**. Which one you
@@ -173,7 +225,7 @@ the peer cap, the 4 MiB read bound, the per-connection proof-of-work and
 transaction verification budgets, the invalid-block budget, and the handshake
 that refuses a peer on a different genesis, chain id or Commons address.
 
-To mine against the testnet from a Mac or a PC:
+To run a **full node** that also mines, from a Mac or a PC:
 
 ```bash
 # from a checkout of this repository
@@ -183,6 +235,9 @@ cd node && node bin/hearthd.js --evm --mine --p2p 0 --peer wss://p2p.<apex>/p2p
 `--p2p 0` says *do not listen*: a machine dialling out through a tunnel has
 nothing to serve, and an ephemeral listener nobody can be told about is strictly
 worse than none.
+
+If you only want to **mine**, you do not need any of this — use `hearth-mine`
+above. It speaks HTTP to the REST API and needs no P2P transport at all.
 
 Two things about this transport are worth knowing before you debug it:
 

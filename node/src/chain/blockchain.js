@@ -53,6 +53,7 @@ const HDR = require('./header');
 const ST = require('./statetransition');
 const bloom = require('./bloom');
 const genesis = require('./genesis');
+const { readLines } = require('../lines');
 const { StateDB, MemoryDB, OverlayDB } = require('../state/statedb');
 const { keccak256 } = require('../crypto/keccak');
 
@@ -176,19 +177,31 @@ class Blockchain extends EventEmitter {
     if (!this.file) return this;
     fs.mkdirSync(this.dataDir, { recursive: true });
     if (!fs.existsSync(this.file)) return this;
-    const lines = fs.readFileSync(this.file, 'utf8').split('\n').filter(Boolean);
-    let rejected = 0;
-    for (const line of lines) {
+    let rejected = 0, total = 0;
+    /* STREAMED, one line at a time, and this is a correctness requirement rather
+     * than a tidy-up. Reading the file into a single string — which is what this
+     * did — throws ERR_STRING_TOO_LONG past V8's 536,870,888-byte limit, i.e.
+     * after about 350,000 blocks or sixty-one days of uptime, at which point the
+     * node cannot start at all. See src/lines.js, and test/chain-replay.js,
+     * which loads a chain past that ceiling and checks on the same file that the
+     * old approach would still throw. */
+    readLines(this.file, line => {
+      if (!line) return;                             // blank: not a block, not damage
+      total++;
       let b;
-      try { b = JSON.parse(line); } catch { rejected++; continue; }
+      try { b = JSON.parse(line); } catch { rejected++; return; }
       const r = this._ingest(b, false);
       if (!r.ok && r.err !== 'known') rejected++;
-    }
-    /* ../chain.js:48-51 discards this and MAP.md §8 calls it out: a data directory
-     * holding an invalid block loads a shorter chain and says nothing. Here it is
-     * an event, so a node can log it and an operator can find out why their height
-     * went backwards. */
-    if (rejected) this.emit('replay-rejected', { rejected, total: lines.length });
+    }, {
+      // A line no block could ever be is damage, and is counted as such rather
+      // than accumulated — otherwise one corrupt file reproduces the very
+      // failure this rewrite exists to remove.
+      onOversized: () => { total++; rejected++; },
+    });
+    /* A data directory holding an invalid block loads a SHORTER CHAIN. Making
+     * that an event is the difference between an operator finding out why their
+     * height went backwards and guessing. */
+    if (rejected) this.emit('replay-rejected', { rejected, total });
     return this;
   }
 
@@ -361,8 +374,10 @@ class Blockchain extends EventEmitter {
    * that differs on a block where nothing appeared to happen.
    */
   _creditReward(state, height, coinbaseAddr) {
+    // params.js owns the split, so the figure a remote miner is quoted in its
+    // work template is the same arithmetic that credits it here.
     const subsidy = P.subsidyWei(height);
-    const commons = subsidy * BigInt(Math.round(P.COMMONS_SHARE * 100)) / 100n;
+    const commons = P.commonsShareWei(height);
     state.beginTransaction();
     state.addBalance(coinbaseAddr, subsidy - commons);
     if (commons > 0n) state.addBalance(this.commonsAddress, commons);

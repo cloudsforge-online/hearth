@@ -111,9 +111,8 @@ already moved (`web/assets/mining/miner.js:24-46`, `:252-253`) and
 the hashing half was never in question.
 
 The wire form of the proof signature is named in exactly one place —
-`POW_SIG_FORM` (`web/assets/mining/miner.js:46`): `r || s`, 64 bytes, low-s, no
-recovery id, because the header already carries the public key. **The node half
-of that contract belongs to phase 5 and has not landed**; see §2.5.
+`POW_SIG_FORM` (`web/assets/mining/miner.js`): `r || s || recoveryId`, 65 bytes.
+Settled, and checked rather than described: see §2.5.
 
 Reasoning: [`evm-spec.md`](evm-spec.md) §4.
 
@@ -265,13 +264,30 @@ a regulator will ask.
 Blocks: [`listing-checklist.md`](listing-checklist.md) §6, §7 M7 and M8;
 [`tokenomics.md`](tokenomics.md) §8.
 
-### 2.5 The node half of the proof-signature wire form
+### 2.5 The proof-signature wire form — SETTLED, and it was wrong
 
-The browser miner assumes `r || s`, 64 bytes, low-s, no recovery id
-(`POW_SIG_FORM`, `web/assets/mining/miner.js:46`). Phase 5 owns the node side of
-that contract and had not landed it at the time of writing. If it chooses a
-recoverable 65-byte form instead, that constant is the one line to change — but
-the two must agree before a browser-mined block can be accepted.
+`r || s || recoveryId`, 65 bytes, signed over the winning Homefire digest.
+
+This was open, and while it was open it was not merely undecided — it was
+decided differently on the two sides. `POW_SIG_FORM` said 64 bytes with no
+recovery id, reasoning that the header already carried `coinbasePub`. The node
+had gone the other way and required 65, because `verifyPow`
+(`node/src/chain/header.js`) recovers the key from the signature rather than
+reading one. So every block the browser miner found was refused `bad signature`
+after the work was done, which from the miner's side is indistinguishable from
+never having won.
+
+The constant was supposed to prevent exactly this — "a mismatch with the node is
+a grep, not an investigation" — and it did not, because it was kept faithfully in
+sync with the wrong answer. A constant that names a format is documentation, and
+documentation cannot be wrong loudly.
+
+The lesson is in the fix, not in the value. `proofSignature` is now exported from
+`web/assets/mining/miner.js` rather than inlined in `_submit`, purely so that it
+can be run outside a browser; `node/test/browser-proof.js` calls that function,
+signs a real winning digest and requires the node's own template flow to produce
+a block from it. Getting the two out of step again fails a test rather than a
+miner.
 
 ### 2.6 `SPARKS_PER_EMBER` is still 1e8
 

@@ -472,6 +472,23 @@ module.exports = {
     return BigInt(this.subsidy(height)) * this.WEI_PER_SPARK;
   },
 
+  /* THE SPLIT, in one place, because two numbers are quoted from it to different
+   * audiences and they are not the same number. `subsidyWei` is what a block
+   * MINTS; `coinbaseRewardWei` is what the miner is PAID, and the 10% between
+   * them goes to the Commons (chain/blockchain.js `_creditReward`).
+   *
+   * A remote miner has no chain to check a balance against, so it believes
+   * whatever the work template quotes it. Quoting the full subsidy made its
+   * running total 10% higher than the coins it actually held — a figure that
+   * never reconciles against a wallet, and whose most natural reading is that
+   * something took a cut without saying so. */
+  commonsShareWei(height) {
+    return this.subsidyWei(height) * BigInt(Math.round(this.COMMONS_SHARE * 100)) / 100n;
+  },
+  coinbaseRewardWei(height) {
+    return this.subsidyWei(height) - this.commonsShareWei(height);
+  },
+
   // Subsidy in sparks at a given height.
   //
   // (See the invariant assertion at the foot of this file.)

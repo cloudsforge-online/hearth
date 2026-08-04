@@ -946,19 +946,31 @@ implementation, signs locally and posts the proof over real HTTP.
 **The signature is secp256k1 now, not Ed25519** — spec §4 makes `coinbasePub` a
 secp256k1 key. The hashing half is untouched and `browser-pow` still passes. The
 miner imports the wallet's port rather than carrying a second one. The wire form it
-assumes is named in one place, `POW_SIG_FORM` (`web/assets/mining/miner.js:46`):
-`r || s`, 64 bytes, low-s, no recovery id, because the header already carries the
-public key.
+assumes is named in one place, `POW_SIG_FORM` (`web/assets/mining/miner.js`):
+`r || s || recoveryId`, 65 bytes — the node's header carries no separate public key
+and `verifyPow` recovers one from the signature (`node/src/chain/header.js`).
 
-> **This is a live disagreement inside the repository.** The browser miner sends a
-> secp256k1 signature and a secp256k1 `coinbasePub`. The node's
-> `GET /mining/template?pub=` still rejects anything that is not an 88-hex SPKI DER
-> Ed25519 key (`node/src/rpc.js:130-134`), and
-> `node/src/block.js:45` still verifies it with the UTXO-era Ed25519 `C.verify`. Phase 5
-> owns the node half of that contract and has not landed it, so **the browser
-> miner cannot currently mine a block the node will accept.** `POW_SIG_FORM` is the
-> one line to change if phase 5 picks a recoverable 65-byte form instead.
-> Tracked in [`docs/decisions.md`](docs/decisions.md) §2.5.
+> **This disagreement is closed, and it was real while it lasted.** `POW_SIG_FORM`
+> said 64 bytes with no recovery id, on the reasoning that the header already
+> carried the key. The node had chosen the 65-byte recoverable form, so every block
+> the browser miner ever found was answered `bad signature` — after all the work,
+> and indistinguishable from bad luck. The constant existed precisely so a mismatch
+> would be "a grep, not an investigation", and it was faithfully kept in sync with
+> the wrong answer, which is the limit of what a constant naming a format can do.
+>
+> So the format is now CHECKED rather than described. `node/test/browser-proof.js`
+> imports `proofSignature` from `web/assets/mining/miner.js` — the browser's own
+> code, not a reconstruction — signs a real winning digest with it, and requires
+> the node's template flow to accept the resulting block; it also requires a proof
+> signed by a different key to be refused. `web/assets/wallet-selftest.js` cross-
+> checks the same function against the node's `signProof` and recovers the coinbase
+> key from its 65th byte.
+>
+> Note which endpoint this is. `GET /mining/template?pub=` on the **UTXO** REST
+> server still requires an 88-hex SPKI DER Ed25519 key (`node/src/rpc.js:130-134`),
+> and always will — that is the other chain. The browser miner talks to the
+> **account model**'s REST server (`node/src/evmnode.js`), which takes a 65-byte
+> uncompressed secp256k1 key.
 
 `/mining/submit` **does not trust the submission**: only `nonce`, `powDigest` and
 `powSig` are taken from it; the header core and the transactions come from the

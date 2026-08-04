@@ -8,6 +8,7 @@ const P = require('./params');
 const TX = require('./tx');
 const POW = require('./pow');
 const BLOCK = require('./block');
+const { SLICE_MS, schedule } = require('./minerloop');
 
 class Miner {
   constructor(node) {
@@ -96,7 +97,6 @@ class Miner {
   _mineOne() {
     if (!this.running) return;
     let cand = this._candidate();
-    const BATCH = 150;              // nonces per event-loop turn
     const startHeight = cand.header.height;
 
     const step = () => {
@@ -104,7 +104,11 @@ class Miner {
       if (this.node.chain.height + 1 !== startHeight) { // someone mined; rebuild
         return this._mineOne();
       }
-      for (let i = 0; i < BATCH; i++) {
+      /* A TURN IS A SLICE OF WALL CLOCK, NOT A COUNT OF NONCES. See the note on
+       * SLICE_MS: one nonce is one full Homefire evaluation, so a fixed count is
+       * a variable and unbounded amount of blocked event loop. */
+      const t0 = Date.now();
+      do {
         const nonce = cand.header.nonce++;
         const seed = POW.powSeed(cand.coreHash, nonce, cand.header.coinbasePub);
         const digest = POW.homefireHash(seed).toString('hex');
@@ -117,13 +121,11 @@ class Miner {
           this.node.onMinedBlock(block);
           return this._mineOne();  // start next
         }
-      }
+      } while (Date.now() - t0 < SLICE_MS);
       // hashrate bookkeeping
       const dt = (Date.now() - this._rateStart) / 1000;
       if (dt >= 1) { this.hashrate = Math.round(this.hashes / dt); this.hashes = 0; this._rateStart = Date.now(); }
-      // polite throttle: idle for part of the duty cycle
-      if (this.throttle >= 1) setImmediate(step);
-      else setTimeout(step, Math.round((1 - this.throttle) * 12));
+      schedule(step, Date.now() - t0, this.throttle);
     };
     step();
   }
