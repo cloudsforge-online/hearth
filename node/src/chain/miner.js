@@ -207,7 +207,7 @@ class Templates {
    * `r || s || recoveryId` over the digest, made by the key the template was
    * issued to — which is what stops anyone else redeeming a winning proof.
    */
-  submit({ templateId, nonce, powDigest, powSig }) {
+  submit({ templateId, nonce, powDigest, powSig }, budget = null) {
     const t = this.byId.get(templateId);
     if (!t) return { ok: false, err: 'unknown or expired template' };
     if (!Number.isInteger(nonce) || nonce < 0) return { ok: false, err: 'bad nonce' };
@@ -221,14 +221,39 @@ class Templates {
       return { ok: false, err: 'stale template — the tip moved', stale: true };
     }
 
+    /* EVERYTHING ABOVE THIS LINE IS FREE, and that is why the budget is taken
+     * here rather than at the door. `verifyPow` below is a FULL HOMEFIRE
+     * EVALUATION — the same ~7 ms of a core src/p2p.js meters a gossip peer for,
+     * now reached from an endpoint published to the open internet. An unknown
+     * template, a stale one, a bad nonce or a malformed signature never gets
+     * that far, so charging for them would throttle a miner whose template
+     * merely expired: the node's timing, not the miner's behaviour.
+     *
+     * `budget` is optional so an in-process caller — and every existing suite —
+     * is unmetered; the HTTP route in src/evmnode.js always passes one. */
+    let token = null;
+    if (budget) {
+      token = budget.spend();
+      if (!token) return { ok: false, err: 'over budget', throttled: true };
+    }
+
     const block = { header: { ...t.candidate.header, nonce, mixHash: powDigest, powSig }, txs: t.candidate.txs };
     const pow = HDR.verifyPow(block.header);
     if (!pow.ok) return { ok: false, err: pow.err };
 
     const r = this.node.acceptOwnBlock(block);
     if (!r.ok) return r;
+    /* The proof was real and the block extended the chain, so the evaluation was
+     * not wasted — give the token back. This is the half of the rule that keeps
+     * an honest miner off the limiter entirely, and it is the refund p2p.js
+     * `_acceptFrom` makes for exactly the same reason. */
+    if (token) token.refund();
     this.byId.delete(templateId);
-    return { ok: true, id: r.id, height: block.header.height, reward: P.subsidyWei(block.header.height).toString() };
+    return {
+      ok: true, id: r.id, height: block.header.height,
+      reward: P.subsidyWei(block.header.height).toString(),
+      coinbaseReward: P.coinbaseRewardWei(block.header.height).toString(),
+    };
   }
 }
 

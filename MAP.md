@@ -1038,10 +1038,15 @@ only externally reachable caller is the unauthenticated `/mining/template`.
   never constructed; `node/src/chain.js` is UTXO-only; there is no account-model
   genesis, no state root to publish, and no endpoint. Everything in §4 is proved
   against vectors and fixtures, not against a chain.
-- **The browser miner and the node disagree about the coinbase key.** §9.2.
-- **`GET /mining/template` still takes an Ed25519 SPKI DER pubkey** — 88 hex
-  characters or a 400 (`node/src/rpc.js:130-134`) — and `node/src/block.js:45`
-  still verifies the proof signature with Ed25519.
+- ~~**The browser miner and the node disagree about the coinbase key.**~~ Closed,
+  and both bullets here were reading the wrong chain. `node/src/rpc.js:130-134`
+  and `node/src/block.js:45` are the **UTXO** REST server and the **UTXO** block
+  rules; they require Ed25519 and always will, because that is a different chain
+  with a different curve. The browser miner talks to the account model, whose
+  `issue()` (`node/src/chain/miner.js`) has always required a 65-byte
+  uncompressed secp256k1 key. The real defect was one byte of signature — 64 sent
+  against 65 required — and it is fixed (§9.2). Four documents said this; none of
+  them said it after reading `chain/miner.js`.
 - **The desktop app.** `start_node` / `stop_node` / `node_running` have zero
   callers, and `node_entry()` cannot resolve inside a bundle.
 - **On-chain encrypted chat is CLI-only** — and records, which it is built on, have

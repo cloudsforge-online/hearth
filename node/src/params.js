@@ -456,6 +456,53 @@ module.exports = {
    * fee market lands in v2 — the implementation and its tests are already here. */
   EVM_RPC_FEE_HISTORY: process.env.HEARTH_RPC_FEE_HISTORY === '1',
 
+  /* THE MINING ENDPOINTS' BUDGETS — and this is the P2P argument, at a door that
+   * did not have one.
+   *
+   * `/mining/template` and `/mining/submit` are published through the tunnel, so
+   * they are the first unauthenticated surface this node exposes to the open
+   * internet. They are deliberately NOT authenticated: this is a permissionless
+   * chain whose whole thesis is that ordinary people mine it, a submitted block
+   * still has to satisfy proof of work and full validation before it is worth
+   * anything, and a credential on `submit` would shut out exactly the strangers
+   * the coin exists for. What they need is not authorisation. It is a bound on
+   * COST — the same bound P2P_BLOCK_VERIFY_* above puts on a gossip peer, for
+   * the identical reason, because it is the identical operation:
+   *
+   *   submit    a well-formed body with a wrong digest costs a FULL HOMEFIRE
+   *             EVALUATION (~7 ms of a core) before it can be refused. Unmetered,
+   *             one curl loop is a remote denial of service on a mining node.
+   *   template  `candidateFor` is memoized on the coinbase key among other
+   *             things, so a caller that varies the key misses the memo every
+   *             time and buys a full block of EVM execution per request — which
+   *             is precisely what that memo's comment says it exists to prevent.
+   *
+   * METERED WITH A REFUND, exactly as p2p.js meters blocks: the token is taken
+   * before the work and given back when the outcome shows nothing was wasted.
+   * An honest miner submits winning proofs and is therefore never charged, and
+   * a submission refused before any hashing — an expired template, a malformed
+   * body — costs nothing and is charged nothing. A flat rate limit would get
+   * both of those wrong, and would throttle the one caller that matters.
+   *
+   * GLOBAL AS WELL AS PER-CLIENT, and the global one is the real bound. Behind a
+   * tunnel every request arrives from the tunnel's address, so the client is
+   * identified by a forwarded header — which anything can set. Per-client
+   * budgets are therefore FAIRNESS, stopping one caller starving others; they
+   * are not a security boundary, because a spoofed header buys a fresh bucket.
+   * The global budget is what actually caps this node's exposure, and it cannot
+   * be spoofed around.
+   *
+   * 5 evaluations/second is ~3.5% of one core spent on junk, sustained, against
+   * a 15 s block interval — and far above any honest submission rate, which is
+   * a handful per block at most. */
+  MINING_VERIFY_BURST: 30,
+  MINING_VERIFY_PER_S: 5,
+  MINING_TEMPLATE_BURST: 60,
+  MINING_TEMPLATE_PER_S: 10,
+  /** Callers tracked at once. A map keyed by something the caller controls is a
+   *  memory leak unless it is capped; oldest-seen is evicted first. */
+  MINING_MAX_CLIENTS: 1_024,
+
   /** Pending transactions one sender may occupy, so one funded key cannot fill
    *  the pool with a nonce ladder nobody will ever mine. */
   EVM_MEMPOOL_PER_SENDER: 64,

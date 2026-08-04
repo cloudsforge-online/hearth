@@ -302,6 +302,17 @@ async function fetchWork() {
     }
     return null;
   }
+  if (r.status === 429) {
+    /* Throttled, not broken. Both mining endpoints are metered rather than
+     * authenticated (params.js `MINING_VERIFY_BURST`), and the honest way to
+     * meet that is to ask less often — not to hammer it and be refused. */
+    if (!downSince) {
+      downSince = Date.now();
+      say(C.y(`  ⚠ ${base} is rate-limiting work requests — backing off`));
+    }
+    await new Promise(res => setTimeout(res, (r.body && r.body.retryAfterMs) || 1000));
+    return null;
+  }
   if (r.status !== 200) {
     if (!downSince) {
       downSince = Date.now();
@@ -352,6 +363,13 @@ async function submit(t, nonce, digest) {
   if (r.status === 409 || r.body.stale) {
     // Somebody else found this height first. Expected, and not an error.
     stale++;
+    return;
+  }
+  if (r.status === 429) {
+    // Our proof was fine; the node is over its verification budget. Not a
+    // refusal, and it must not count toward the give-up threshold below.
+    say(C.y('  ⚠ the node is rate-limiting proof submissions — retrying'));
+    await new Promise(res => setTimeout(res, (r.body && r.body.retryAfterMs) || 1000));
     return;
   }
   refused++;

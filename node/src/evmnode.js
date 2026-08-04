@@ -164,6 +164,16 @@ class EvmNode {
 
     this.sseClients = new Set();
 
+    /* Per-caller mining budgets, and the global one that is the actual bound.
+     * See the long note at MINING_VERIFY_BURST in params.js: the endpoints are
+     * unauthenticated on purpose and metered because one of them reaches the
+     * same full Homefire evaluation a gossip peer is already metered for. */
+    this.miningClients = new Map();          // client -> { verify, template, at }
+    this.miningGlobal = {
+      verify: { tokens: P.MINING_VERIFY_BURST, at: Date.now() },
+      template: { tokens: P.MINING_TEMPLATE_BURST, at: Date.now() },
+    };
+
     this.chain.on('block', (block, entry) => {
       this.mempool.removeIncluded(entry.block.txs.map(t => keccak256(hexBuf(t)).toString('hex')));
       this.mempool.revalidate();
@@ -374,6 +384,72 @@ class EvmNode {
     };
   }
 
+  // ---- mining budgets ------------------------------------------------------
+
+  /**
+   * Who to bill. Behind a Cloudflare Tunnel every request arrives from the
+   * tunnel's own address, so the forwarded header is the only thing that tells
+   * two miners apart — and anything can set it. That is why this is used for
+   * FAIRNESS between callers and never as the bound: `_miningSpend` also charges
+   * a global bucket, which no header can dodge. Truncated so a caller cannot
+   * grow the key space with long junk.
+   */
+  _miningClient(req) {
+    const h = req.headers['cf-connecting-ip']
+      || String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+    return String(h || (req.socket && req.socket.remoteAddress) || 'unknown').slice(0, 45);
+  }
+
+  /** The named bucket for a caller, creating it and evicting the oldest if full. */
+  _miningBudget(client, kind) {
+    let e = this.miningClients.get(client);
+    if (e) { this.miningClients.delete(client); }        // re-insert: Map keeps insertion order
+    else {
+      e = {
+        verify: { tokens: P.MINING_VERIFY_BURST, at: Date.now() },
+        template: { tokens: P.MINING_TEMPLATE_BURST, at: Date.now() },
+      };
+      // Oldest-seen out. The cap is the whole reason this is not a leak.
+      while (this.miningClients.size >= P.MINING_MAX_CLIENTS) {
+        this.miningClients.delete(this.miningClients.keys().next().value);
+      }
+    }
+    this.miningClients.set(client, e);
+    return e[kind];
+  }
+
+  /** p2p.js `_spend`, to the letter — one implementation of one rule, twice used. */
+  _take(bucket, burst, perSecond) {
+    const now = Date.now();
+    bucket.tokens = Math.min(burst, bucket.tokens + ((now - bucket.at) / 1000) * perSecond);
+    bucket.at = now;
+    if (bucket.tokens < 1) return false;
+    bucket.tokens -= 1;
+    return true;
+  }
+
+  /**
+   * Take a token for `kind` from both the caller's bucket and the global one.
+   *
+   * Returns a handle whose `refund()` gives both back — called when the outcome
+   * shows the work was not wasted, which is what keeps an honest miner off the
+   * limiter entirely. Returns null when either bucket is empty.
+   */
+  _miningSpend(req, kind) {
+    const burst = kind === 'verify' ? P.MINING_VERIFY_BURST : P.MINING_TEMPLATE_BURST;
+    const perS = kind === 'verify' ? P.MINING_VERIFY_PER_S : P.MINING_TEMPLATE_PER_S;
+    const mine = this._miningBudget(this._miningClient(req), kind);
+    const all = this.miningGlobal[kind];
+    if (!this._take(mine, burst, perS)) return null;
+    if (!this._take(all, burst, perS)) { mine.tokens = Math.min(burst, mine.tokens + 1); return null; }
+    return {
+      refund: () => {
+        mine.tokens = Math.min(burst, mine.tokens + 1);
+        all.tokens = Math.min(burst, all.tokens + 1);
+      },
+    };
+  }
+
   listenRest(port) {
     this.restServer = http.createServer((req, res) => this._rest(req, res));
     keepAlive(this.restServer);
@@ -402,8 +478,15 @@ class EvmNode {
       if (p === '/mempool') return send(200, { size: this.mempool.size, txs: this.mempool.list() });
       if (p === '/mining/template') {
         const pub = (url.searchParams.get('pub') || '').toLowerCase();
+        const budget = this._miningSpend(req, 'template');
+        if (!budget) return send(429, { err: 'too many work requests — slow down', retryAfterMs: 1000 });
         try { return send(200, this.templates.issue(pub)); }
-        catch (e) { return send(400, { err: String(e.message || e) }); }
+        catch (e) {
+          // A malformed key is refused before a candidate is built, so it cost
+          // nothing and is charged nothing.
+          budget.refund();
+          return send(400, { err: String(e.message || e) });
+        }
       }
       if (p === '/events') {
         res.writeHead(200, {
@@ -417,7 +500,20 @@ class EvmNode {
       }
       if (req.method === 'POST' && p === '/mining/submit') {
         const body = await readJson(req);
-        const r = this.templates.submit(body || {});
+        /* The token is taken by `submit` itself, and only around the step that
+         * actually hashes — an unknown template, a stale one or a malformed body
+         * is refused before Homefire runs and must not be charged for, or a
+         * miner whose template merely expired gets throttled for the node's
+         * timing rather than its own behaviour. */
+        let over = false;
+        const r = this.templates.submit(body || {}, {
+          spend: () => {
+            const b = this._miningSpend(req, 'verify');
+            if (!b) { over = true; return null; }
+            return b;
+          },
+        });
+        if (over) return send(429, { err: 'too many proofs to verify — slow down', retryAfterMs: 1000 });
         if (r.ok) this.log('block from a remote miner', { height: r.height, id: r.id });
         // Stale is 409: the miner did nothing wrong and should pull fresh work.
         return send(r.ok ? 200 : r.stale ? 409 : 400, r);

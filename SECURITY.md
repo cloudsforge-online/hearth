@@ -183,11 +183,23 @@ without new impact will be closed with a pointer here.
   budget, and a self-fed side branch stored and relayed forever
   ([`docs/robustness-review.md`](docs/robustness-review.md) §2, §3, §5). Documented
   and not yet fixed; re-reporting them adds nothing, but a *cheaper* variant does.
-- **The browser miner and the node currently disagree about the coinbase key.**
-  The miner signs secp256k1; `GET /mining/template` still requires an 88-hex
-  Ed25519 SPKI DER key (`node/src/rpc.js:130-134`) and `node/src/block.js:45`
-  still verifies with Ed25519. Phase 5 owns the node half. This is a known,
-  documented transition state ([`MAP.md`](MAP.md) §9.2), not a vulnerability.
+- **The browser miner and the node agree about the coinbase key, and this entry
+  used to say otherwise.** It cited `node/src/rpc.js:130-134` and
+  `node/src/block.js:45` requiring Ed25519 — both of which belong to the UTXO
+  chain, which is not the chain the browser miner talks to. The account model's
+  issuer (`node/src/chain/miner.js` `issue()`) requires a 65-byte uncompressed
+  secp256k1 key and `node/src/chain/header.js` `verifyPow` recovers one from the
+  proof signature, which is what the miner signs with. The one real disagreement
+  was the signature LENGTH — 64 bytes sent against 65 required — and it is fixed
+  and covered by `node/test/browser-proof.js`.
+- **`/mining/template` and `/mining/submit` are unauthenticated on purpose.**
+  This is a permissionless chain; anyone may submit a block and it still has to
+  satisfy proof of work and full validation. The exposure is cost, not
+  authorisation: one `submit` reaches a full Homefire evaluation, so both
+  endpoints carry a token budget with a refund for useful work, per-caller for
+  fairness and global for the actual bound (`MINING_VERIFY_BURST` in
+  `node/src/params.js`, `node/test/mining-budget.js`). Reports of a way past
+  those budgets are in scope.
 
 ---
 

@@ -47,13 +47,28 @@ is untouched, as is LWMA. The browser miner has already moved
 (`web/assets/mining/miner.js:24-46`) and `node/test/browser-pow.js` still passes
 digest for digest.
 
-**The node has not moved yet.** `GET /mining/template?pub=` still requires an
-88-hex SPKI DER *Ed25519* key (`node/src/rpc.js:130-134`) and
-`node/src/block.js:45` still verifies the proof signature with Ed25519. So the
-browser miner currently cannot mine a block this node will accept. Phase 5 owns
-the node half of that contract; `POW_SIG_FORM`
-(`web/assets/mining/miner.js:46`) names the wire form the browser assumes —
-`r || s`, 64 bytes, low-s, no recovery id.
+**The node moved, and this paragraph did not.** It used to say the node still
+required an 88-hex SPKI DER *Ed25519* key, citing `node/src/rpc.js:130-134` and
+`node/src/block.js:45`, and concluded that the browser miner could not mine a
+block this node would accept. Three other documents said the same thing. All four
+were reading THE UTXO CHAIN — `rpc.js` and `block.js` are that chain's REST server
+and that chain's block rules, and they will require Ed25519 for as long as they
+exist, because it is a different chain with a different curve.
+
+The account model has its own REST server and its own template issuer, and they
+require secp256k1: `node/src/chain/miner.js` `issue()` refuses anything that is
+not a 65-byte uncompressed secp256k1 key, and `node/src/chain/header.js`
+`verifyPow` recovers a secp256k1 key from the proof signature. That is exactly
+what the browser miner signs with. Four documents agreeing is not one of them
+agreeing with the node.
+
+**There WAS a real mismatch, and it was one byte.** `POW_SIG_FORM` said `r || s`,
+64 bytes, no recovery id; the node requires 65 — `r || s || recoveryId` — because
+`verifyPow` recovers the coinbase key from the signature rather than reading one.
+Every block the browser miner found was answered `bad signature` after the work
+was done. Fixed, and now checked rather than described:
+`node/test/browser-proof.js` imports the browser's own `proofSignature`, signs a
+real winning digest and requires the node's template flow to produce a block.
 
 **This is not non-outsourceability, and this document used to say it was.** The
 private key is used *after* a nonce wins (`node/src/miner.js`), never inside the
@@ -108,9 +123,16 @@ in the wallet. The node hands out a candidate built for *your* public key and
 keeps the transactions; you return a nonce, a digest and a signature. Your
 private key never leaves the page.
 
-  GET  /mining/template?pub=<spki-der-hex>   → header core, target, PoW params
-                                              (Ed25519 today; secp256k1 after phase 5)
+  GET  /mining/template?pub=<65-byte uncompressed secp256k1, hex>
+                                            → header core, target, PoW params,
+                                              and the rest of the core header so
+                                              you can CHECK the work pays you
   POST /mining/submit  {templateId, nonce, powDigest, powSig}
+
+`powSig` is 65 bytes: `r || s || recoveryId`. Both endpoints are metered rather
+than authenticated — see `MINING_VERIFY_BURST` in `node/src/params.js` for why a
+permissionless chain should not put a credential on `submit`, and what it puts
+there instead.
 
 The node cannot mine on your behalf and cannot take work built for your key.
 That is a real guarantee about *this* endpoint; it is not a guarantee that no
