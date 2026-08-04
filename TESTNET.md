@@ -139,7 +139,7 @@ This brings up exactly three node containers, all on `HEARTH_NETWORK=hearth-test
 
 | Container                | Role                  | Host RPC | Notes                                   |
 |--------------------------|-----------------------|----------|-----------------------------------------|
-| `hearth-testnet-seed`    | non-mining bootstrap  | `:8645`  | also exposes P2P on host `:8646`        |
+| `hearth-testnet-seed`    | non-mining bootstrap  | `:8645`  | P2P on host `:8646` (TCP) and `:8648/p2p` (WebSocket) |
 | `hearth-testnet-miner1`  | mining, peers to seed | `:8647`  | `HEARTH_MINE=1`, `HEARTH_THROTTLE=0.6`  |
 | `hearth-testnet-miner2`  | mining, peers to seed | `:8649`  | `HEARTH_MINE=1`, `HEARTH_THROTTLE=0.6`  |
 
@@ -147,6 +147,54 @@ Inside every container the RPC binds to `8645` and P2P to `8646`; only the
 **host** port mapping differs (the miners map host `:8647`/`:8649` → container
 `:8645`). Each container has its own named volume so its chain persists across
 restarts.
+
+## Joining from another machine
+
+The seed speaks the **same gossip protocol over two transports**. Which one you
+can use depends entirely on how you reach the machine:
+
+| Transport | Address | Use it when |
+|---|---|---|
+| TCP  | `hearth-testnet-seed:8646`, or `host:8646` | you are on the same docker network or the same LAN |
+| WebSocket | `wss://p2p.<apex>/p2p` (container `8648`) | you are anywhere else |
+
+The second one exists because there is no third option. CloudsForge is published
+from a home server behind a **Cloudflare Tunnel** and the operator has no static
+IP, so every inbound connection arrives through the tunnel. A tunnel carries HTTP
+and WebSocket and **cannot carry raw TCP** — so `8646` is unreachable from
+outside the house, and a miner that cannot gossip cannot mine: a mined block
+reaches the network only through `p2p.broadcast` (`node/src/evmnode.js`).
+
+It is not a different protocol. It is the identical newline-delimited JSON, with
+**one line per WebSocket text message**, so a WebSocket peer and a TCP peer of
+the same node relay to each other with nothing in between translating
+(`node/test/p2p-ws.js` asserts exactly that). Every bound is on the shared path:
+the peer cap, the 4 MiB read bound, the per-connection proof-of-work and
+transaction verification budgets, the invalid-block budget, and the handshake
+that refuses a peer on a different genesis, chain id or Commons address.
+
+To mine against the testnet from a Mac or a PC:
+
+```bash
+# from a checkout of this repository
+cd node && node bin/hearthd.js --evm --mine --p2p 0 --peer wss://p2p.<apex>/p2p
+```
+
+`--p2p 0` says *do not listen*: a machine dialling out through a tunnel has
+nothing to serve, and an ephemeral listener nobody can be told about is strictly
+worse than none.
+
+Two things about this transport are worth knowing before you debug it:
+
+- **It keeps itself alive.** Cloudflare closes a WebSocket that carries nothing,
+  so the node pings every 20 s and hangs up on a peer that has answered nothing
+  for 70 s (`P2P_WS_PING_MS` / `P2P_WS_IDLE_MS`, `node/src/params.js`). Without
+  that the link dies quietly and a miner looks connected while receiving nothing.
+- **A browser cannot peer.** The upgrade is refused if it carries an `Origin`
+  header. Any page on any origin can open a WebSocket to any host with no
+  preflight and no CORS — a raw TCP port cannot be reached that way at all — so
+  without this an anonymous page's visitors could take every one of the 64 peer
+  slots without knowing they had.
 
 ## Poke at it
 

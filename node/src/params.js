@@ -306,6 +306,45 @@ module.exports = {
   DEFAULT_RPC_PORT: 8645,                       // HTTP REST + legacy JSON-RPC + SSE
   DEFAULT_P2P_PORT: 8646,                       // TCP peer gossip
 
+  /* P2P OVER WEBSOCKET — the transport that can actually be published.
+   *
+   * CloudsForge runs on a home server behind a Cloudflare Tunnel and the
+   * operator has no static IP, so every inbound connection arrives through the
+   * tunnel or not at all. A tunnel carries HTTP and WebSocket and CANNOT carry
+   * raw TCP, which makes gossip on 8646 the one service that cannot be exposed —
+   * and gossip is the whole of mining, because a mined block reaches the network
+   * only through `p2p.broadcast` (src/node.js `onMinedBlock`, src/evmnode.js).
+   *
+   * 8648, because 8645/8646/8647/8649 are taken by the REST and p2p ports of the
+   * three testnet containers (docker-compose.testnet.yml) and 8546 is reserved
+   * for the v2 eth_subscribe endpoint above. The path is fixed too: the
+   * Cloudflare ingress and the Traefik router for `p2p.<apex>` are wired to
+   * exactly `/p2p`, so changing either of these is a coordinated change with
+   * deploy/, not a local one.
+   *
+   * OFF unless a port is configured (HEARTH_P2P_WS). TCP stays the default for
+   * same-host and same-LAN peers: it is one fewer layer, and every existing
+   * testnet deployment uses it. */
+  DEFAULT_P2P_WS_PORT: 8648,
+  P2P_WS_PATH: '/p2p',
+
+  /* KEEPALIVE, AND WHY IT IS NOT OPTIONAL ON THIS TRANSPORT.
+   *
+   * Cloudflare closes a WebSocket that carries nothing. Without an
+   * application-level heartbeat the seed link dies quietly and the failure is
+   * the worst shape a failure can have: the miner still shows a peer, still
+   * hashes, still finds blocks, and every one of them goes nowhere.
+   *
+   * 20 s is comfortably inside Cloudflare's ~100 s idle window and is cheap — a
+   * ping frame is 2 bytes on the wire, so this is ~0.1 bps per peer. The idle
+   * deadline is 70 s: three missed pings, not one, so a single dropped frame or
+   * a GC pause does not cost a peer. Note the resync tick above is 20 s as well
+   * and does keep a link busy, but it only runs while a node HAS peers and only
+   * carries a locator — it is not a liveness check and nothing acts on its
+   * absence. */
+  P2P_WS_PING_MS: 20_000,
+  P2P_WS_IDLE_MS: 70_000,
+
   /* THE ETHEREUM JSON-RPC ENDPOINT — settled (docs/evm-spec.md §6).
    *
    *   port 8545, path `/`.

@@ -18,7 +18,28 @@
 #                           MetaMask at http://localhost:8545
 #   :8645/7/9   :8645       the REST API — /info, /supply, /mempool, /mining/*
 #
-# 8546 is deliberately unused: it is reserved for the v2 WebSocket endpoint.
+# …and the seed serves a THIRD, which is the one an outside miner uses:
+#
+#   :8648       :8648/p2p   p2p gossip over WebSocket (HEARTH_P2P_WS)
+#
+# 8546 is deliberately unused: it is reserved for the v2 eth_subscribe endpoint.
+#
+# WHY THE SEED SPEAKS WEBSOCKET. Gossip is raw TCP on 8646, which is fine between
+# these three containers and useless from outside: CloudsForge is published from
+# a home server behind a Cloudflare Tunnel, the operator has no static IP, and a
+# tunnel carries HTTP and WebSocket but NOT raw TCP. So a miner on a laptop can
+# reach 8646 only if it is on this docker network. 8648 is the same protocol —
+# the identical newline-delimited JSON, one line per WebSocket message — over a
+# transport the tunnel can actually carry, and `p2p.<apex>` is routed to it.
+# The two miners below keep using TCP, because they are on this network and one
+# fewer layer is one fewer thing to be wrong.
+#
+# To mine against this from another machine:
+#
+#   hearthd --evm --mine --p2p 0 --peer wss://p2p.<apex>/p2p
+#
+# `--p2p 0` because a miner dialling out has nothing to serve and no reason to
+# open a port on a laptop.
 #
 # CHAIN ID 7412, NOT 7411. `HEARTH_NETWORK=hearth-testnet` selects it
 # (params.js), and the separation is mandatory: EIP-155 is the only thing keeping
@@ -50,10 +71,13 @@ services:
       HEARTH_RPC: "8645"
       HEARTH_JSONRPC: "8545"
       HEARTH_P2P: "8646"
+      # The tunnel-carryable gossip port. `p2p.<apex>` is routed here, at /p2p.
+      HEARTH_P2P_WS: "8648"
     ports:
       - "8545:8545"   # Ethereum JSON-RPC
       - "8645:8645"   # REST
-      - "8646:8646"   # P2P
+      - "8646:8646"   # P2P over TCP     — same-host and same-LAN peers
+      - "8648:8648"   # P2P over WebSocket at /p2p — everyone else, via the tunnel
     volumes:
       - testnet-seed-data:/data
 

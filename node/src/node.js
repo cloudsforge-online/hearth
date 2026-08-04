@@ -68,7 +68,10 @@ class Node {
 
   start() {
     this.rpc.listen(this.opts.rpcPort || P.DEFAULT_RPC_PORT);
-    this.p2p.listen(this.opts.p2pPort || P.DEFAULT_P2P_PORT);
+    if (this.opts.p2pPort !== 0) this.p2p.listen(this.opts.p2pPort || P.DEFAULT_P2P_PORT);
+    // Off unless asked for. A node behind a Cloudflare Tunnel can only be
+    // reached this way — see params.js — but a node on a LAN has no use for it.
+    if (this.opts.p2pWsPort) this.p2p.listenWs(this.opts.p2pWsPort);
     for (const peer of (this.opts.peers || [])) this.p2p.connect(peer);
     if (this.opts.mine) {
       this.miner.throttle = this.opts.throttle || 1.0;

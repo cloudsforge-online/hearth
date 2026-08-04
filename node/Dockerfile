@@ -19,9 +19,14 @@ RUN mkdir -p /data && chown node:node /data
 VOLUME ["/data"]
 
 # REST/http + p2p, and the Ethereum JSON-RPC endpoint when HEARTH_EVM=1
-# (docs/evm-spec.md §6). 8546 is reserved for the v2 WebSocket endpoint and is
-# deliberately not exposed.
-EXPOSE 8545 8645 8646
+# (docs/evm-spec.md §6). 8546 is reserved for the v2 eth_subscribe endpoint and
+# is deliberately not exposed.
+#
+# 8648 is P2P OVER WEBSOCKET (HEARTH_P2P_WS, served at /p2p). It is the only
+# gossip port that can be published through a Cloudflare Tunnel, which carries
+# HTTP and WebSocket but not raw TCP — see src/params.js. Exposing it costs
+# nothing when HEARTH_P2P_WS is unset: nothing binds it.
+EXPOSE 8545 8645 8646 8648
 
 USER node
 ENTRYPOINT ["node", "bin/hearthd.js"]

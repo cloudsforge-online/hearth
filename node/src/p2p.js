@@ -1,14 +1,36 @@
 'use strict';
-/* Peer-to-peer gossip over plain TCP (no dependencies). Newline-delimited JSON.
- * Handles block/tx propagation and locator-based fork sync: a node that has
+/* Peer-to-peer gossip over TCP or WebSocket (no dependencies). Newline-delimited
+ * JSON. Handles block/tx propagation and locator-based fork sync: a node that has
  * diverged sends exponentially-spaced hashes back from its best-work branch and
  * the peer answers from the newest one that sits on its own active chain, so
  * two forked nodes find their common ancestor and exchange the competing branch.
- * Every message is bounded — this surface is reachable by anonymous peers. */
+ * Every message is bounded — this surface is reachable by anonymous peers.
+ *
+ * TWO TRANSPORTS, ONE PROTOCOL. A Cloudflare Tunnel carries HTTP and WebSocket
+ * and cannot carry raw TCP, so a node published from a home server with no
+ * static IP can be reached on `wss://p2p.<apex>/p2p` and on nothing else. The
+ * protocol was already newline-delimited JSON, so the adaptation is exact: ONE
+ * NDJSON LINE IS ONE WEBSOCKET TEXT MESSAGE, and src/ws.js presents the small
+ * socket surface `_setup` below already consumes — on('data'|'close'|'error'),
+ * write, destroy, destroyed, remoteAddress/remotePort, writableLength, and
+ * whatever properties get hung off it.
+ *
+ * NOTHING BELOW `_setup` KNOWS THERE ARE TWO TRANSPORTS, and that is the point:
+ * the peer cap, the read bound, the two verification budgets, the invalid-block
+ * and invalid-transaction budgets and the genesis handshake are one
+ * implementation on one code path. A bound that had to be re-stated per
+ * transport is a bound that will eventually be stated once. That matters more
+ * here than it looks, because a WebSocket peer is MORE exposed than a TCP one:
+ * a page on any origin can open a WebSocket to any host with no preflight,
+ * which is why src/ws.js refuses an upgrade carrying an `Origin` header. */
 
 const net = require('net');
 const BLOCK = require('./block');
 const P = require('./params');
+const WS = require('./ws');
+
+/** A peer address that names a WebSocket endpoint rather than a host:port. */
+const isWsUrl = s => typeof s === 'string' && /^wss?:\/\//i.test(s);
 
 const isHash = s => typeof s === 'string' && /^[0-9a-f]{64}$/.test(s);
 
@@ -52,8 +74,9 @@ const UTXO_WIRE = {
 class P2P {
   constructor(node) {
     this.node = node;
-    this.peers = new Set();   // sockets
-    this.server = null;
+    this.peers = new Set();   // sockets and WebSocket connections, indistinguishably
+    this.server = null;       // TCP listener, if any
+    this.wsServer = null;     // WebSocket listener, if any — either, both or neither
     this.orphans = new Map(); // blockId -> block, capped, oldest evicted first
     this.resyncMs = (node.opts && node.opts.resyncMs) || P.P2P_RESYNC_MS;
     this.timer = null;
@@ -69,25 +92,83 @@ class P2P {
     this.server.listen(port, () => this.node.log(`p2p listening on :${port}`, { port }));
   }
 
-  connect(hostport) {
+  /**
+   * Listen for peers over WebSocket, so this node can be published through a
+   * tunnel that cannot carry raw TCP. Independent of `listen` above: a node may
+   * run either, both, or — behind a tunnel, where no TCP port is reachable —
+   * only this one.
+   *
+   * `opts` exists so a suite can compress the keepalive timings; the shipped
+   * values are in params.js and everything else here reads them.
+   */
+  listenWs(port, opts = {}) {
+    const path = opts.path || P.P2P_WS_PATH;
+    this.wsServer = WS.createServer({
+      path,
+      // The SAME read bound as the TCP path, applied one layer lower: src/ws.js
+      // refuses a frame from its declared length, so a peer cannot make this
+      // node hold memory by announcing a size it never sends.
+      maxMessageBytes: P.P2P_MAX_LINE,
+      pingMs: opts.pingMs === undefined ? P.P2P_WS_PING_MS : opts.pingMs,
+      idleMs: opts.idleMs === undefined ? P.P2P_WS_IDLE_MS : opts.idleMs,
+      onConnection: conn => this._setup(conn, 'in'),
+      // A tunnel routing `p2p.<apex>` to the wrong path, or a browser wandering
+      // in, is otherwise a silent network: the operator sees no peers and no
+      // reason. Debug rather than warn, because anything on the internet can
+      // make this line print.
+      onRefused: (why, fields) => this.node.debug('p2p ws upgrade refused: ' + why, fields),
+      notice: (msg, fields) => this.node.debug(msg, fields),
+    });
+    this.wsServer.on('error', e => this.node.error('p2p ws listen failed', { port, path, err: String(e && e.message || e) }));
+    this.wsServer.listen(port, () => this.node.log(`p2p websocket listening on :${this.wsServer.address().port}${path}`,
+      { port: this.wsServer.address().port, path }));
+    return this.wsServer;
+  }
+
+  /**
+   * Dial a peer. `peer` is either `host:port` for TCP or a `ws://`/`wss://` URL —
+   * HEARTH_PEERS carries both, because the same seed list has to work for a
+   * container on the same docker network and for a laptop coming in through the
+   * tunnel.
+   */
+  connect(peer, opts = {}) {
     if (this.stopped) return;
-    const [host, port] = hostport.split(':');
-    const sock = net.connect({ host, port: Number(port) }, () => {
-      this._down.delete(hostport);
-      this.node.log(`p2p connected to ${hostport}`, { peer: hostport, dir: 'out', peers: this.peers.size + 1 });
+    const sock = isWsUrl(peer) ? this._dialWs(peer, opts) : net.connect(this._tcpTarget(peer));
+    // One reconnect loop for both transports. The WebSocket connection emits
+    // 'open', 'error' and 'close' with net.Socket's meanings for exactly this
+    // reason — a second retry path would be a second thing to get wrong.
+    sock.on(isWsUrl(peer) ? 'open' : 'connect', () => {
+      this._down.delete(peer);
+      this.node.log(`p2p connected to ${peer}`, { peer, dir: 'out', peers: this.peers.size + 1 });
       this._setup(sock, 'out');
     });
     // a seed that is down or moved looks identical to a healthy node otherwise:
     // the retry loop below hides it forever. Said once per outage, since the
     // loop reconnects every 3s and would otherwise fill the log with one peer.
     sock.on('error', e => {
-      if (this._down.has(hostport)) return;
-      this._down.add(hostport);
-      this.node.warn('p2p connect failed', { peer: hostport, err: String(e && e.message || e) });
+      if (this._down.has(peer)) return;
+      this._down.add(peer);
+      this.node.warn('p2p connect failed', { peer, err: String(e && e.message || e) });
     });
     sock.on('close', () => {
       if (this.stopped) return;
-      setTimeout(() => this.connect(hostport), 3000).unref();
+      setTimeout(() => this.connect(peer, opts), 3000).unref();
+    });
+    return sock;
+  }
+
+  /** `host:port`. Split on the LAST colon, so a bracketed IPv6 literal survives. */
+  _tcpTarget(hostport) {
+    const i = hostport.lastIndexOf(':');
+    return { host: hostport.slice(0, i), port: Number(hostport.slice(i + 1)) };
+  }
+
+  _dialWs(url, opts = {}) {
+    return WS.connect(url, {
+      maxMessageBytes: P.P2P_MAX_LINE,
+      pingMs: opts.pingMs === undefined ? P.P2P_WS_PING_MS : opts.pingMs,
+      idleMs: opts.idleMs === undefined ? P.P2P_WS_IDLE_MS : opts.idleMs,
+      notice: (msg, fields) => this.node.debug(msg, fields),
     });
   }
 
@@ -98,6 +179,7 @@ class P2P {
     if (this.timer) { clearInterval(this.timer); this.timer = null; }
     this.disconnect();
     if (this.server) { this.server.close(); this.server = null; }
+    if (this.wsServer) { this.wsServer.close(); this.wsServer = null; }
   }
 
   _setup(sock, dir) {

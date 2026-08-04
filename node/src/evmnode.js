@@ -208,7 +208,14 @@ class EvmNode {
   start() {
     this.listenRest(this.opts.rpcPort === undefined ? P.DEFAULT_RPC_PORT : this.opts.rpcPort);
     this.listenJsonRpc(this.opts.jsonRpcPort === undefined ? P.DEFAULT_JSONRPC_PORT : this.opts.jsonRpcPort);
-    this.p2p.listen(this.opts.p2pPort === undefined ? P.DEFAULT_P2P_PORT : this.opts.p2pPort);
+    /* `--p2p 0` means DO NOT LISTEN, not "pick a port". A miner dialling out to a
+     * seed through a tunnel has nothing to serve and no reason to open a port on
+     * a laptop; an ephemeral listener nobody can be told about is strictly worse
+     * than none. (In-process suites bind 0 by calling p2p.listen directly.) */
+    if (this.opts.p2pPort !== 0) this.p2p.listen(this.opts.p2pPort === undefined ? P.DEFAULT_P2P_PORT : this.opts.p2pPort);
+    // Off unless asked for. A node behind a Cloudflare Tunnel can only be
+    // reached this way — see params.js — but a node on a LAN has no use for it.
+    if (this.opts.p2pWsPort) this.p2p.listenWs(this.opts.p2pWsPort);
     for (const peer of (this.opts.peers || [])) this.p2p.connect(peer);
     if (this.opts.mine) {
       this.miner.throttle = this.opts.throttle || 1.0;
