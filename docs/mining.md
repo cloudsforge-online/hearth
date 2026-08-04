@@ -160,6 +160,48 @@ target comparison — then mines a block with the browser code and has the node
 verify it. `node/test/mining-api.js` drives the HTTP endpoints and asserts that a
 proof signed by anyone but the coinbase key is rejected. Both run in CI.
 
+## Mining from a desktop
+
+The browser is not the only light miner, and for a machine you actually own it is
+not the best one. Two programs share **one** implementation of the loop —
+`node/src/mine/session.js` — and differ only in what renders it:
+
+| | |
+|---|---|
+| `hearth-mine --url https://<host>` | The command line. `node/bin/hearth-mine.js`. A status line, a key file, no window. |
+| `app-desktop/` | A window: the address it pays, the hashrate, what it has earned, and a list of what it is doing. Ships its own Node runtime, so nothing has to be installed. |
+
+Both are light miners over the same two endpoints as the browser, and both carry
+the same checks. The one that matters most is not about hashing: **the endpoint
+chooses the work**, so before spending a single evaluation the session recomputes
+the core hash from the header fields the template carries and refuses anything
+that does not commit to them, or that pays a different coinbase, or that was
+built with different proof-of-work parameters (`node/src/mine/session.js:147-188`).
+Without it a hostile endpoint cannot *steal* a block — the proof is signed by the
+coinbase key — but it can hand out work paying someone else, and every submission
+would be refused *after* the electricity was spent.
+
+**Why one loop rather than two.** §2 above records what a second implementation
+cost: the browser miner signed a 64-byte proof while the node required 65, and
+every block it found was thrown away. The desktop application therefore runs the
+same JavaScript the command-line miner runs, in a bundled Node runtime, rather
+than a port. `app-desktop/src-tauri/src/engine.rs:7-17` is the long version.
+
+**The key is the difference between them.** `hearth-mine` and `hearthd` write the
+coinbase key in the clear at mode 600 (`node/src/coinbase.js:52-57`), which is the
+right trade for a server that must come back up unattended after a reboot — a
+passphrase the machine can read by itself is not a passphrase. A laptop is the
+opposite case: the file is synced, backed up to a cloud and carried around. So the
+desktop app uses an encrypted keystore instead — scrypt N=2¹⁸ over a passphrase,
+AES-256-GCM over the key, and the address in the clear so the app can say who it
+pays before you unlock anything (`node/src/mine/keystore.js`).
+
+**There is no mobile miner, and there should not be.** Proof-of-work on a phone is
+thermally throttled and battery-hostile, and at a 15-second block target against
+desktop hardware it would essentially never win a block — it would spend a user's
+battery to earn nothing. A phone's honest job is watching a balance and holding a
+key.
+
 ## Difficulty & security
 - Retarget every block with LWMA to resist timestamp manipulation and hashrate
   swings.
@@ -176,9 +218,16 @@ proof signed by anyone but the coinbase key is rejected. Both run in CI.
 - **Will it drain my battery?** The browser miner pauses on battery where the
   browser reports power state, and throttles to your effort setting otherwise.
   `hearthd --mine` has a duty-cycle throttle and no power awareness at all.
-- **How do I start?** Open `web/mine.html`, create or load a key, press *Start
-  mining*. Or run a node with `hearthd --mine`. There is no WASM light-miner and
+- **How do I start?** Easiest is the desktop app (`app-desktop/`): it brings its
+  own runtime and asks for a passphrase. Otherwise `hearth-mine --url <node>` on
+  the command line, `web/mine.html` in a browser, or `hearthd --evm --mine` if you
+  want to validate the chain yourself as well. There is no WASM light-miner and
   never was — this line used to promise one in `web/wallet.html`.
+- **Do I have to trust the node I mine against?** For *validity*, yes: a light
+  miner holds no chain, so it cannot tell whether the work is on the network
+  everyone else is on. Point it at a node you trust — your own, ideally. For
+  *payment*, no: work built for your key is redeemable only by you, and the miner
+  refuses work that does not pay it before doing any of it.
 
 ## Production vs. proof-of-concept
 `node/src/pow.js` is the algorithm the chain actually runs, and

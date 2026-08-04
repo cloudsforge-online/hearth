@@ -98,7 +98,7 @@ and `node/test/bench/block-execution.js` fails if that regresses. §11.
 | `site/` | React + Vite marketing site for hearth.cloudsforge.online | Ships; copy corrected against the code |
 | `rust/hearthd/` | A self-check binary and a Homefire benchmark over some library modules | **Not a node. Not consensus.** Two known divergences — §3.3 |
 | `proto/` | Two teaching scripts: an emission *model* and a toy PoW miner | Prototype; **the emission model is not the consensus schedule** — §11 |
-| `app-desktop/` | Tauri v2 shell | **Unshipped scaffolding.** Its three native commands have zero callers |
+| `app-desktop/` | Tauri v2 **desktop miner** — window, encrypted keystore, OS keychain, bundled Node runtime | Ships on macOS; Windows/Linux configured but never compiled — §3.7 |
 | `docs/` | Eighteen documents. [`evm-spec.md`](docs/evm-spec.md) is the authoritative one; [`robustness-review.md`](docs/robustness-review.md) is the measured one; [`testing.md`](docs/testing.md) says what is and is not covered | Prose only |
 | `branding/` | Favicon, mark, wordmark, og, social | Complete |
 
@@ -411,17 +411,49 @@ handed to a hasher cannot be redirected*, and explicitly declines to claim
 non-outsourceability (`:128-133`). **It has not been updated for the account
 model** and still describes the UTXO chain's user-facing story.
 
-### 3.7 `app-desktop/` — unshipped
+### 3.7 `app-desktop/` — the desktop miner
 
-A Tauri v2 shell whose `frontendDist` is `../../web` and which opens `wallet.html`
-in a native window (`app-desktop/src-tauri/tauri.conf.json:6-18`). Its three native
-commands `start_node`, `stop_node` and `node_running` are registered
-(`src-tauri/src/main.rs:91`) and have **zero callers** — the bundled pages are
-plain static HTML that never call `invoke`. `node_entry()` resolves
-`../../node/bin/hearthd.js` relative to the process CWD, which for an app launched
-from Finder is never a checkout (`src-tauri/src/main.rs:27-39`). The file documents
-its own brokenness at `:4-18`. A restrictive CSP *is* configured
-(`tauri.conf.json:21`).
+A Tauri v2 application that mines EMBER on a Mac or a PC. It is a **light miner**,
+not a node: it takes work over the HTTP mining API, grinds Homefire, signs the
+winning digest with a key only it holds, and posts the proof. No chain, no sync,
+no inbound port.
+
+Three parts, and the split is the point:
+
+* **`ui/`** — plain HTML/CSS/JS, no framework and no build step
+  (`app-desktop/ui/app.js:20-21`). It is told the *address* and never the key.
+* **`engine/engine.js`** — one mining session and one key, as JSON lines on
+  stdin/stdout. It runs on the Node runtime bundled with the app.
+* **`src-tauri/`** — the window, the OS keychain (`src/keychain.rs`), the
+  supervisor and the path resolution (`src/engine.rs`).
+
+**The mining loop is not in this directory.** It is `node/src/mine/session.js`,
+shared unmodified with `bin/hearth-mine.js`; `app-desktop/src-tauri/src/engine.rs:7-17`
+gives the reason, which is the 64-byte browser-miner proof.
+
+**The key is encrypted at rest** — scrypt N=2¹⁸ over a passphrase, AES-256-GCM
+over the key, address in the clear and bound in as GCM additional data
+(`node/src/mine/keystore.js`). That is the one thing `hearth-mine` and `hearthd`
+do *not* do: `node/src/coinbase.js:52-57` writes the key in the clear at mode 600,
+which is right for an unattended server and wrong for a laptop.
+
+**What replaced what.** The previous contents were scaffolding that documented its
+own brokenness: three registered commands with zero callers, a `frontendDist` of
+`../../web` whose pages never call `invoke`, and a `node_entry()` resolving
+relative to the process CWD. All of it is gone. `app-desktop/test/wiring.js` is
+the regression test for the first of those — it requires commands, events and
+element ids to line up in *both* directions — and `src/engine.rs`'s unit tests
+cover the second and third.
+
+**Proved, not asserted.** `hearth-desktop --selftest` drives the production path
+with no window and mines a real node; `app-desktop/test/engine.js` spawns the
+engine as the app spawns it, mines a real `hearthd`, reads the balance back out of
+the chain, and then searches every byte the process wrote for the key, the
+passphrase and the ciphertext.
+
+**Not built anywhere but macOS.** Windows and Linux are configured — target
+triples in `scripts/fetch-node.mjs`, per-platform keychain backends in
+`Cargo.toml` — and have never been compiled. No CI job builds this app.
 
 ### 3.8 `proto/` — teaching artifacts, and one trap
 
