@@ -25,19 +25,15 @@
  * chooses.
  */
 
-const fs = require('fs');
 const http = require('http');
-const path = require('path');
 
 const P = require('./params');
-const secp = require('./crypto/secp256k1');
 const { keccak256 } = require('./crypto/keccak');
 const { Blockchain } = require('./chain/blockchain');
 const { Mempool } = require('./chain/mempool');
 const { Miner, Templates } = require('./chain/miner');
 const { RpcChain } = require('./chain/rpcadapter');
 const HDR = require('./chain/header');
-const TX = require('./chain/transaction');
 const { P2P } = require('./p2p');
 const { JsonRpcServer } = require('./jsonrpc/server');
 
@@ -47,48 +43,10 @@ const MIN_LEVEL = LEVELS[String(process.env.HEARTH_LOG_LEVEL || 'info').toLowerC
 const isFields = v => v !== null && typeof v === 'object' && !Array.isArray(v) && !(v instanceof Error);
 const text = v => (typeof v === 'string' ? v : v instanceof Error ? v.message : JSON.stringify(v));
 
-const KEY_FILE = 'coinbase-key.json';
-
-/** Wei as EMBER, to six places. `wei / 10n**18n` is INTEGER division and would
- *  print a 5.999-EMBER reward as "5", which reads as a broken emission schedule. */
-function ember(wei) {
-  const whole = wei / P.WEI_PER_EMBER;
-  const frac = (wei % P.WEI_PER_EMBER).toString().padStart(18, '0').slice(0, 6).replace(/0+$/, '');
-  return frac ? `${whole}.${frac}` : String(whole);
-}
-const hexBuf = h => Buffer.from(String(h).replace(/^0x/i, ''), 'hex');
-
-/**
- * The node's coinbase key: secp256k1, because the coinbase must RECEIVE the reward
- * and the fees and therefore has to be an account this chain can credit (spec §4).
- * Kept in its own file rather than in `wallet.json`, whose keys are Ed25519 and
- * belong to the other chain — one file, one curve, no chance of a key being read
- * as the wrong kind.
- */
-function loadCoinbaseKey(dataDir) {
-  if (!dataDir) return newKey();
-  fs.mkdirSync(dataDir, { recursive: true });
-  const file = path.join(dataDir, KEY_FILE);
-  if (fs.existsSync(file)) {
-    const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
-    return keyFrom(hexBuf(raw.privateKey));
-  }
-  const key = newKey();
-  fs.writeFileSync(file, JSON.stringify({
-    warning: 'this is a mining key with spendable balance — back it up, do not share it',
-    address: key.addressHex,
-    privateKey: '0x' + key.privateKey.toString('hex'),
-  }, null, 2) + '\n', { mode: 0o600 });
-  return key;
-}
-
-function keyFrom(priv) {
-  const publicKey = secp.publicKeyFromPrivate(priv, false);   // uncompressed; see header.js
-  const address = TX.addressFromPublicKey(publicKey);
-  return { privateKey: priv, publicKey, address, addressHex: '0x' + address.toString('hex') };
-}
-
-function newKey() { return keyFrom(secp.randomPrivateKey()); }
+/* The coinbase key and `ember()` now live in src/coinbase.js so that a miner or
+ * a desktop app can have them without instantiating a chain. Re-exported below,
+ * unchanged, so every existing importer of this module still works. */
+const { ember, hexBuf, loadCoinbaseKey, keyFrom, newKey } = require('./coinbase');
 
 class EvmNode {
   constructor(opts = {}) {

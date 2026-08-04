@@ -51,6 +51,15 @@
  * find out. The address is printed before the first hash, `--address` will tell
  * you without mining, the key file and its mode are named so it can be backed
  * up — and the key is never printed.
+ *
+ * WHERE THE LOOP LIVES. Not here any more. Everything above describes behaviour
+ * that app-desktop needs too, and the only ways to give it that were to scrape
+ * this program's status line or to write the loop a second time. So the loop is
+ * src/mine/session.js and this file is its terminal: it parses arguments, loads
+ * the key, and renders the session's events. The checks, the throttling and the
+ * back-off are all still exactly one implementation — test/mine-session.js holds
+ * it to them directly, and test/miner-cli.js still drives THIS program as a
+ * process, because a status line is a feature and only a user can be its test.
  */
 
 const fs = require('fs');
@@ -113,13 +122,11 @@ if (opts.help) { process.stdout.write(HELP); process.exit(0); }
 if (opts.bad) { process.stderr.write(`hearth-mine: unknown option ${opts.bad}\n\n${HELP}`); process.exit(2); }
 if (opts.network) process.env.HEARTH_NETWORK = opts.network;
 
-let P, POW, HDR, loadCoinbaseKey, ember, SLICE_MS, schedule;
+let P, loadCoinbaseKey, ember, MineSession;
 try {
   P = require('../src/params');
-  POW = require('../src/pow');
-  HDR = require('../src/chain/header');
-  ({ loadCoinbaseKey, ember } = require('../src/evmnode'));
-  ({ SLICE_MS, schedule } = require('../src/minerloop'));
+  ({ loadCoinbaseKey, ember } = require('../src/coinbase'));
+  ({ MineSession } = require('../src/mine/session'));
 } catch (e) {
   // An unregistered --network is the likely cause, and params.js says so well.
   process.stderr.write(`hearth-mine: ${e && e.message || e}\n`);
@@ -197,255 +204,92 @@ say('');
 say(C.dim('  a light miner does not validate the chain it mines on. Point it at a node you trust.'));
 say('');
 
-// ---- session state ---------------------------------------------------------
+// ---- session state, and the terminal that renders it ------------------------
+
+/* Everything below is PRESENTATION. The loop, the checks, the back-off and the
+ * give-up rule are src/mine/session.js; this file's whole remaining job is to
+ * turn its events into the two things a miner actually asks a terminal for —
+ * "is it working" and "what have I earned" — and to say plainly when it stops. */
 
 const t0 = Date.now();
-let found = 0, stale = 0, refused = 0;
-let hashes = 0, hashrate = 0, rateStart = Date.now();
-let work = null;            // the template being ground
-let height = 0;
-let earnedWei = 0n;
-let stopping = false;
-let downSince = null;       // set while the endpoint is unreachable, so it is said once
-
-// ---- the status line -------------------------------------------------------
+const session = new MineSession({ url: base, key, throttle });
 
 let drawn = false;
 function clear() { if (TTY && drawn) { process.stdout.write('\x1b[2K\r'); drawn = false; } }
 
 function status() {
   if (opts.quiet) return;
+  const s = session.stats();
   const parts = [
-    work ? `hashing #${num(height)}` : C.y('waiting for work'),
-    rate(hashrate),
-    `found ${found}`,
-    `earned ${ember(earnedWei)} ${P.COIN}`,
+    s.working ? `hashing #${num(s.height)}` : C.y('waiting for work'),
+    rate(s.hashrate),
+    `found ${s.found}`,
+    `earned ${ember(BigInt(s.earnedWei))} ${P.COIN}`,
     clock(Date.now() - t0),
   ];
-  if (stale) parts.push(C.dim(`${stale} stale`));
-  const line = `  ${work ? '⛏ ' : '· '} ${parts.join(C.dim(' · '))}`;
+  if (s.stale) parts.push(C.dim(`${s.stale} stale`));
+  const line = `  ${s.working ? '⛏ ' : '· '} ${parts.join(C.dim(' · '))}`;
   if (TTY) { process.stdout.write('\x1b[2K\r' + line); drawn = true; }
   else { process.stdout.write(line + '\n'); }
 }
 
-// ---- talking to the node ---------------------------------------------------
+session.on('accepted', a => {
+  say(`  ${C.g('⛏  accepted')} block #${num(a.height)} ${C.dim(String(a.id).slice(0, 12))}`
+    + ` · paid ${ember(BigInt(a.paidWei))} ${P.COIN}`);
+});
 
-async function api(pathname, init) {
-  const res = await fetch(base + pathname, init);
-  const body = await res.json().catch(() => ({}));
-  return { status: res.status, body };
-}
+session.on('unreachable', u => {
+  say(C.y(`  ⚠ ${u.err}`));
+  say(C.y('    will retry every few seconds. Nothing is being mined until it answers.'));
+  if (u.status) say(C.y('    Check that --url points at the REST API, the one that serves /info.'));
+});
+session.on('reachable', u => say(C.g(`  ✓ ${u.url} is answering again`)));
 
-/**
- * Check a template before spending a single evaluation on it.
- *
- * The endpoint chooses the work, so this is the whole of what a light miner can
- * check for itself. It is not a formality: without it an endpoint can hand out
- * work paying its own coinbase, and the only symptom is that every submission is
- * refused — after the electricity has been spent.
- *
- * Returns an error string, or null when the work is ours to grind.
- */
-function verify(t) {
-  if (!t || typeof t !== 'object' || typeof t.templateId !== 'string') return 'the response is not a work template';
-  if (typeof t.coreHash !== 'string' || !/^[0-9a-f]{64}$/.test(t.coreHash)) return 'the template carries no core hash';
+session.on('throttled', t => {
+  if (t.kind === 'submit') say(C.y('  ⚠ the node is rate-limiting proof submissions — retrying'));
+});
 
-  /* THE PROOF-OF-WORK PARAMETERS TRAVEL WITH THE WORK, and src/chain/miner.js
-   * says why: a miner that hardcodes them keeps hashing happily after a retune
-   * and produces nothing valid, while one that reads them stops — "which is the
-   * failure you want". So stop. */
-  if (t.scratchKiB !== undefined && t.scratchKiB !== P.POW_SCRATCH_KIB) {
-    return `this node mines with a ${t.scratchKiB} KiB scratch pad and this build uses ${P.POW_SCRATCH_KIB} KiB `
-      + '— different proof-of-work parameters, so nothing mined here would be accepted';
-  }
-  if (t.walkSteps !== undefined && t.walkSteps !== P.POW_WALK_STEPS) {
-    return `this node walks ${t.walkSteps} steps and this build walks ${P.POW_WALK_STEPS} `
-      + '— different proof-of-work parameters, so nothing mined here would be accepted';
-  }
+session.on('lost', l => say(C.y(`  ⚠ ${l.err}`)));
+session.on('refused', r => say(C.y(`  ⚠ a proof was refused: ${r.err}`)));
 
-  // …and it must pay US.
-  if (t.coinbasePub !== pubHex) return 'the work pays another coinbase key, not ours';
-  if (t.coinbaseAddress && t.coinbaseAddress.toLowerCase() !== key.addressHex.toLowerCase()) {
-    return `the work pays ${t.coinbaseAddress}, not ${key.addressHex}`;
-  }
-
-  /* And the core hash must actually COMMIT to all of that. Without this the two
-   * checks above are only the endpoint's word for what it put in the header. */
-  const fields = ['version', 'prevHash', 'height', 'timestamp', 'target', 'coinbasePub',
-    'txRoot', 'stateRoot', 'receiptsRoot', 'logsBloom', 'gasLimit', 'gasUsed', 'extraData'];
-  if (fields.some(f => t[f] === undefined)) {
-    return 'the template does not carry the header fields its core hash is made of, '
-      + 'so there is no way to check that the work pays us — the node is older than this miner';
-  }
-  let recomputed;
-  const h = {};
-  for (const f of fields) h[f] = t[f];
-  try { recomputed = HDR.coreHash(h); }
-  catch (e) { return `the header in the template is malformed: ${e && e.message || e}`; }
-  if (recomputed !== t.coreHash) {
-    return 'the core hash does not match the header it came with — the work we would grind is '
-      + 'not the work we were shown';
-  }
-  return null;
-}
-
-/** Fetch and check work. Returns a template, or null having already said why. */
-async function fetchWork() {
-  let r;
-  try {
-    r = await api(`/mining/template?pub=${pubHex}`);
-  } catch (e) {
-    if (!downSince) {
-      downSince = Date.now();
-      say(C.y(`  ⚠ could not reach ${base} — ${String(e && e.message || e)}`));
-      say(C.y('    will retry every few seconds. Nothing is being mined until it answers.'));
-    }
-    return null;
-  }
-  if (r.status === 429) {
-    /* Throttled, not broken. Both mining endpoints are metered rather than
-     * authenticated (params.js `MINING_VERIFY_BURST`), and the honest way to
-     * meet that is to ask less often — not to hammer it and be refused. */
-    if (!downSince) {
-      downSince = Date.now();
-      say(C.y(`  ⚠ ${base} is rate-limiting work requests — backing off`));
-    }
-    await new Promise(res => setTimeout(res, (r.body && r.body.retryAfterMs) || 1000));
-    return null;
-  }
-  if (r.status !== 200) {
-    if (!downSince) {
-      downSince = Date.now();
-      say(C.y(`  ⚠ ${base} answered HTTP ${r.status} for work — ${r.body && r.body.err || 'no reason given'}`));
-      say(C.y('    will retry. Check that --url points at the REST API, the one that serves /info.'));
-    }
-    return null;
-  }
-  if (downSince) { say(C.g(`  ✓ ${base} is answering again`)); downSince = null; }
-
-  const bad = verify(r.body);
-  if (bad) {
-    say('');
-    say(C.r(`  ✗ refusing this work: ${bad}`));
-    say(C.r('    Not grinding it. A proof made on work like this is refused after the'));
-    say(C.r('    electricity has been spent, which costs the same as losing it.'));
-    say('');
-    stopping = true;
-    return null;
-  }
-  height = r.body.height;
-  return r.body;
-}
-
-async function submit(t, nonce, digest) {
-  const powSig = HDR.signProof(digest, key.privateKey);
-  let r;
-  try { r = await api('/mining/submit', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ templateId: t.templateId, nonce, powDigest: digest, powSig }),
-  }); } catch (e) {
-    say(C.y(`  ⚠ found a block but could not submit it — ${String(e && e.message || e)}`));
-    return;
-  }
-  if (r.status === 200 && r.body.ok) {
-    found++;
-    /* `coinbaseReward`, NOT `reward`. The latter is the full subsidy the block
-     * mints, 10% of which goes to the Commons — quoting it here made the running
-     * total 10% higher than the coins actually held, which never reconciles
-     * against a wallet. Falls back only for a node too old to send it. */
-    const paid = BigInt(t.coinbaseReward !== undefined ? t.coinbaseReward : (t.reward || 0));
-    earnedWei += paid;
-    say(`  ${C.g('⛏  accepted')} block #${num(r.body.height)} ${C.dim(String(r.body.id || '').slice(0, 12))}`
-      + ` · paid ${ember(paid)} ${P.COIN}`);
-    return;
-  }
-  if (r.status === 409 || r.body.stale) {
-    // Somebody else found this height first. Expected, and not an error.
-    stale++;
-    return;
-  }
-  if (r.status === 429) {
-    // Our proof was fine; the node is over its verification budget. Not a
-    // refusal, and it must not count toward the give-up threshold below.
-    say(C.y('  ⚠ the node is rate-limiting proof submissions — retrying'));
-    await new Promise(res => setTimeout(res, (r.body && r.body.retryAfterMs) || 1000));
-    return;
-  }
-  refused++;
-  say(C.y(`  ⚠ a proof was refused: ${r.body.err || 'HTTP ' + r.status}`));
-  /* Once is bad luck. Repeatedly means the work is not what we think it is, and
-   * continuing would burn a core for nothing. */
-  if (refused >= 5) {
-    say(C.r('    five refusals — stopping rather than mining into a wall.'));
-    stopping = true;
-  }
-}
-
-// ---- the loop --------------------------------------------------------------
-
-/* Grinding yields on a slice of wall clock, exactly as the in-process miners do
- * (src/minerloop.js), because this process still has to run its HTTP calls, its
- * status line and its signal handlers. A fixed batch of nonces is a variable and
- * unbounded amount of blocked event loop when one nonce is a full evaluation. */
-async function loop() {
-  let nonce = 0;
-  for (;;) {
-    if (stopping) return;
-    if (!work) {
-      work = await fetchWork();
-      nonce = 0;
-      if (!work) { if (stopping) return; await new Promise(r => setTimeout(r, 3000)); continue; }
-    }
-    if (Date.now() > (work.expiresAt || 0) - 5000) { work = null; continue; }
-
-    const t = work;
-    const spent = await new Promise(resolve => {
-      const t1 = Date.now();
-      do {
-        const digest = POW.homefireHash(POW.powSeed(t.coreHash, nonce, t.coinbasePub)).toString('hex');
-        hashes++;
-        if (POW.meetsTarget(digest, t.target)) {
-          const n = nonce;
-          nonce++;
-          return resolve({ ms: Date.now() - t1, win: { nonce: n, digest } });
-        }
-        nonce++;
-      } while (Date.now() - t1 < SLICE_MS);
-      resolve({ ms: Date.now() - t1, win: null });
-    });
-
-    const dt = (Date.now() - rateStart) / 1000;
-    if (dt >= 1) { hashrate = Math.round(hashes / dt); hashes = 0; rateStart = Date.now(); }
-
-    if (spent.win) {
-      await submit(t, spent.win.nonce, spent.win.digest);
-      work = null;                             // always take fresh work after a win
-      continue;
-    }
-    await new Promise(r => schedule(r, spent.ms, throttle));
-  }
-}
+/* The refusal that ends the run. It is worth four lines rather than one: the
+ * user is about to stop earning, and the difference between "your node retuned"
+ * and "that endpoint is paying somebody else" is the difference between waiting
+ * and changing --url. */
+session.on('badwork', b => {
+  say('');
+  say(C.r(`  ✗ refusing this work: ${b.err}`));
+  say(C.r('    Not grinding it. A proof made on work like this is refused after the'));
+  say(C.r('    electricity has been spent, which costs the same as losing it.'));
+  say('');
+});
+session.on('error', e => say(C.r(`  ✗ ${e.err}`)));
 
 const statusMs = opts.statusMs || (TTY ? 1000 : 30_000);
 const tick = setInterval(status, statusMs);
 tick.unref();
 status();
 
-loop().catch(e => { say(C.r(`  ✗ ${String(e && e.message || e)}`)); stopping = true; });
-
-function bye() {
+let said = false;
+function bye(reason) {
+  if (said) return;
+  said = true;
   clearInterval(tick);
   clear();
+  const s = session.stats();
+  if (reason && /refus/i.test(reason)) say(C.r(`    ${reason}.`));
   say('');
-  say(`  stopped after ${clock(Date.now() - t0)} · found ${found} · earned ${ember(earnedWei)} ${P.COIN}`
-    + (stale ? C.dim(` · ${stale} stale`) : ''));
+  say(`  stopped after ${clock(Date.now() - t0)} · found ${s.found} · earned ${ember(BigInt(s.earnedWei))} ${P.COIN}`
+    + (s.stale ? C.dim(` · ${s.stale} stale`) : ''));
   say(C.dim(`  paid to ${key.addressHex} — the key is in ${keyFile}`));
   say('');
   process.exit(0);
 }
-process.on('SIGINT', bye);
-process.on('SIGTERM', bye);
 
-// A refusal must actually end the process, not leave it idling silently.
-setInterval(() => { if (stopping) bye(); }, 250).unref();
+session.run().then(bye, e => { say(C.r(`  ✗ ${String(e && e.message || e)}`)); bye('error'); });
+
+/* Ctrl-C asks the loop to wind up rather than killing the process, so the
+ * summary is printed from one place whatever ended the run. `run()` resolves
+ * within one slice — 25 ms — so this is not a wait anybody notices. */
+process.on('SIGINT', () => session.stop('asked to stop'));
+process.on('SIGTERM', () => session.stop('asked to stop'));
