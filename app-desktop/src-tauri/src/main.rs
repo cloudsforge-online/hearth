@@ -241,7 +241,41 @@ fn remember_or_forget(data_dir: &std::path::Path, remember: bool, passphrase: &s
 // --selftest: the proof that does not involve a screenshot
 // ---------------------------------------------------------------------------
 
+/// Give `--selftest` somewhere to print, on Windows.
+///
+/// The release binary is built `windows_subsystem = "windows"` (line 2), which is
+/// right for a window — otherwise every launch flashes a console — and wrong for
+/// a command whose entire job is to print evidence. Such a process starts with
+/// **no console at all**: `println!` writes to an invalid handle, and the run
+/// reports neither its PASS nor its FAIL. The proof that the Windows build mines
+/// would have been a silent exit code.
+///
+/// `AttachConsole(ATTACH_PARENT_PROCESS)` borrows the terminal that launched it.
+/// It is attempted ONLY when there is no standard output handle already, because
+/// a caller who redirected our output to a file has given us a perfectly good
+/// one and attaching would take it away.
+#[cfg(windows)]
+fn attach_parent_console() {
+    const ATTACH_PARENT_PROCESS: u32 = 0xFFFF_FFFF;
+    const STD_OUTPUT_HANDLE: u32 = -11i32 as u32;
+    extern "system" {
+        fn AttachConsole(dw_process_id: u32) -> i32;
+        fn GetStdHandle(n_std_handle: u32) -> isize;
+    }
+    // SAFETY: two argument-free-ish kernel32 calls with no pointers involved.
+    unsafe {
+        if GetStdHandle(STD_OUTPUT_HANDLE) == 0 {
+            AttachConsole(ATTACH_PARENT_PROCESS);
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn attach_parent_console() {}
+
 fn selftest(args: &[String]) -> i32 {
+    attach_parent_console();
+
     let arg = |name: &str, default: &str| -> String {
         args.iter()
             .position(|a| a == name)

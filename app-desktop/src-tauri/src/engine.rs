@@ -40,6 +40,36 @@ use serde_json::{json, Value};
 /// answers. Unlocking is the slow one on purpose — see node/src/mine/keystore.js.
 const CALL_TIMEOUT: Duration = Duration::from_secs(60);
 
+/// The name the bundled Node runtime is installed under. **Not `node`.**
+///
+/// Tauri's Linux bundlers copy every `externalBin` into `/usr/bin` beside the
+/// main executable — `tauri-bundler/src/bundle/linux/debian.rs:118,130` and
+/// `rpm.rs:150`, both via `settings.rs:1160-1176`, which strips the target
+/// triple and keeps the stem. A sidecar called `node` therefore becomes
+/// `/usr/bin/node`: the exact path Debian's own `nodejs` package owns. `dpkg`
+/// refuses to unpack a file another package owns, so that `.deb` will not
+/// install on any machine with Node from apt; where it does install, it
+/// silently replaces the system runtime with ours.
+///
+/// The second half of the same bug is here rather than in the bundler:
+/// `find_node` looks for the sidecar *beside the executable*, and on an
+/// installed Linux package that directory is `/usr/bin`. Called `node`, it
+/// would find whatever Node the machine already had and report it to the window
+/// as "bundled with the app" — the one fact that decides whether this
+/// application works on a machine that has never had Node installed.
+///
+/// None of this is visible on macOS, where the sidecar lands inside
+/// `Hearth.app/Contents/MacOS/` and can be called anything. It is why the
+/// platform that was never compiled is the one that was wrong.
+const RUNTIME_STEM: &str = "hearth-node";
+
+/// `productName` in tauri.conf.json. The Linux bundlers put resources in
+/// `/usr/lib/<productName>` (`debian.rs:330`, `rpm.rs:183`) and Tauri's own
+/// resolver reads them back from `exe_dir/../lib/<productName>`
+/// (`tauri-utils/src/platform.rs:310-312`), so this string is load-bearing in
+/// two crates and a test below keeps it equal to the config.
+const PRODUCT: &str = "Hearth";
+
 pub type EventSink = Arc<dyn Fn(String, Value) + Send + Sync>;
 
 pub struct Engine {
@@ -227,12 +257,46 @@ pub fn find_node_with(exe_dir: &Path, override_bin: Option<String>) -> (PathBuf,
             return (PathBuf::from(explicit), false);
         }
     }
-    let name = if cfg!(windows) { "node.exe" } else { "node" };
-    let bundled = exe_dir.join(name);
+    let exe = if cfg!(windows) { ".exe" } else { "" };
+    let bundled = exe_dir.join(format!("{RUNTIME_STEM}{exe}"));
     if bundled.is_file() {
         return (bundled, true);
     }
-    (PathBuf::from(name), false)
+    /* The PATH fallback is still plain `node`, because that is what a developer
+     * has installed. Only the copy we ship carries our name — see RUNTIME_STEM
+     * for why the two must not be spelled the same. */
+    (PathBuf::from(format!("node{exe}")), false)
+}
+
+/// Where a packaged install keeps its resources, relative to the executable.
+///
+/// Written as a function OF THE OPERATING SYSTEM rather than around `cfg!`, so
+/// that `cargo test` on any machine exercises all three layouts. The Linux one
+/// was wrong for as long as it existed and nothing here could see it: on a Mac
+/// a `cfg!(target_os = "linux")` branch is not compiled, so it is not tested,
+/// so it is not wrong until somebody installs a `.deb`.
+fn bundle_roots(exe_dir: &Path, os: &str) -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+    match os {
+        /* `Hearth.app/Contents/MacOS/hearth-desktop`, resources one directory up
+         * in `Contents/Resources` (tauri-bundler macos/app.rs:75-76). */
+        "macos" => roots.push(exe_dir.join("..").join("Resources")),
+        /* `/usr/bin/hearth-desktop`, resources in `/usr/lib/Hearth` — NOT beside
+         * the executable, which is what the comment this replaces claimed. The
+         * path is Tauri's own (`platform.rs:310-312`), so an installed package
+         * resolves identically whether the resource directory came from the
+         * framework or from here. `--selftest` needs the second one: it runs
+         * before there is an `App` to ask and passes `None`, so without this it
+         * looked for `/usr/bin/engine/engine.js`, missed, and fell back to a
+         * checkout path that on an installed system is `/engine/engine.js`. */
+        "linux" => roots.push(exe_dir.join("..").join("lib").join(PRODUCT)),
+        /* Windows: NSIS and WiX put the executable, the sidecar and the
+         * resources together in the install directory, which the next root
+         * covers. */
+        _ => {}
+    }
+    roots.push(exe_dir.to_path_buf());
+    roots
 }
 
 /// Find `engine.js` and the `node/src` tree it needs.
@@ -257,6 +321,18 @@ pub fn find_engine_with(
     override_js: Option<String>,
     override_src: Option<String>,
 ) -> (PathBuf, PathBuf) {
+    find_engine_on(std::env::consts::OS, resource_dir, exe_dir, override_js, override_src)
+}
+
+/// The same again with the operating system passed in, so every platform's
+/// layout is reachable from a test on any machine. See `bundle_roots`.
+pub fn find_engine_on(
+    os: &str,
+    resource_dir: Option<&Path>,
+    exe_dir: &Path,
+    override_js: Option<String>,
+    override_src: Option<String>,
+) -> (PathBuf, PathBuf) {
     if let Some(js) = override_js.filter(|s| !s.is_empty()) {
         let js = PathBuf::from(js);
         let src = override_src.map(PathBuf::from).unwrap_or_else(|| {
@@ -269,14 +345,8 @@ pub fn find_engine_with(
         roots.push(r.to_path_buf());
     }
     /* The platform's own convention, for the paths that do not go through
-     * Tauri's resolver — `--selftest` runs before there is an `App` to ask. On
-     * macOS the binary is `Hearth.app/Contents/MacOS/hearth-desktop` and the
-     * resources are one directory up in `Contents/Resources`; on Windows and
-     * Linux they sit beside the executable, which the next root covers. */
-    if cfg!(target_os = "macos") {
-        roots.push(exe_dir.join("..").join("Resources"));
-    }
-    roots.push(exe_dir.to_path_buf());
+     * Tauri's resolver — `--selftest` runs before there is an `App` to ask. */
+    roots.extend(bundle_roots(exe_dir, os));
     for root in &roots {
         let js = root.join("engine").join("engine.js");
         if js.is_file() {
@@ -310,8 +380,8 @@ mod tests {
             std::fs::write(dir.join("engine").join("engine.js"), "// engine").unwrap();
         }
         if with_node {
-            let name = if cfg!(windows) { "node.exe" } else { "node" };
-            std::fs::write(dir.join(name), "#!/bin/sh\n").unwrap();
+            let exe = if cfg!(windows) { ".exe" } else { "" };
+            std::fs::write(dir.join(format!("{RUNTIME_STEM}{exe}")), "#!/bin/sh\n").unwrap();
         }
         dir
     }
@@ -408,6 +478,77 @@ mod tests {
 
         // An empty variable means "unset", not "run the empty string".
         let (bin, bundled) = find_node_with(&with, Some(String::new()));
-        assert!(bundled && bin.ends_with(if cfg!(windows) { "node.exe" } else { "node" }));
+        let want = format!("{RUNTIME_STEM}{}", if cfg!(windows) { ".exe" } else { "" });
+        assert!(bundled && bin.ends_with(&want), "{bin:?} should end with {want}");
+    }
+
+    // -----------------------------------------------------------------------
+    // The two platforms that had never been compiled, let alone installed.
+    // Both of these went red on the code they replace.
+    // -----------------------------------------------------------------------
+
+    /// A `.deb`/`.rpm` install: `/usr/bin/hearth-desktop`, resources in
+    /// `/usr/lib/Hearth`. NOT beside the executable, which is what this
+    /// resolver assumed for as long as no Linux machine had run it.
+    #[test]
+    fn resolves_an_installed_linux_package() {
+        let root = std::env::temp_dir().join(format!("hearth-deb-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let bin = root.join("usr").join("bin");
+        let lib = root.join("usr").join("lib").join(PRODUCT);
+        std::fs::create_dir_all(&bin).unwrap();
+        std::fs::create_dir_all(lib.join("engine")).unwrap();
+        std::fs::create_dir_all(lib.join("hearth").join("src").join("mine")).unwrap();
+        std::fs::write(lib.join("engine").join("engine.js"), "// engine").unwrap();
+        std::fs::write(lib.join("hearth").join("src").join("mine").join("session.js"), "// loop")
+            .unwrap();
+        std::fs::write(bin.join("hearth-desktop"), "elf").unwrap();
+
+        // `None` is what --selftest passes: there is no App to ask yet.
+        let (js, src) = find_engine_on("linux", None, &bin, None, None);
+        assert!(js.is_file(), "the engine under /usr/lib/{PRODUCT} is found: {js:?}");
+        assert!(
+            src.join("mine").join("session.js").is_file(),
+            "and the mining loop with it: {src:?}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// `/usr/bin` is where the Linux bundlers put `externalBin`, and it is also
+    /// where the machine's own Node lives. If the sidecar were called `node`
+    /// this app would adopt a stranger's runtime and tell the window it had
+    /// shipped one — while its `.deb` refused to install over Debian's
+    /// `nodejs`. See RUNTIME_STEM.
+    #[test]
+    fn a_system_node_beside_the_executable_is_not_ours() {
+        let dir = std::env::temp_dir().join(format!("hearth-usrbin-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let exe = if cfg!(windows) { ".exe" } else { "" };
+        std::fs::write(dir.join(format!("node{exe}")), "the machine's own").unwrap();
+
+        let (bin, bundled) = find_node_with(&dir, None);
+        assert!(!bundled, "a plain `node` next door is the SYSTEM runtime, not the bundle's");
+        assert_eq!(bin.components().count(), 1, "so it falls back to PATH: {bin:?}");
+        assert_ne!(RUNTIME_STEM, "node", "which only holds while the names differ");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The resolver and the bundler have to agree on two names, and nothing
+    /// else checks that they do: get either wrong and the app builds, installs,
+    /// opens, and cannot find its own runtime or its own engine.
+    #[test]
+    fn the_config_and_the_resolver_agree_on_both_names() {
+        let conf: Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        assert_eq!(
+            conf["bundle"]["externalBin"][0].as_str(),
+            Some(format!("binaries/{RUNTIME_STEM}").as_str()),
+            "tauri.conf.json's externalBin must name the runtime find_node looks for"
+        );
+        assert_eq!(
+            conf["productName"].as_str(),
+            Some(PRODUCT),
+            "and productName is the /usr/lib directory the Linux root above is built from"
+        );
     }
 }

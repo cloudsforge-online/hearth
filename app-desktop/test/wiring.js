@@ -174,5 +174,39 @@ group('the window cannot leak what it is never given');
     'the page may not reach the network directly: every request goes through the engine');
 }
 
+// ---------------------------------------------------------------------------
+group('the three files that name the bundled runtime say the same name');
+// A fourth seam, and the one that could only ever have broken on a platform
+// nobody compiled: `fetch-node.mjs` writes the sidecar, `tauri.conf.json`
+// declares it, and `engine.rs` looks for it after the bundler has stripped the
+// target triple. Disagree and the app builds, installs, opens, and reports "no
+// bundled runtime" on a machine that has never had Node — which is every machine
+// this is for. The Rust side holds two of the three together in
+// `the_config_and_the_resolver_agree_on_both_names`; this holds the script to
+// them, because a .mjs is not in that crate.
+// ---------------------------------------------------------------------------
+{
+  const fetchNode = fs.readFileSync(path.join(HERE, 'scripts', 'fetch-node.mjs'), 'utf8');
+  const conf = JSON.parse(fs.readFileSync(path.join(HERE, 'src-tauri', 'tauri.conf.json'), 'utf8'));
+  const rustSide = fs.readFileSync(path.join(HERE, 'src-tauri', 'src', 'engine.rs'), 'utf8');
+
+  const stem = (fetchNode.match(/const STEM = '([a-z0-9-]+)'/) || [])[1];
+  const declared = (conf.bundle.externalBin || [])[0];
+  const soughtFor = (rustSide.match(/const RUNTIME_STEM: &str = "([a-z0-9-]+)"/) || [])[1];
+
+  assert(!!stem && !!declared && !!soughtFor, `all three name it: ${stem} / ${declared} / ${soughtFor}`);
+  assert(declared === `binaries/${stem}`, 'fetch-node.mjs writes what tauri.conf.json declares');
+  assert(soughtFor === stem, 'and engine.rs looks for what fetch-node.mjs wrote');
+  /* THE ONE THAT COST A LINUX PACKAGE. Tauri's deb and rpm bundlers copy every
+   * externalBin into /usr/bin, so a sidecar called `node` installs as
+   * /usr/bin/node — the path Debian's own `nodejs` package owns. dpkg refuses to
+   * unpack over another package's file. */
+  assert(stem !== 'node',
+    'and it is NOT `node`, which on Linux would collide with /usr/bin/node');
+  assert(/PRODUCT: &str = "([^"]+)"/.test(rustSide)
+    && rustSide.match(/PRODUCT: &str = "([^"]+)"/)[1] === conf.productName,
+    `the Linux resource root is built from productName (${conf.productName})`);
+}
+
 console.log(`\n${failed === 0 ? 'PASS' : 'FAIL'} — ${checks - failed}/${checks} checks\n`);
 process.exit(failed === 0 ? 0 : 1);

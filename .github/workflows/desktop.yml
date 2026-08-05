@@ -1,0 +1,215 @@
+name: Desktop miner
+
+# WHY THIS IS A SEPARATE WORKFLOW, AND WHY IT EXISTS AT ALL.
+#
+# app-desktop/README.md said, until this file: "CI does not build this app.
+# Tauri needs each platform's webview toolchain." The result was a table with
+# three rows, one of which said "Built and run" and two of which said
+# "Configured, not built" — Windows and Linux existed as a TARGETS entry, a
+# `cfg(target_os)` block and a paragraph, and no machine had ever compiled
+# either. That is not a build, it is an intention.
+#
+# Cross-compiling Tauri from a Mac is a bad trade: three webview stacks, three
+# linkers, three keychain backends. Hosted runners compile each one natively,
+# which is the arrangement that actually answers the question.
+#
+# Every job is the same six steps in the same order and they are ordered on
+# purpose — the cheap checks that can fail run before the twenty-minute one:
+#
+#   1. the toolchain each platform genuinely needs, INSTALLED rather than assumed
+#   2. the Node runtime that ships inside the app, fetched and SHA-256-verified
+#   3. the wiring test and the Rust unit tests — seconds, and they catch names
+#      that stopped agreeing
+#   4. the build
+#   5. verify-bundle.mjs: what is inside the installer, then INSTALL IT and mine
+#      a real block with it
+#   6. the artefacts, attached to the run
+#
+# `fail-fast: false`, because "Linux is broken" and "Windows is broken" are
+# different pieces of news and cancelling the second one to report the first
+# throws half of it away.
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'app-desktop/**'
+      # The mining loop and the keystore are SHARED with the command-line miner
+      # and live outside app-desktop. A change to either changes what this app
+      # does, so it has to re-run — the desktop app carries node/src inside it.
+      - 'node/src/**'
+      - 'node/bin/**'
+      - 'branding/logo.svg'
+      - '.github/workflows/desktop.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'app-desktop/**'
+      - 'node/src/**'
+      - 'node/bin/**'
+      - 'branding/logo.svg'
+      - '.github/workflows/desktop.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux x86_64 (deb, rpm, AppImage)
+            os: ubuntu-latest
+            bundles: deb,rpm,appimage
+          - name: Windows x86_64 (NSIS, MSI)
+            os: windows-latest
+            bundles: nsis,msi
+          # Kept in the matrix rather than trusted: it is the only platform that
+          # had ever been compiled, and every rename in this change touched it.
+          - name: macOS aarch64 (app, dmg)
+            os: macos-14
+            bundles: app,dmg
+    defaults:
+      run:
+        working-directory: app-desktop
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app-desktop/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # ~1.5 GB of compiled dependencies. Without it every run rebuilds tauri,
+      # wry, tao and gtk from source on three machines.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app-desktop/src-tauri -> target
+          key: ${{ matrix.os }}
+
+      # ---------------------------------------------------------------------
+      # 1. What each platform genuinely needs
+      # ---------------------------------------------------------------------
+
+      # WebKitGTK is the webview on Linux; there is no system browser engine to
+      # borrow the way Windows borrows WebView2 and macOS borrows WKWebView, so
+      # it must be present to LINK, not merely to run. 4.1 rather than 4.0
+      # because that is what wry 0.55 binds (webkit2gtk-sys 2.0.2 in
+      # src-tauri/Cargo.lock). libayatana-appindicator3 is the tray, librsvg the
+      # icon rasteriser, patchelf what the AppImage bundler rewrites rpaths with.
+      # libxdo is tao's input plumbing.
+      - name: Linux — the webview toolchain
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libxdo-dev \
+            libssl-dev \
+            libglib2.0-dev \
+            build-essential curl wget file patchelf xdg-utils
+          pkg-config --modversion webkit2gtk-4.1
+          # The AppImage bundler copies these two out of /usr/bin into the
+          # AppDir and fails with "xdg-mime binary not found" if they are
+          # absent — tauri-bundler linux/appimage/linuxdeploy.rs:126,132. They
+          # come from xdg-utils above, and this asserts the install worked
+          # rather than discovering it twenty minutes later in the bundler.
+          test -x /usr/bin/xdg-mime && test -x /usr/bin/xdg-open
+
+      # WebView2 is Windows' webview and Tauri will not run without it. The
+      # runner images have shipped the Evergreen runtime for years, which is
+      # exactly why nobody notices when an image stops doing so — so this ASKS
+      # the registry, and installs the bootstrapper if the answer is no, rather
+      # than assuming. The key is the per-machine one Evergreen writes.
+      - name: Windows — WebView2 runtime, checked rather than assumed
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $key = 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
+          $v = (Get-ItemProperty -Path $key -ErrorAction SilentlyContinue).pv
+          if ($v) {
+            Write-Host "WebView2 Runtime $v is present"
+          } else {
+            Write-Host 'WebView2 Runtime is NOT present on this image — installing the Evergreen bootstrapper'
+            Invoke-WebRequest -Uri 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile "$env:RUNNER_TEMP\MicrosoftEdgeWebview2Setup.exe"
+            Start-Process -FilePath "$env:RUNNER_TEMP\MicrosoftEdgeWebview2Setup.exe" -ArgumentList '/silent','/install' -Wait
+            $v = (Get-ItemProperty -Path $key -ErrorAction SilentlyContinue).pv
+            if (-not $v) { throw 'WebView2 Runtime is still absent after installing it' }
+            Write-Host "WebView2 Runtime $v installed"
+          }
+
+      - run: npm ci
+
+      # The icons are generated from branding/logo.svg and git-ignored, so they
+      # do not exist in a fresh checkout — and `tauri::generate_context!` fails
+      # to COMPILE without icons/32x32.png. This step is not optional decoration.
+      - name: App icons, from the one logo
+        run: npm run icons
+
+      # ---------------------------------------------------------------------
+      # 2. The runtime that ships inside the app
+      # ---------------------------------------------------------------------
+      # Fetched for THIS runner's triple and checked against nodejs.org's
+      # published SHA-256, then against its own magic number: a Mach-O binary
+      # inside a Windows installer passes every check that does not look.
+      - name: Bundled Node runtime (fetched, hash-verified, format-verified)
+        run: node scripts/fetch-node.mjs
+
+      # ---------------------------------------------------------------------
+      # 3. The checks that take seconds
+      # ---------------------------------------------------------------------
+      - name: Wiring — window, shell, engine and packaging names agree
+        run: node test/wiring.js
+
+      - name: Rust unit tests (path resolution for all three install layouts)
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      # The engine driven exactly as the app drives it, mining a real hearthd
+      # over real HTTP, with a leak scan over every byte it wrote. On
+      # `hearth-test` the PoW pad is small enough that this is ten seconds
+      # rather than three minutes; nothing else about the proof changes.
+      - name: The engine mines a real node, and leaks nothing
+        env:
+          HEARTH_NETWORK: hearth-test
+        run: node test/engine.js
+
+      # ---------------------------------------------------------------------
+      # 4. The build
+      # ---------------------------------------------------------------------
+      - name: Build the installers
+        run: npm run build -- --bundles ${{ matrix.bundles }}
+
+      # ---------------------------------------------------------------------
+      # 5. What is in them, and whether the thing inside mines
+      # ---------------------------------------------------------------------
+      - name: Verify the package, install it, and mine a block with it
+        run: node scripts/verify-bundle.mjs
+
+      # ---------------------------------------------------------------------
+      # 6. The artefacts
+      # ---------------------------------------------------------------------
+      # `if: always()` so a failed verification still hands over the installer
+      # that failed. An artefact you cannot download is a bug report with no
+      # attachment.
+      - name: Attach the installers to this run
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hearth-desktop-${{ runner.os }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            app-desktop/src-tauri/target/release/bundle/deb/*.deb
+            app-desktop/src-tauri/target/release/bundle/rpm/*.rpm
+            app-desktop/src-tauri/target/release/bundle/appimage/*.AppImage
+            app-desktop/src-tauri/target/release/bundle/nsis/*.exe
+            app-desktop/src-tauri/target/release/bundle/msi/*.msi
+            app-desktop/src-tauri/target/release/bundle/dmg/*.dmg

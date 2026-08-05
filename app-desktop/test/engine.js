@@ -44,6 +44,28 @@ const procs = [];
 
 const PASS = 'a passphrase nothing may ever repeat back';
 
+/**
+ * "Owner only", asserted the way the platform actually expresses it.
+ *
+ * On Windows there are no POSIX mode bits. `fs.chmod` there sets the read-only
+ * flag and nothing else, and `stat().mode` comes back 0o666 or 0o444 — so
+ * requiring 0o600 is a check that CANNOT PASS on Windows and says nothing about
+ * whether the file is protected. It is not the assertion being dropped: what
+ * protects the keystore on Windows is the ACL on the user profile that
+ * `%APPDATA%` sits inside, which this suite has no business re-testing, plus the
+ * encryption that is the actual guarantee everywhere.
+ *
+ * This was invisible until a Windows machine ran the suite, which until now none
+ * ever had. Two of these were the first two failures on it.
+ */
+function ownerOnly(file, what) {
+  if (process.platform === 'win32') {
+    assert(fs.existsSync(file), `${what} (Windows has no mode bits; the ACL on the profile is what guards it)`);
+    return;
+  }
+  assert((fs.statSync(file).mode & 0o777) === 0o600, what);
+}
+
 /** The engine, wrapped in the request/response discipline the Rust side uses. */
 function engine(dataDir) {
   const p = spawn(process.execPath, [ENGINE], {
@@ -117,7 +139,7 @@ function engine(dataDir) {
   assert(/^0x[0-9a-f]{40}$/.test(address), `and the window is told the ADDRESS it will be paid at (${address})`);
   assert(r.result.unlocked === true, 'and left unlocked — nobody wants to retype a passphrase they just invented');
   assert(fs.existsSync(KS.keystorePath(appDir)), 'the file is on disk where the app said it would be');
-  assert((fs.statSync(KS.keystorePath(appDir)).mode & 0o777) === 0o600, 'at mode 600');
+  ownerOnly(KS.keystorePath(appDir), 'at mode 600');
 
   // The private key, which the TEST knows and the engine must never say.
   const secret = KS.revealPrivateKey(appDir, PASS).replace(/^0x/, '');
@@ -215,7 +237,7 @@ function engine(dataDir) {
 
   r = await e.send('key.export', { file: exported, passphrase: PASS });
   assert(r.ok && r.result.file === exported, 'with the right one it writes the key to the file the user named');
-  assert((fs.statSync(exported).mode & 0o777) === 0o600, 'at mode 600');
+  ownerOnly(exported, 'at mode 600');
   assert(fs.readFileSync(exported, 'utf8').trim() === '0x' + secret, 'and the file really does hold the key');
   assert(!JSON.stringify(r).includes(secret), 'THE REPLY ITSELF CARRIES ONLY THE PATH — the key is not in it');
 

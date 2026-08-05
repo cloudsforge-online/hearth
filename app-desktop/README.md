@@ -89,7 +89,15 @@ npm test                      # wiring + engine + the Rust unit tests
 node test/wiring.js           # do the window, the shell and the engine agree?
 node test/engine.js           # the engine mines a real node — and leaks nothing
 cargo test --manifest-path src-tauri/Cargo.toml
+node scripts/verify-bundle.mjs   # after `npm run build`: what is IN the
+                                 # installer, then install it and mine with it
 ```
+
+`HEARTH_NETWORK=hearth-test` in front of the two that mine shrinks the
+proof-of-work pad (`node/src/params.js:15`) and turns three minutes into ten
+seconds. Difficulty, retargeting, signing, the proof format and the acceptance
+rules are untouched, so the claim being proven does not change — only the grind
+is affordable. That is what CI uses.
 
 `test/wiring.js` exists because of how the scaffolding failed: a registered
 command with no caller compiles, lints, builds and opens, and does nothing. It
@@ -106,7 +114,9 @@ The mining loop itself is tested where it lives: `node/test/mine-session.js` and
 app-desktop/
 ├── ui/                     the window. Plain HTML/CSS/JS, no framework, no build step
 ├── engine/engine.js        one mining session + one key, as JSON lines on stdin/stdout
-├── scripts/fetch-node.mjs  fetches and SHA-256-verifies the bundled Node runtime
+├── scripts/
+│   ├── fetch-node.mjs      fetches and SHA-256-verifies the bundled Node runtime
+│   └── verify-bundle.mjs   opens the built installer, installs it, mines with it
 ├── test/                   wiring.js, engine.js
 └── src-tauri/
     ├── src/main.rs         Tauri commands, and --selftest
@@ -123,17 +133,48 @@ first, and this repository has already paid for that: the browser miner signed a
 found was refused *after* the work was done. `src/engine.rs` explains why that
 rules out a Rust port as well.
 
-## What is built, and what is only configured
+## What is built, what is proven, and what is still nobody's evidence
 
-| Platform | State |
-|---|---|
-| **macOS (aarch64)** | **Built and run.** `Hearth.app` is produced, carries its own Node runtime, opens, spawns its engine, and `--selftest` mined blocks that a real node credited. |
-| macOS `.dmg` | **Not produced here.** `bundle_dmg.sh` fails at `hdiutil attach` in this environment; the `.app` inside it is complete. |
-| **Windows / Linux** | **Configured, not built.** `fetch-node.mjs` knows both targets, `Cargo.toml` selects the right keychain backend for each, and `main.rs` handles `node.exe`. None of it has been compiled or run — no Windows or Linux machine was involved. Treat as unverified until CI or a person builds it. |
+`.github/workflows/desktop.yml` builds all three natively — `ubuntu-latest`,
+`windows-latest`, `macos-14` — on every change to `app-desktop/`, to the shared
+`node/src`, or to the logo. Each job installs the platform's toolchain, fetches
+and hash-verifies the Node runtime, runs the wiring and engine suites, builds the
+installers, and then runs `scripts/verify-bundle.mjs`, which **installs the
+package and mines a block with it**. The installers are attached to the run.
 
-CI does not build this app. Tauri needs each platform's webview toolchain, and
-adding that job would have meant editing `.github/workflows/`, which another
-agent holds.
+| | Built | Runtime inside it runs | Installs | Mines, chain-verified | Window seen |
+|---|---|---|---|---|---|
+| **Linux x86_64** | deb, rpm, AppImage | ✓ | `dpkg -i` | ✓ | **no** |
+| **Windows x86_64** | NSIS, MSI | ✓ | silent `/S` | ✓ | **no** |
+| **macOS aarch64** | `.app`, `.dmg` | ✓ | runs in place | ✓ | **no** |
+
+**The last column is the honest one.** `--selftest` deliberately opens no window,
+so everything above says the runtime, the paths, the engine and the mining loop
+are right on that platform and says *nothing* about whether the interface draws.
+Screen capture was refused in the environment this was written in, and CI runners
+are headless. **Nobody has looked at this application on Windows or on Linux.**
+
+Three defects were found by compiling the two platforms that never had been.
+Each is a fault that no amount of building on a Mac could have surfaced:
+
+* **The Node sidecar could not be called `node`.** Tauri's `deb` and `rpm`
+  bundlers copy every `externalBin` into `/usr/bin`
+  (`tauri-bundler` `linux/debian.rs:118,130`, `rpm.rs:150`, via
+  `settings.rs:1160-1176`), so it would have installed as `/usr/bin/node` — the
+  path Debian's own `nodejs` package owns, which `dpkg` refuses to unpack over.
+  The package would not have installed on any machine with Node from apt, and on
+  one without it would have replaced the system runtime. It is `hearth-node` now,
+  in all four places that name it, and `verify-bundle.mjs` fails the build if
+  anything called `node` ever appears in `/usr/bin` again.
+* **`--selftest` could not find its own engine on Linux.** The path resolver had
+  a macOS branch and treated Linux like Windows, but a `.deb` puts the executable
+  in `/usr/bin` and the resources in `/usr/lib/Hearth` — not beside it. The Linux
+  root is now the same one Tauri's own resolver uses
+  (`tauri-utils/src/platform.rs:310-312`).
+* **`--selftest` could not print anything on Windows.** The release binary is
+  `windows_subsystem = "windows"`, so it starts with no console and `println!`
+  goes nowhere; a passing run and a failing run were both silent. It attaches to
+  the parent console now, unless the caller already gave it somewhere to write.
 
 ### One open advisory, and why it is not fixed here
 
@@ -151,6 +192,10 @@ series, and the fix is in gtk-rs 0.20, which Tauri 2.11 does not use. So it
 closes when Tauri moves, not before; Dependabot's own attempt at it failed for
 the same reason. Nothing in `src/` touches `glib`, and the macOS build does not
 contain it at all (`cargo tree -i glib` prints nothing there).
+
+It is no longer only a paper exposure: the Linux job compiles that dependency
+tree on every run, so when Tauri does move to gtk-rs 0.20 the change will be
+visible here rather than assumed.
 
 ## Prerequisites (to build; a user needs none of this)
 
