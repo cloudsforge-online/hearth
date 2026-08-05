@@ -42,6 +42,7 @@ const crypto = require('crypto');
 const http = require('http');
 const https = require('https');
 const { EventEmitter } = require('events');
+const { peerLabel } = require('./netprefix');
 
 /* RFC 6455 §4.2.2 step 5. The one magic constant in the protocol, and the one
  * thing here that cannot be derived from anything else — so test/ws.js checks it
@@ -81,7 +82,15 @@ const closeBody = code => { const b = Buffer.alloc(2); b.writeUInt16BE(code, 0);
 /* Log-only, and untrusted on purpose. Behind a tunnel every peer shares the
  * tunnel's socket address, so without this every log line names the same host
  * and an operator cannot tell two peers apart. Nothing authorises on it — the
- * bounds in src/p2p.js are per-connection, not per-address. */
+ * bounds in src/p2p.js are per-connection, not per-address.
+ *
+ * ⚠ THIS IS THE LAST PLACE A WHOLE ADDRESS EXISTS, AND IT MUST NOT BE LOGGED.
+ * The value returned here is the true client behind the tunnel. It is held on
+ * the connection so that `get name()` can truncate it to a /24 or /48 for every
+ * log line (src/netprefix.js), and the ONE call that used it directly — the
+ * upgrade refusal below — now truncates too. A new caller that passes this
+ * string to a log line puts personal data in a file with no retention story;
+ * pass `peerLabel(...)` or `conn.name` instead. micro-org#163. */
 const IPISH = /^[0-9a-fA-F:.]{1,45}$/;
 function peerAddress(req, socket) {
   const h = req.headers['cf-connecting-ip'] || String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
@@ -133,7 +142,11 @@ class WsConnection extends EventEmitter {
   /** Bytes queued in the kernel/stream — src/p2p.js keeps one getblocks page in flight on it. */
   get writableLength() { return this.socket ? this.socket.writableLength || 0 : 0; }
 
-  get name() { return this.remoteAddress ? `${this.remoteAddress}:${this.remotePort}` : 'closed'; }
+  /* Truncated to a network prefix, never a whole address — see src/netprefix.js and the note on
+   * `peerAddress` above. This getter is what the two `notice(...)` calls below name a peer by, and
+   * it is the same function src/p2p.js's `peerName` uses, so the two cannot drift into a state
+   * where one of them still logs an address. */
+  get name() { return peerLabel(this.remoteAddress, this.remotePort); }
 
   _attach(socket) {
     this.socket = socket;
@@ -377,7 +390,11 @@ function createServer(opts = {}) {
 
   server.on('upgrade', (req, socket, head) => {
     const refuse = (code, why) => {
-      if (onRefused) onRefused(why, { peer: peerAddress(req, socket), path: String(req.url || '').slice(0, 64) });
+      // `peerLabel` and not `peerAddress`: a refusal is the log line ANYTHING on the internet can
+      // make this node write — the comment on `onRefused` in src/p2p.js says exactly that — so it
+      // is the last place a whole address should appear. No port; the socket has one, but a
+      // refused upgrade is not a connection an operator correlates.
+      if (onRefused) onRefused(why, { peer: peerLabel(peerAddress(req, socket)), path: String(req.url || '').slice(0, 64) });
       try {
         socket.write(`HTTP/1.1 ${code} ${STATUS[code]}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
       } catch { /* the peer may already be gone */ }

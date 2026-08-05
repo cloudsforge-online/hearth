@@ -61,10 +61,30 @@
 #            -d '{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}' \
 #            http://localhost:8545/
 
+# ── THE LOG IS BOUNDED, IN SIZE AND IN NUMBER. cloudsforge-online/micro-org#163 ──
+#
+# Identical to docker-compose.yml's block and for the identical reason, which is
+# why it is restated rather than referenced: a compose file cannot inherit an
+# anchor from another file, and the failure mode of noticing that too late is
+# that the TESTNET seed — the one node in this bundle that is actually published,
+# at `p2p.<apex>` through the tunnel, and therefore the one whose peers are real
+# strangers — keeps an unbounded log of them while the local bundle does not.
+#
+# Docker's default is no cap and no rotation: grow until the disk fills, keep
+# everything ever written. The p2p log lines name peers, and behind the tunnel a
+# peer's address is the true client's. src/netprefix.js is what stops a whole
+# address reaching those lines at all; this only bounds how long anything lasts.
+x-hearth-logging: &hearth-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   hearth-testnet-seed:
     build: ./node
     container_name: hearth-testnet-seed
+    logging: *hearth-logging
     environment:
       HEARTH_NETWORK: "hearth-testnet"
       HEARTH_EVM: "1"
@@ -84,6 +104,7 @@ services:
   hearth-testnet-miner1:
     build: ./node
     container_name: hearth-testnet-miner1
+    logging: *hearth-logging
     environment:
       HEARTH_NETWORK: "hearth-testnet"
       HEARTH_PEERS: "hearth-testnet-seed:8646"
@@ -103,6 +124,7 @@ services:
   hearth-testnet-miner2:
     build: ./node
     container_name: hearth-testnet-miner2
+    logging: *hearth-logging
     environment:
       HEARTH_NETWORK: "hearth-testnet"
       HEARTH_PEERS: "hearth-testnet-seed:8646"

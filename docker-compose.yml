@@ -26,10 +26,38 @@ x-hearth-evm: &hearth-evm
   HEARTH_JSONRPC: "8545"
   HEARTH_DATA: /data/evm
 
+# ── THE LOG IS BOUNDED, IN SIZE AND IN NUMBER. cloudsforge-online/micro-org#163 ──
+#
+# These three services had NO logging configuration at all, which means Docker's
+# default json-file driver with no `max-size` and no `max-file`: a log that grows
+# until the disk fills, keeps everything ever written, and is deleted only when
+# somebody deletes the container. The p2p log lines name peers, and behind the
+# tunnel a peer's address is the true client's — an IP address is personal data,
+# so "keep everything for ever" is not a retention period anybody chose.
+#
+# 10m x 3 is a 30 MB ceiling per container. The estate's own gateway caps at
+# 10m x 5 (deploy/compose/docker-compose.gateway.yml:32-36) and this is
+# deliberately tighter, for a reason that is specific to this bundle: these nodes
+# are noisy — every block, every peer connect and disconnect — so the same five
+# files cover a much shorter span of wall-clock time here than they do there, and
+# the only thing a bigger ceiling buys is a longer tail of old lines.
+#
+# ⚠ AND A SIZE CAP IS NOT A RETENTION PERIOD. It bounds how MUCH is kept, never
+# how LONG: on a quiet node a line can sit in the current file indefinitely. That
+# is why the real fix is in src/netprefix.js, which truncates a peer address to a
+# /24 or a /48 BEFORE it reaches a log line. This block bounds the exposure; that
+# file is what stops there being one. Neither is a substitute for the other.
+x-hearth-logging: &hearth-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   seed:
     build: ./node
     container_name: hearth-seed
+    logging: *hearth-logging
     environment:
       HEARTH_P2P: "8646"
       HEARTH_RPC: "8645"
@@ -44,6 +72,7 @@ services:
   miner1:
     build: ./node
     container_name: hearth-miner1
+    logging: *hearth-logging
     environment:
       HEARTH_PEERS: "seed:8646"
       HEARTH_MINE: "1"
@@ -56,6 +85,7 @@ services:
   miner2:
     build: ./node
     container_name: hearth-miner2
+    logging: *hearth-logging
     environment:
       HEARTH_PEERS: "seed:8646"
       HEARTH_MINE: "1"

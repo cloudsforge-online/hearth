@@ -28,6 +28,7 @@ const net = require('net');
 const BLOCK = require('./block');
 const P = require('./params');
 const WS = require('./ws');
+const { peerLabel } = require('./netprefix');
 
 /** A peer address that names a WebSocket endpoint rather than a host:port. */
 const isWsUrl = s => typeof s === 'string' && /^wss?:\/\//i.test(s);
@@ -37,9 +38,18 @@ const isHash = s => typeof s === 'string' && /^[0-9a-f]{64}$/.test(s);
 /** How `_binding`'s fields are named in a log line an operator has to act on. */
 const BINDING = { chainId: 'chain id', commonsAddress: 'commons address' };
 
-// remoteAddress is gone once the socket is destroyed, so a close/error log
-// would otherwise name no peer at all
-const peerName = sock => (sock.remoteAddress ? `${sock.remoteAddress}:${sock.remotePort}` : 'closed');
+/* HOW A PEER IS NAMED IN A LOG LINE, AND THE ONE THING IT MUST NEVER BE.
+ *
+ * A WHOLE IP ADDRESS. This used to be `${sock.remoteAddress}:${sock.remotePort}` and it reaches
+ * ten log statements below; behind the tunnel `remoteAddress` is the true client, taken from
+ * `Cf-Connecting-Ip` by src/ws.js. An address is personal data, and this node's compose file had
+ * no log size cap, no rotation and no age limit, so the retention period was "until the disk
+ * fills". micro-org#163. src/netprefix.js truncates to a /24 or a /48 BEFORE the value reaches a
+ * log line, so there is nothing for rotation, a log shipper or a support bundle to leak.
+ *
+ * remoteAddress is gone once the socket is destroyed, so a close/error log would otherwise name no
+ * peer at all — `peerLabel` answers 'closed' for that, as this did. */
+const peerName = sock => peerLabel(sock.remoteAddress, sock.remotePort);
 
 /**
  * The three things this file needs to know about a block, and the only three.
