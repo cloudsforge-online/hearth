@@ -51,6 +51,18 @@ on:
       - '.github/workflows/desktop.yml'
   workflow_dispatch:
 
+  # So desktop-release.yml can PUBLISH exactly what this file verified, rather
+  # than building a second time from its own copy of these steps. Artefacts are
+  # per-run, and a reusable workflow shares the caller's run, so the release job
+  # downloads the very files these jobs uploaded.
+  #
+  # It is a separate file rather than another trigger here because `on.push`
+  # takes ONE `paths:` filter for both branches and tags — and GitHub evaluates
+  # it against the commits in the push. A tag push carries no commits, so a
+  # `tags: ['v*']` added above would be filtered out by the `paths:` list and the
+  # release would silently never run.
+  workflow_call:
+
 jobs:
   build:
     name: ${{ matrix.name }}
@@ -115,8 +127,12 @@ jobs:
             libxdo-dev \
             libssl-dev \
             libglib2.0-dev \
-            build-essential curl wget file patchelf xdg-utils
+            build-essential curl wget file patchelf xdg-utils \
+            xvfb
           pkg-config --modversion webkit2gtk-4.1
+          # xvfb is not decoration either: a hosted runner has no display, and
+          # `--smoke` has to open a real window to be worth anything.
+          test -x /usr/bin/xvfb-run
           # The AppImage bundler copies these two out of /usr/bin into the
           # AppDir and fails with "xdg-mime binary not found" if they are
           # absent — tauri-bundler linux/appimage/linuxdeploy.rs:126,132. They
@@ -191,7 +207,10 @@ jobs:
       # ---------------------------------------------------------------------
       # 5. What is in them, and whether the thing inside mines
       # ---------------------------------------------------------------------
-      - name: Verify the package, install it, and mine a block with it
+      # ...and then opens its window under a real X server and measures what was
+      # drawn into it. That last part is the only check in this file that speaks
+      # to the INTERFACE rather than to the engine behind it.
+      - name: Verify the package, install it, mine a block, and open its window
         run: node scripts/verify-bundle.mjs
 
       # ---------------------------------------------------------------------

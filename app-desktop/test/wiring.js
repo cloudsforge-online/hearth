@@ -57,7 +57,16 @@ console.log('\nHearth desktop — do the window, the shell and the engine agree?
 // ---------------------------------------------------------------------------
 group('every command the window calls exists, and every command that exists is called');
 // ---------------------------------------------------------------------------
-const called = uniq(all(ui, /invoke\('([a-z_]+)'/g));
+/* app.js is where a command is called FROM, with one deliberate exception:
+ * `smoke_report` is invoked by SMOKE_JS, the snippet main.rs evaluates in the
+ * page during `--smoke`. It is kept out of ui/ on purpose — not one line of test
+ * scaffolding belongs in the application a user installs — so its caller lives
+ * in the Rust source, and the dead-command check below has to look there too or
+ * it would demand the scaffolding be shipped. */
+const called = uniq([
+  ...all(ui, /invoke\('([a-z_]+)'/g),
+  ...all(rust, /invoke\('([a-z_]+)'/g),
+]);
 const handler = (rust.match(/generate_handler!\[([\s\S]*?)\]/) || [, ''])[1]
   .split(',').map(s => s.trim()).filter(Boolean);
 const defined = uniq(all(rust, /#\[tauri::command\]\s*\n\s*fn ([a-z_]+)/g));
@@ -85,14 +94,23 @@ group('the arguments line up, across the camelCase/snake_case boundary');
   const snake = s => s.replace(/[A-Z]/g, c => '_' + c.toLowerCase());
   let compared = 0, wrong = [];
   for (const cmd of called) {
-    // What the window passes: invoke('cmd', { a, b: x, c: 1 })
-    const call = new RegExp(`invoke\\('${cmd}',\\s*\\{([^}]*)\\}`).exec(ui);
+    // What the caller passes: invoke('cmd', { a, b: x, c: 1 }). Both sources,
+    // because SMOKE_JS — the only caller outside ui/ — lives in main.rs.
+    const call = new RegExp(`invoke\\('${cmd}',\\s*\\{([^}]*)\\}`).exec(ui)
+      || new RegExp(`invoke\\('${cmd}',\\s*\\{([^}]*)\\}`).exec(rust);
     const passed = call
       ? uniq(call[1].split(',').map(s => s.split(':')[0].trim()).filter(k => /^[A-Za-z_]+$/.test(k)))
       : [];
-    // What the command takes, minus the state handle Tauri injects.
-    const sig = new RegExp(`fn ${cmd}\\(([\\s\\S]*?)\\)\\s*->`).exec(rust)
-      || new RegExp(`fn ${cmd}\\(([\\s\\S]*?)\\)\\s*\\{`).exec(rust);
+    /* What the command takes, minus the state handle Tauri injects.
+     *
+     * `[^)]` rather than `[\s\S]*?`: a command returning `()` has no `->`, so the
+     * lazy form kept scanning PAST the end of its signature and matched the next
+     * function's parameters — it reported `smoke_report` as wanting arguments
+     * belonging to `run_smoke`, several doc comments away. No command in this
+     * file has a parenthesis inside its parameter list, so stopping at the first
+     * `)` is both correct and impossible to walk through. */
+    const sig = new RegExp(`fn ${cmd}\\(([^)]*)\\)\\s*->`).exec(rust)
+      || new RegExp(`fn ${cmd}\\(([^)]*)\\)\\s*\\{`).exec(rust);
     if (!sig) continue;
     const takes = sig[1].split(',')
       .map(s => s.trim().split(':')[0].trim())

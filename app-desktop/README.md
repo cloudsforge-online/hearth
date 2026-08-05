@@ -82,6 +82,30 @@ curl -s -X POST -H 'content-type: application/json' \
   http://127.0.0.1:18545/
 ```
 
+## Proving it draws
+
+`--selftest` opens no window, which is what makes it good evidence about mining
+and no evidence at all about the interface. `--smoke` is the other half: it runs
+the ordinary application — same builder, same window, same page, same CSP — and
+then makes the page measure itself.
+
+```bash
+src-tauri/target/release/hearth-desktop --smoke --data /tmp/smoke --timeout 120
+
+# on a machine with no display, which is what CI is:
+xvfb-run -a src-tauri/target/release/hearth-desktop --smoke --data /tmp/smoke
+```
+
+It establishes four things in order: the webview was created and finished
+loading the bundled `index.html`; `ui/app.js` ran under the real CSP and
+completed an IPC round trip; and — the load-bearing one — a `<section>` has real
+width and height. Every section in `index.html` ships `hidden` and only
+`app.js`'s `render()` unhides one, so a visible section cannot happen unless the
+script ran *and* the engine laid the document out.
+
+It reads no pixels. Layout ran; whether the result is *legible* is a different
+question and still wants a person.
+
 ## Tests
 
 ```bash
@@ -90,7 +114,8 @@ node test/wiring.js           # do the window, the shell and the engine agree?
 node test/engine.js           # the engine mines a real node — and leaks nothing
 cargo test --manifest-path src-tauri/Cargo.toml
 node scripts/verify-bundle.mjs   # after `npm run build`: what is IN the
-                                 # installer, then install it and mine with it
+                                 # installer, then install it, mine with it,
+                                 # and open its window
 ```
 
 `HEARTH_NETWORK=hearth-test` in front of the two that mine shrinks the
@@ -116,10 +141,11 @@ app-desktop/
 ├── engine/engine.js        one mining session + one key, as JSON lines on stdin/stdout
 ├── scripts/
 │   ├── fetch-node.mjs      fetches and SHA-256-verifies the bundled Node runtime
-│   └── verify-bundle.mjs   opens the built installer, installs it, mines with it
+│   └── verify-bundle.mjs   opens the built installer, installs it, mines with
+│                           it, and opens its window
 ├── test/                   wiring.js, engine.js
 └── src-tauri/
-    ├── src/main.rs         Tauri commands, and --selftest
+    ├── src/main.rs         Tauri commands, --selftest and --smoke
     ├── src/engine.rs       spawning and supervising the engine; path resolution
     ├── src/keychain.rs     the OS keychain, for the passphrase only
     └── tauri.conf.json     window, CSP, resources, the Node sidecar
@@ -140,19 +166,43 @@ rules out a Rust port as well.
 `node/src`, or to the logo. Each job installs the platform's toolchain, fetches
 and hash-verifies the Node runtime, runs the wiring and engine suites, builds the
 installers, and then runs `scripts/verify-bundle.mjs`, which **installs the
-package and mines a block with it**. The installers are attached to the run.
+package, mines a block with it, and opens its window**.
 
-| | Built | Runtime inside it runs | Installs | Mines, chain-verified | Window seen |
-|---|---|---|---|---|---|
-| **Linux x86_64** | deb, rpm, AppImage | ✓ | `dpkg -i` | ✓ | **no** |
-| **Windows x86_64** | NSIS, MSI | ✓ | silent `/S` | ✓ | **no** |
-| **macOS aarch64** | `.app`, `.dmg` | ✓ | runs in place | ✓ | **no** |
+| | Built | Runtime inside it runs | Installs | Mines, chain-verified | Window opens and draws | Looked at by a person |
+|---|---|---|---|---|---|---|
+| **Linux x86_64** | deb, rpm, AppImage | ✓ | `dpkg -i` | ✓ | ✓ (under `xvfb`) | **no** |
+| **Windows x86_64** | NSIS, MSI | ✓ | silent `/S` | ✓ | ✓ | **no** |
+| **macOS aarch64** | `.app`, `.dmg` | ✓ | runs in place | ✓ | ✓ | ✓ |
 
-**The last column is the honest one.** `--selftest` deliberately opens no window,
-so everything above says the runtime, the paths, the engine and the mining loop
-are right on that platform and says *nothing* about whether the interface draws.
-Screen capture was refused in the environment this was written in, and CI runners
-are headless. **Nobody has looked at this application on Windows or on Linux.**
+**The last two columns are the honest ones, and they are different claims.**
+`--smoke` proves the window is created, the page loads, `app.js` runs and a
+section is laid out with real dimensions — the interface *draws*. It reads no
+pixels, so whether the interface is *right* — fonts, contrast, a control clipped
+off the edge of the window — is still unestablished on Windows and on Linux, and
+wants one person to look at it once per platform. Until this change even the
+first claim was unmade: `--selftest` opens no window, so a fully green build said
+nothing whatever about the interface.
+
+## Getting it
+
+`.github/workflows/desktop-release.yml` publishes to a **GitHub Release**, which
+for a desktop application is the distribution channel — a container registry
+cannot serve a `.dmg` to a person with a browser, and a signed apt/dnf repository
+would need a signing key and a host to serve it. Pushing a `v*` tag runs the
+whole of `desktop.yml` first and publishes only if all three platforms passed,
+with a `SHA256SUMS.txt` alongside.
+
+```bash
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+Run artefacts are *not* a distribution: they need a GitHub login, they expire
+after fourteen days, and they arrive zipped. That gap is why no installer had
+ever reached a user despite a green build.
+
+**Nothing here is code-signed.** Windows shows SmartScreen and macOS refuses the
+`.dmg` until it is right-click-opened. Both need paid certificates in the owner's
+name; the checksums are the interim answer, and the release notes say so.
 
 Three defects were found by compiling the two platforms that never had been.
 Each is a fault that no amount of building on a Mac could have surfaced:

@@ -33,12 +33,23 @@
 //! the code below — the same path resolution, the same spawn, the same
 //! protocol — with no window, mines until the node accepts a block, and prints
 //! the address that was paid. See `app-desktop/README.md` for the run.
+//!
+//! # `--smoke`
+//!
+//! And `--selftest` is not evidence that anything DRAWS. It deliberately opens
+//! no window, so a green build said the runtime, the paths, the engine and the
+//! mining loop were right and said nothing at all about the interface — nobody
+//! had ever seen this application's window on Windows or on Linux. `--smoke`
+//! opens the REAL window on the REAL page and makes the page measure itself.
+//! See the section above `run_smoke` for what it does and does not prove.
 
 mod engine;
 mod keychain;
 
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender};
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
 use engine::{Engine, Layout};
 use serde_json::{json, Value};
@@ -71,6 +82,12 @@ fn read_settings(data_dir: &std::path::Path) -> Value {
 
 #[tauri::command]
 fn get_settings(app: tauri::State<Arc<App>>) -> Value {
+    /* The first thing ui/app.js does on boot (its closing IIFE) is await this
+     * command. That makes this line the one place that can say "the page's OWN
+     * script ran and completed a round trip over IPC", as distinct from "a
+     * script the host injected ran" — which is all an `eval` can prove. It is a
+     * no-op unless --smoke created the channel. */
+    smoke_send(Smoke::Ipc);
     let mut s = read_settings(&app.layout.data_dir);
     // Never persisted, always observed: whether the passphrase is remembered is
     // a fact about the OS keychain, and a stale copy of it in a file would show
@@ -373,6 +390,251 @@ fn selftest(args: &[String]) -> i32 {
 }
 
 // ---------------------------------------------------------------------------
+// --smoke: the proof that the WINDOW comes up
+// ---------------------------------------------------------------------------
+
+/* WHAT THIS EXISTS FOR.
+ *
+ * `--selftest` and scripts/verify-bundle.mjs between them prove a great deal —
+ * the runtime executes on this platform, the installer puts the engine where the
+ * resolver looks, the mining loop runs and the chain credits the address. All of
+ * it happens with no window, and verify-bundle.mjs says so in its own header:
+ * "NOT CHECKED HERE: that the window renders."
+ *
+ * That gap is not academic. The webview is the one component that is a DIFFERENT
+ * PIECE OF SOFTWARE on each platform — WKWebView, WebView2, WebKitGTK — and the
+ * only one the build cannot vouch for, because linking against webkit2gtk proves
+ * the symbols resolve, not that a surface is ever created. Every failure mode
+ * left after a green build lives here: a webview that will not instantiate, a
+ * CSP that blocks the app's own script, a `window.__TAURI__` that is missing
+ * because `withGlobalTauri` regressed, a page that loads and paints nothing.
+ *
+ * WHAT IT PROVES, in the order it establishes it:
+ *
+ *   1. the native window and its webview were created at all;
+ *   2. the webview navigated to the bundled index.html and finished loading it;
+ *   3. `ui/app.js` — the application's own script, subject to the real CSP —
+ *      executed and completed an IPC round trip (`get_settings`);
+ *   4. the page has non-zero geometry and a VISIBLE section. This is the load
+ *      bearing one: every <section> in index.html ships `hidden`, and only
+ *      app.js's render() ever unhides one. A section with real width and height
+ *      cannot happen unless the script ran AND the webview laid the document
+ *      out. It is as close to "the interface drew" as anything short of a
+ *      screenshot gets.
+ *
+ * WHAT IT STILL DOES NOT PROVE. Nothing here looks at pixels. Layout ran, but
+ * whether the result is legible — fonts, contrast, a control off the edge of the
+ * window — is not established, and a person still has to look at it once per
+ * platform. It is the difference between "the interface draws" and "the
+ * interface is right", and only the first is claimed.
+ *
+ * ON HEADLESS RUNNERS. Linux needs an X server for a window to exist at all;
+ * CI runs this under `xvfb-run`. macOS and Windows runners have a window server
+ * in the session already. Xvfb is a real X server with a real framebuffer, so
+ * layout is genuine — it is not a stub.
+ */
+
+/// The stages of a smoke run, as they are observed.
+#[derive(Debug)]
+enum Smoke {
+    /// The webview finished loading a document.
+    PageLoad(String),
+    /// `ui/app.js` called into the backend.
+    Ipc,
+    /// The page measured itself and sent the numbers back.
+    Dom(Value),
+}
+
+/// `None` unless `--smoke` is on, which is what makes every `smoke_send` in the
+/// normal command path free.
+static SMOKE_TX: OnceLock<Mutex<Sender<Smoke>>> = OnceLock::new();
+
+fn smoke_send(ev: Smoke) {
+    if let Some(tx) = SMOKE_TX.get() {
+        // A closed channel means the watcher already reported; dropping is right.
+        let _ = tx.lock().map(|t| t.send(ev));
+    }
+}
+
+/// Ask the page how big it is and which section is showing.
+///
+/// Injected with `eval` rather than shipped in `ui/`, so that not one line of
+/// test scaffolding is inside the application a user installs. `connect-src
+/// ipc: http://ipc.localhost` in the CSP is what lets the result come back.
+/* It POLLS rather than measuring once. app.js's boot is asynchronous — it awaits
+ * get_settings, then awaits refresh(), and only render() unhides a section. The
+ * first version of this measured the instant get_settings returned and reported
+ * "every section is still hidden" about a window that drew correctly a few
+ * hundred milliseconds later. Waiting for the state to arrive, rather than
+ * sampling once and hoping, is the difference between a smoke test and a flake. */
+const SMOKE_JS: &str = r#"
+(function () {
+  function report(m) {
+    try { window.__TAURI__.core.invoke('smoke_report', { metrics: m }); } catch (e) {}
+  }
+  var started = Date.now();
+  function visible(s) {
+    var r = s.getBoundingClientRect();
+    return r.width > 0 && r.height > 0;
+  }
+  function measure() {
+    try {
+      var all = [].slice.call(document.querySelectorAll('section'));
+      var shown = all.filter(visible);
+      // Give the async boot time to land before calling it a blank window.
+      if (!shown.length && Date.now() - started < 30000) { setTimeout(measure, 200); return; }
+      var box = document.body.getBoundingClientRect();
+      var sec = shown[0] || null;
+      var h1 = sec ? sec.querySelector('h1') : null;
+      report({
+        title: document.title,
+        nodes: document.querySelectorAll('*').length,
+        sections: all.length,
+        visible: sec ? sec.id : null,
+        heading: h1 ? h1.textContent.trim() : null,
+        waitedMs: Date.now() - started,
+        bodyWidth: Math.round(box.width),
+        bodyHeight: Math.round(box.height),
+        hasTauri: !!(window.__TAURI__ && window.__TAURI__.core),
+        engine: navigator.userAgent
+      });
+    } catch (e) {
+      report({ error: String(e) });
+    }
+  }
+  measure();
+})()
+"#;
+
+/// Receives the page's self-measurement. Inert unless `--smoke` set the channel.
+#[tauri::command]
+fn smoke_report(metrics: Value) {
+    smoke_send(Smoke::Dom(metrics));
+}
+
+/// Watch the stages go by, then report and exit the process.
+///
+/// This never returns: a smoke run's whole purpose is its exit code, and there
+/// is nothing sensible to do with the window afterwards.
+fn run_smoke(handle: tauri::AppHandle, rx: Receiver<Smoke>, budget: Duration) -> ! {
+    let deadline = Instant::now() + budget;
+    let mut page: Option<String> = None;
+    let mut ipc = false;
+    let mut dom: Option<Value> = None;
+    let mut asked = false;
+
+    while dom.is_none() {
+        /* Only measure once the page has loaded AND app.js has spoken. Evaluating
+         * earlier races the render: every section is still `hidden`, so it would
+         * report "nothing visible" about a window that was about to be fine. */
+        if page.is_some() && ipc && !asked {
+            asked = true;
+            match handle.get_webview_window("main") {
+                Some(w) => {
+                    if let Err(e) = w.eval(SMOKE_JS) {
+                        smoke_end(&handle, Err(format!("the page would not evaluate: {e}")));
+                    }
+                }
+                None => smoke_end(&handle, Err("there is no window labelled `main`".into())),
+            }
+        }
+
+        let left = deadline.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            let missing = if page.is_none() {
+                "the webview never finished loading a page — no window, or index.html was not \
+                 bundled where the webview looks"
+            } else if !ipc {
+                "the page loaded, but ui/app.js never called get_settings — its script did not \
+                 run (check the CSP) or window.__TAURI__ was absent"
+            } else {
+                "the page never answered the measurement — eval reached it but the reply did not \
+                 come back over IPC"
+            };
+            smoke_end(&handle, Err(format!("timed out after {}s: {missing}", budget.as_secs())));
+        }
+
+        match rx.recv_timeout(left.min(Duration::from_millis(250))) {
+            Ok(Smoke::PageLoad(url)) => {
+                println!("  window        the webview loaded {url}");
+                page = Some(url);
+            }
+            Ok(Smoke::Ipc) => {
+                if !ipc {
+                    println!("  script        ui/app.js ran and called get_settings over IPC");
+                }
+                ipc = true;
+            }
+            Ok(Smoke::Dom(v)) => dom = Some(v),
+            Err(RecvTimeoutError::Timeout) => {}
+            Err(RecvTimeoutError::Disconnected) => {
+                smoke_end(&handle, Err("the smoke channel closed early".into()));
+            }
+        }
+    }
+
+    let m = dom.unwrap_or_else(|| json!({}));
+    if let Some(err) = m["error"].as_str() {
+        smoke_end(&handle, Err(format!("the page reported: {err}")));
+    }
+
+    let w = m["bodyWidth"].as_i64().unwrap_or(0);
+    let h = m["bodyHeight"].as_i64().unwrap_or(0);
+    let nodes = m["nodes"].as_i64().unwrap_or(0);
+    let visible = m["visible"].as_str().unwrap_or("");
+
+    println!("  engine        {}", m["engine"].as_str().unwrap_or("?"));
+    println!("  document      {:?}, {nodes} elements in {} sections",
+        m["title"].as_str().unwrap_or("?"), m["sections"].as_i64().unwrap_or(0));
+    println!("  laid out      body is {w}×{h} css px, {}ms after the page was asked",
+        m["waitedMs"].as_i64().unwrap_or(0));
+    println!("  showing       <section id=\"{visible}\"> — {:?}", m["heading"].as_str().unwrap_or(""));
+
+    /* Every section in index.html is `hidden` in the markup. One being visible
+     * with real dimensions is the whole proof: the script ran and the engine
+     * laid the document out. */
+    if !m["hasTauri"].as_bool().unwrap_or(false) {
+        smoke_end(&handle, Err("window.__TAURI__.core is missing in the page".into()));
+    }
+    if w <= 0 || h <= 0 {
+        smoke_end(&handle, Err(format!("the document has no area ({w}×{h})")));
+    }
+    if visible.is_empty() {
+        smoke_end(&handle, Err(
+            "every <section> is still hidden — the page loaded but nothing was rendered into it".into()));
+    }
+    if nodes < 20 {
+        smoke_end(&handle, Err(format!("only {nodes} elements — that is not this page")));
+    }
+
+    smoke_end(&handle, Ok(format!(
+        "the window opened, ui/app.js ran, and <section id=\"{visible}\"> is drawn at {w}×{h}")))
+}
+
+/// Print the verdict, stop the engine, and leave with the right exit code.
+fn smoke_end(handle: &tauri::AppHandle, verdict: Result<String, String>) -> ! {
+    // An orphaned Node process outliving a CI step wedges the runner's cleanup.
+    if let Some(state) = handle.try_state::<Arc<App>>() {
+        if let Ok(mut g) = state.engine.lock() {
+            if let Some(mut e) = g.take() {
+                e.shutdown();
+            }
+        }
+    }
+    match verdict {
+        Ok(msg) => {
+            println!("\nPASS — {msg}");
+            println!("NOT CHECKED HERE: that what was drawn is legible. No pixels were read.\n");
+            std::process::exit(0)
+        }
+        Err(msg) => {
+            eprintln!("\nFAIL — {msg}\n");
+            std::process::exit(1)
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -380,8 +642,42 @@ fn main() {
         std::process::exit(selftest(&args));
     }
 
+    /* --smoke runs the ordinary application: the same builder, the same window,
+     * the same page, the same CSP. Nothing below is branched on it except that a
+     * watcher is started and the data directory can be pointed somewhere
+     * disposable — a smoke run must not touch a real user's keystore, and a
+     * fresh directory is also what makes the setup screen the one that renders. */
+    let smoking = args.iter().any(|a| a == "--smoke");
+    let mut smoke_rx: Option<Receiver<Smoke>> = None;
+    let mut smoke_budget = Duration::from_secs(120);
+    if smoking {
+        attach_parent_console();
+        let arg = |name: &str| -> Option<String> {
+            args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).cloned()
+        };
+        if let Some(d) = arg("--data") {
+            std::env::set_var("HEARTH_APP_DATA", d);
+        }
+        if let Some(secs) = arg("--timeout").and_then(|s| s.parse::<u64>().ok()) {
+            smoke_budget = Duration::from_secs(secs);
+        }
+        let (tx, rx) = channel();
+        let _ = SMOKE_TX.set(Mutex::new(tx));
+        smoke_rx = Some(rx);
+        println!("hearth-desktop --smoke");
+    }
+
     tauri::Builder::default()
-        .setup(|app| {
+        /* Fires when the webview has finished loading a document — the first
+         * thing in a smoke run that cannot be faked by the process merely
+         * starting. `smoke_send` is a no-op in a normal launch. */
+        .on_page_load(|webview, payload| {
+            if matches!(payload.event(), tauri::webview::PageLoadEvent::Finished) {
+                smoke_send(Smoke::PageLoad(payload.url().to_string()));
+            }
+            let _ = webview;
+        })
+        .setup(move |app| {
             let exe = std::env::current_exe()?;
             let exe_dir = exe.parent().unwrap_or(std::path::Path::new(".")).to_path_buf();
             let resource_dir = app.path().resource_dir().ok();
@@ -423,6 +719,11 @@ fn main() {
             }
 
             app.manage(state);
+
+            if let Some(rx) = smoke_rx.take() {
+                let handle = app.handle().clone();
+                std::thread::spawn(move || run_smoke(handle, rx, smoke_budget));
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -440,6 +741,7 @@ fn main() {
             export_key,
             start_mining,
             stop_mining,
+            smoke_report,
         ])
         .build(tauri::generate_context!())
         .expect("error while building the Hearth desktop app")

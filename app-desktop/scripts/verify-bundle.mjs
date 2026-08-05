@@ -33,11 +33,18 @@
  *   hearthd, and the chain is asked afterwards whether the address it printed was
  *   paid. A window is not evidence; a credited account is.
  *
- * WHAT IT DOES NOT CLAIM. Nothing here renders. `--selftest` deliberately opens
- * no window, so a passing run says the engine, the runtime, the paths and the
- * mining loop are right on this platform and says NOTHING about whether the
- * interface draws. That still needs a person to look at it on Windows and on
- * Linux.
+ *   ITS WINDOW OPENS. `--selftest` deliberately opens none, so for a while a
+ *   fully green run said the engine, the runtime, the paths and the mining loop
+ *   were right and said NOTHING about whether the interface drew — and nobody
+ *   had ever seen this application's window on Windows or on Linux. `--smoke`
+ *   opens the real window on the real page, under `xvfb-run` where there is no
+ *   display, and the page reports its own layout back.
+ *
+ * WHAT IT STILL DOES NOT CLAIM. No pixels are read. Layout ran and a section was
+ * measured with real dimensions, which is a strong statement that the interface
+ * DRAWS; whether it is LEGIBLE — fonts, contrast, a control clipped off the edge
+ * — is a different question and still needs a person to look at it once per
+ * platform.
  */
 
 import { execFileSync, spawn } from 'node:child_process';
@@ -338,6 +345,58 @@ async function mineWithIt(bin) {
 }
 
 // ===========================================================================
+// 4. And then open its window, because none of the above does
+// ===========================================================================
+
+/** Run the INSTALLED binary with `--smoke`, which opens the real window.
+ *
+ * Everything above this deliberately avoids the interface: `--selftest` opens no
+ * window, so a fully green run used to leave "does it draw on Windows and Linux"
+ * completely unanswered — the webview is a different product on each platform
+ * (WKWebView, WebView2, WebKitGTK) and is precisely the part a successful
+ * compile cannot vouch for. `--smoke` opens the window, waits for ui/app.js to
+ * render into it, and measures the result from inside the page. See the block
+ * above `run_smoke` in src-tauri/src/main.rs.
+ *
+ * Linux runners have no display, so this needs an X server. `xvfb-run` is a real
+ * one with a real framebuffer — layout genuinely happens, it simply is not shown
+ * to anyone. macOS and Windows runners already have a window server in session.
+ */
+async function smokeWindow(bin) {
+  group('AND ITS WINDOW OPENS, ON THIS PLATFORM, WITH THE INTERFACE DRAWN INTO IT');
+
+  const data = tmp('smokedata');
+  const [cmd, args] = process.platform === 'linux'
+    // -a picks a free display number; the app must not inherit a stale one.
+    ? ['xvfb-run', ['-a', '--server-args=-screen 0 1280x1024x24', bin]]
+    : [bin, []];
+
+  const out = await new Promise(resolve => {
+    const p = spawn(cmd, [...args, '--smoke', '--data', data, '--timeout', '120'],
+      { stdio: ['ignore', 'pipe', 'pipe'] });
+    let text = '';
+    p.stdout.on('data', d => { text += d; });
+    p.stderr.on('data', d => { text += d; });
+    const kill = setTimeout(() => p.kill('SIGKILL'), 180_000);
+    p.on('close', code => { clearTimeout(kill); resolve({ code, text }); });
+    p.on('error', e => { clearTimeout(kill); resolve({ code: -1, text: String(e) }); });
+  });
+
+  console.log(out.text.split('\n').map(l => '    | ' + l).join('\n'));
+
+  assert(out.text.trim().length > 0, 'the packaged binary printed its smoke transcript');
+  assert(/the webview loaded /.test(out.text),
+    'the webview was created and finished loading the bundled index.html');
+  assert(/ui\/app\.js ran and called get_settings over IPC/.test(out.text),
+    "the application's OWN script ran under the real CSP and reached the backend over IPC");
+  /* The load-bearing one. Every <section> in ui/index.html ships `hidden`; only
+   * app.js's render() unhides one. A section with real width and height cannot
+   * happen unless the script ran and the engine laid the document out. */
+  assert(/PASS — the window opened/.test(out.text) && out.code === 0,
+    `a <section> is drawn with real dimensions — the interface renders here (exit ${out.code})`);
+}
+
+// ===========================================================================
 
 console.log(`\nHearth desktop — what is actually in the ${process.platform} package, and does it mine?\n`);
 
@@ -347,11 +406,14 @@ const artefact = { darwin: checkBundleMacos, linux: checkBundleLinux, win32: che
 
 if (sidecar && artefact) {
   const bin = install(artefact);
-  if (bin) await mineWithIt(bin);
-  else assert(false, 'nothing was installed, so nothing could be run');
+  if (bin) {
+    await mineWithIt(bin);
+    await smokeWindow(bin);
+  } else assert(false, 'nothing was installed, so nothing could be run');
 }
 
 for (const d of tmpdirs) { try { fs.rmSync(d, { recursive: true, force: true }); } catch { /* gone */ } }
 console.log(`\n${failed === 0 ? 'PASS' : 'FAIL'} — ${checks - failed}/${checks} checks`);
-console.log('NOT CHECKED HERE: that the window renders. --selftest opens none.\n');
+console.log('NOT CHECKED HERE: that what the window drew is LEGIBLE. Layout ran and was');
+console.log('measured; no pixels were read, so fonts, contrast and clipping still need eyes.\n');
 process.exit(failed === 0 ? 0 : 1);

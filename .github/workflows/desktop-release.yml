@@ -1,0 +1,170 @@
+name: Publish the desktop miner
+
+# WHY THIS FILE EXISTS, AND WHY IT IS A RELEASE RATHER THAN A REGISTRY.
+#
+# desktop.yml builds and verifies the installers on all three platforms and then
+# stops at `actions/upload-artifact`. That is a CI artefact, not a distribution:
+#
+#   * it requires a GitHub LOGIN to download, so no ordinary user can get it;
+#   * it expires — `retention-days: 14`, and then the link is dead;
+#   * it arrives as a .zip wrapping the installer, so even a logged-in user has
+#     to unwrap it before they can run anything;
+#   * and its URL is per-run, so there is nothing stable to link to.
+#
+# The result was a green build with zero downloadable output. There were no
+# releases and no tags in this repository at all. "The package cannot be
+# published" was not a broken publish step — it was the ABSENCE of one.
+#
+# A REGISTRY IS THE WRONG SHAPE HERE. publish.yml pushes `hearth-node` to GHCR,
+# which is right: that is a container image, pulled by a machine. This is a
+# desktop application installed by a person from a browser, and no container
+# registry can serve a .dmg to one. The registry-shaped answer for deb and rpm is
+# a signed apt/dnf repository, which needs a signing key and a host to serve it —
+# and the estate is tunnel-only with no static IP (see the ingress note in the
+# deploy repo). A GitHub Release is the channel that actually fits: this repo is
+# PUBLIC, so its release assets are anonymously downloadable over a permanent
+# URL, with no login, no expiry, and no unwrapping.
+#
+# SIGNING, STATED PLAINLY. Nothing here is code-signed or notarised. Windows will
+# show SmartScreen and macOS will refuse the .dmg on first open until the user
+# right-click-opens it. Both need paid certificates in the owner's name; neither
+# can be arranged from CI, and pretending otherwise by hiding the warning would
+# be worse than saying so in the release notes, which is what happens below.
+
+on:
+  push:
+    tags: [ 'v*' ]
+  # For cutting a build off main without tagging it — it publishes as a
+  # prerelease so it can never be mistaken for a version anyone should install.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to publish as (e.g. v0.1.0). Blank uses the run number.'
+        required: false
+        default: ''
+
+jobs:
+  # The whole of desktop.yml: three platforms, native toolchains, the wiring and
+  # engine tests, the build, and verify-bundle.mjs — which installs the package,
+  # mines a real block with it, and opens its window. Nothing is published unless
+  # every one of those passed, because `needs:` will not run the release job.
+  verify:
+    uses: ./.github/workflows/desktop.yml
+
+  release:
+    name: Attach the installers to a release
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      # The only elevated permission in this file, and the only one it needs.
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      # Everything the three build jobs uploaded.
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: hearth-desktop-*
+          path: staging
+          merge-multiple: true
+
+      # FLATTENED ON PURPOSE. upload-artifact roots each artefact at the least
+      # common ancestor of the files it matched, so the Linux one arrives as
+      # deb/, rpm/ and appimage/ subdirectories while the macOS one — a single
+      # matching file — arrives bare. `gh release create dist/*` would then be
+      # handed directories, which it cannot upload. Flattening also gives the
+      # checksum file one flat namespace, which is what a person verifying a
+      # download expects.
+      - name: Gather the installers into one directory
+        run: |
+          mkdir -p dist
+          find staging -type f \
+            \( -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' \
+               -o -name '*.exe' -o -name '*.msi' -o -name '*.dmg' \) \
+            -exec mv -n {} dist/ \;
+
+      - name: Name the release
+        id: name
+        run: |
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            echo "tag=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.ref_type }}" = "tag" ]; then
+            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=v0.0.0-build.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # A release with no assets is the same failure this file exists to fix, so
+      # it is caught here rather than discovered by the first person to click the
+      # download link.
+      - name: There is something to publish, for every platform
+        run: |
+          ls -l dist
+          # Not just a count: a release missing one platform's installer is the
+          # exact failure that is easiest to ship without noticing.
+          for ext in deb rpm AppImage exe msi dmg; do
+            n=$(find dist -maxdepth 1 -type f -name "*.$ext" | wc -l)
+            [ "$n" -ge 1 ] || { echo "::error::no .$ext was built"; exit 1; }
+            echo "  $n × .$ext"
+          done
+
+      # So anyone can confirm the file they downloaded is the file this run built.
+      - name: Checksums
+        working-directory: dist
+        run: |
+          find . -type f ! -name 'SHA256SUMS.txt' -printf '%P\n' | sort \
+            | xargs sha256sum > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cat > notes.md <<'NOTES'
+          The Hearth desktop miner — mine EMBER from a Mac, a PC or a Linux box.
+
+          | Platform | File |
+          | --- | --- |
+          | Linux (Debian, Ubuntu) | `.deb` |
+          | Linux (Fedora, RHEL) | `.rpm` |
+          | Linux (anything) | `.AppImage` — mark it executable and run it |
+          | Windows | `-setup.exe` (installer) or `.msi` |
+          | macOS (Apple silicon) | `.dmg` |
+
+          Nothing needs to be installed first: the Node runtime ships inside the
+          package, so a machine that has never had Node works.
+
+          **These builds are not code-signed.** Windows will show a SmartScreen
+          warning — "More info" then "Run anyway". macOS will refuse the app on
+          first open — right-click it and choose Open. Signing needs paid
+          certificates that are not in place yet; verify the download against
+          `SHA256SUMS.txt` in the meantime.
+
+          **What was checked before this was published.** Every file here was
+          built on its own native runner, then installed, then used to mine a
+          real block that the chain credited, then launched so that its window
+          opened and the interface was measured after it drew — on Linux under a
+          real X server. See `.github/workflows/desktop.yml`.
+
+          Not checked: whether what was drawn is *legible* on Windows or Linux.
+          Layout ran and was measured; no screenshot was taken.
+          NOTES
+
+          gh release create "${{ steps.name.outputs.tag }}" \
+            --title "Hearth desktop miner ${{ steps.name.outputs.tag }}" \
+            --notes-file notes.md \
+            --prerelease="${{ steps.name.outputs.prerelease }}" \
+            --target "${{ github.sha }}" \
+            dist/*
+
+      - name: Say where it went
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "### Published" >> "$GITHUB_STEP_SUMMARY"
+          gh release view "${{ steps.name.outputs.tag }}" \
+            --json url,assets \
+            --jq '.url, (.assets[] | "  \(.name)  \(.size) bytes")' >> "$GITHUB_STEP_SUMMARY"
