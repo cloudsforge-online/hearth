@@ -131,6 +131,14 @@ const REQUIRED_RESOURCES = [
 ];
 
 function checkContents(label, entries, { binDir, resDir }) {
+  /* FIRST, THAT THE LISTING WAS READ AT ALL. The first version of this file
+   * required a `./` prefix on every path, because that is what `dpkg-deb -c`
+   * prints for a conventionally-built package — and Tauri's deb writer does not
+   * emit one. Every path parsed to nothing, and the run reported five missing
+   * files inside a package that contained all five. A check that cannot tell
+   * "absent" from "unreadable" sends whoever reads it to the wrong place. */
+  assert(entries.length >= 10,
+    `${label}: its listing was readable — ${entries.length} entries`);
   const has = suffix => entries.some(e => e === suffix || e.endsWith('/' + suffix));
   assert(has(`${binDir}${MAIN_BIN}${EXE}`) || has(`${binDir}${PRODUCT}${EXE}`),
     `${label}: the application itself is in ${binDir || 'the root'}`);
@@ -173,11 +181,13 @@ function checkBundleLinux() {
 
   const listing = run('dpkg-deb', ['-c', deb[0]]);
   assert(listing.ok, 'dpkg can read it — which is also the first thing an installer does');
-  // `./usr/bin/hearth-desktop` → `usr/bin/hearth-desktop`
+  /* `-rwxr-xr-x root/root 9868976 2026-08-05 07:16 usr/bin/hearth-desktop`, and
+   * a symlink adds ` -> target`. The leading `./` is OPTIONAL: dpkg prints
+   * whatever the tar members are named, and Tauri's writer does not add one. */
   const entries = listing.out.split('\n')
-    .map(l => (l.match(/\s(\.\/\S+)$/) || [])[1])
+    .map(l => (l.match(/^\S+\s+\S+\s+\d+\s+\S+\s+\S+\s+(.+?)\s*$/) || [])[1])
     .filter(Boolean)
-    .map(p => p.replace(/^\.\//, '').replace(/\/$/, ''));
+    .map(p => p.split(' -> ')[0].replace(/^\.\//, '').replace(/\/$/, ''));
   checkContents('.deb', entries, { binDir: 'usr/bin/', resDir: `usr/lib/${PRODUCT}/` });
   checkNoUsrBinNode('.deb', entries);
 
