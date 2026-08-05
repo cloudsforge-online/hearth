@@ -199,10 +199,37 @@ function engine(dataDir) {
   assert(await e.until(() => e.of('accepted').length >= 2, 240_000),
     `THE NODE ACCEPTED ${e.of('accepted').length} BLOCKS FROM IT`);
 
+  /* STOP BEFORE COUNTING, and the ordering is the assertion.
+   *
+   * A running miner is a moving target. This block used to read the engine's
+   * tally, then read the chain's balance a moment later, and require the two to
+   * be equal — two snapshots of different instants compared as though they were
+   * one. At production proof-of-work cost the gap between blocks is minutes and
+   * the window never opened; the moment CI began mining on `hearth-test`, where
+   * a block lands in tens of milliseconds, it started failing with both numbers
+   * correct and one of them merely newer. It failed on the Linux runner exactly
+   * this way.
+   *
+   * Nothing is weakened by stopping first. A stopped session's final tally must
+   * equal the chain's balance EXACTLY, with no allowance for timing, which is a
+   * stronger statement than the flaky one it replaces — and it is now the whole
+   * mining run being reconciled rather than an arbitrary prefix of it. */
+  const stoppedBefore = e.of('stopped').length;
+  r = await e.send('mine.stop');
+  assert(r.ok && r.result.mining === false, 'it stops when asked');
+
+  /* The LAST one: an earlier case in this file started and stopped a session
+   * against a dead port, so `stopped` has been emitted before. `[0]` would have
+   * been that one, and every assertion below it would have been about a session
+   * that never mined anything. */
+  const final = e.of('stopped').at(-1);
+  assert(e.of('stopped').length === stoppedBefore + 1 && !!final,
+    'saying so, with the final tally');
+
   const accepted = e.of('accepted');
-  const stats = (await e.send('status')).result;
   assert(accepted.length >= 2, `each announced with its height and reward (#${accepted.map(a => a.height).join(', #')})`);
-  assert(Number(stats.session.found) === accepted.length, 'the running tally matches the blocks announced');
+  assert(Number(final.found) === accepted.length,
+    `and the final tally matches the blocks announced (${final.found} vs ${accepted.length})`);
 
   // The claim, settled by the chain rather than by the miner.
   const bal = await fetch(`http://127.0.0.1:${REST + 1000}/`, {
@@ -211,13 +238,9 @@ function engine(dataDir) {
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_getBalance', params: [address, 'latest'] }),
   }).then(x => x.json());
   const wei = BigInt(bal.result || '0x0');
-  assert(wei > 0n, `AND THE CHAIN SAYS SO: eth_getBalance(${address}) = ${ember(wei)} ${stats.coin}`);
-  assert(wei === BigInt(stats.session.earnedWei),
-    `which is exactly what the engine reported earning (${ember(BigInt(stats.session.earnedWei))})`);
-
-  r = await e.send('mine.stop');
-  assert(r.ok && r.result.mining === false, 'and it stops when asked');
-  assert(e.of('stopped').length >= 1, 'saying so, with the final tally');
+  assert(wei > 0n, `AND THE CHAIN SAYS SO: eth_getBalance(${address}) = ${ember(wei)} ${r.result.coin}`);
+  assert(wei === BigInt(final.earnedWei),
+    `which is exactly what the engine reported earning (${ember(BigInt(final.earnedWei))})`);
 
   // ==========================================================================
   group('getting the key out — without it ever crossing this channel');

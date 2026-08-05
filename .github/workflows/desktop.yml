@@ -185,6 +185,7 @@ jobs:
       # 4. The build
       # ---------------------------------------------------------------------
       - name: Build the installers
+        id: build
         run: npm run build -- --bundles ${{ matrix.bundles }}
 
       # ---------------------------------------------------------------------
@@ -196,11 +197,13 @@ jobs:
       # ---------------------------------------------------------------------
       # 6. The artefacts
       # ---------------------------------------------------------------------
-      # `if: always()` so a failed verification still hands over the installer
-      # that failed. An artefact you cannot download is a bug report with no
-      # attachment.
+      # A failed VERIFICATION still hands over the installer that failed — an
+      # artefact you cannot download is a bug report with no attachment. But a
+      # build that never ran has nothing to attach, and `if-no-files-found:
+      # error` would then report "no files" on top of the real failure and bury
+      # it. So this runs whenever the build produced something, and only then.
       - name: Attach the installers to this run
-        if: always()
+        if: always() && steps.build.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: hearth-desktop-${{ runner.os }}
