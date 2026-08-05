@@ -80,9 +80,9 @@ status is [`listing-checklist.md`](listing-checklist.md) §7.
 
 | | |
 | --- | --- |
-| ⬜ | Public testnet on chain id **7412** with a stable HTTPS RPC endpoint |
-| ⬜ | Deploy the faucet (the service is written and tested; there is nowhere to run it) |
-| ⬜ | Point the explorer at a real chain |
+| ✅ | Public testnet on chain id **7412** with a stable HTTPS RPC endpoint — `https://rpc-testnet.cloudsforge.online` |
+| ✅ | Deploy the faucet — `https://network-testnet.cloudsforge.online/faucet` |
+| ✅ | Point the explorer at a real chain — `explorer.cloudsforge.online` (7411) and `explorer-testnet.cloudsforge.online` (7412) |
 | ⬜ | Deploy WEMBER, the AMM and Multicall3 — **and seed liquidity.** A DEX with empty pools attracts nobody |
 | ⬜ | Deploy the **Etherscan-compatible `/api` shim** — worth more than a prettier explorer: aggregators, tax tools, portfolio trackers and several exchange back-ends all speak it. The service is written and green (`tools/explorer-api`, 177/177 plus 27/27 against a real chain); there is nowhere public to run it |
 | ⬜ | Deploy the plain-decimal total and circulating supply endpoints; aggregators poll exactly these. Written, in the same service |

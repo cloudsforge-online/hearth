@@ -229,8 +229,9 @@ GeneralStateTests**), all nine precompiles,
 and the `eth_*` JSON-RPC surface. Uniswap V2 deploys and swaps on it
 (`node/test/dex.js`).
 
-**The public network now exists, and it is new.** Mainnet — chain id 7411 —
-serves JSON-RPC at `https://rpc.cloudsforge.online`; blocks are produced,
+**The public networks now exist, and they are new.** Mainnet — chain id 7411 —
+serves JSON-RPC at `https://rpc.cloudsforge.online`, and testnet — chain id
+7412 — at `https://rpc-testnet.cloudsforge.online`. Blocks are produced,
 validated and reorged, two real nodes partition and converge in
 `node/test/evm-p2p-fork.js`, and three run under `docker-compose.testnet.yml`.
 None of that shortens this list:
@@ -249,8 +250,10 @@ None of that shortens this list:
 - The node's own ports still bind `127.0.0.1`; the tunnel is the entire
   perimeter, so a tunnel misconfiguration is an exposure, not just an outage.
 
-There is still **no publicly reachable testnet**, so there is nowhere to
-reproduce a finding against a public chain but mainnet itself.
+Reproduce findings against the **public testnet** — chain id 7412 at
+`https://rpc-testnet.cloudsforge.online` — rather than mainnet. It runs on the
+same home server and the same tunnel, so it is not an isolation boundary; it is
+just the chain where a mistake costs nothing.
 
 [`docs/evm-spec.md`](docs/evm-spec.md) §8 tracks the phases,
 [`docs/decisions.md`](docs/decisions.md) records why the non-obvious choices were

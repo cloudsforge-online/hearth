@@ -1,10 +1,13 @@
 # Adding Hearth to MetaMask
 
-> **The public endpoint is `https://rpc.cloudsforge.online`, chain id 7411.** It
-> is hours old, holds no transactions, has not been audited and runs on one home
-> server with no failover — add it knowing that. There is **no publicly
-> reachable testnet**: do not enter any `*.testnet.cloudsforge.online` URL, it
-> fails TLS.
+> **The public mainnet endpoint is `https://rpc.cloudsforge.online`, chain id
+> 7411.** It is days old, has not been audited and runs on one home server with
+> no failover — add it knowing that.
+>
+> **The public testnet endpoint is `https://rpc-testnet.cloudsforge.online`,
+> chain id 7412.** Testnet hostnames are **single-label**
+> (`rpc-testnet.`, not `rpc.testnet.`) — a two-label name fails TLS at
+> Cloudflare's edge and always will, so do not enter one.
 >
 > You can also point MetaMask at a chain you run: `hearthd --evm --mine` serves
 > `eth_chainId` on `http://127.0.0.1:8545/`, and `docker-compose.testnet.yml`
@@ -26,6 +29,19 @@
 | **Chain ID** | `7411` | **The UI field takes DECIMAL.** MetaMask converts it to `0x1cf3` itself. |
 | **Currency symbol** | `EMBER` | |
 | **Block explorer URL** | `https://explorer.cloudsforge.online` | Optional, and EIP-3091 conformance has not been verified — if a "view on explorer" link 404s, leave this blank rather than guessing another value. |
+
+### The same, for testnet
+
+| MetaMask field | Value |
+| --- | --- |
+| **Network name** | `Hearth Testnet` |
+| **New RPC URL** | `https://rpc-testnet.cloudsforge.online` |
+| **Chain ID** | `7412` (hex `0x1cf4`) |
+| **Currency symbol** | `EMBER` |
+| **Block explorer URL** | `https://explorer-testnet.cloudsforge.online` |
+
+Test EMBER comes from the faucet at
+`https://network-testnet.cloudsforge.online/faucet`.
 
 Decimals are not a field in the MetaMask UI. They are fixed at 18 for a native
 asset, which is exactly why [`../docs/evm-spec.md`](../docs/evm-spec.md) §1
@@ -79,6 +95,11 @@ await window.ethereum.request({
 **`0x1cf3` in the payload, `7411` in the manual UI form.** That is not an
 inconsistency in this document; it is the actual difference between the RPC
 convention and the human-facing field.
+
+For testnet the same payload takes `chainId: '0x1cf4'`, `chainName: 'Hearth
+Testnet'`, `rpcUrls: ['https://rpc-testnet.cloudsforge.online']` and
+`blockExplorerUrls: ['https://explorer-testnet.cloudsforge.online']`.
+Everything else is identical.
 
 ---
 

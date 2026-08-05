@@ -3,6 +3,15 @@
 This document explains how the Hearth node supports fully isolated networks, and
 how to run a self-contained 3-node EMBER testnet with `docker-compose.testnet.yml`.
 
+> **Looking for the PUBLIC testnet?** It is at
+> `https://rpc-testnet.cloudsforge.online`, chain id **7412** (`0x1cf4`), with an
+> explorer at `https://explorer-testnet.cloudsforge.online`, a faucet at
+> `https://network-testnet.cloudsforge.online/faucet` and P2P at
+> `wss://p2p-testnet.cloudsforge.online/p2p` — only the `/p2p` path is routed.
+> Testnet hostnames are **single-label** (`rpc-testnet.`, never `rpc.testnet.`).
+> This document is about running your *own* isolated network; see
+> [`docs/network-config.md`](docs/network-config.md) for connection details.
+
 ## How isolation works (by design)
 
 The node already treats the **network id** as a hard boundary, so multiple

@@ -172,9 +172,7 @@ Conformance vectors make writing an EVM tractable. They do not make it audited.
 
 ### Where do I start contributing?
 
-Publishing the testnet — it runs on loopback and nothing routes it, so the
-gap between "a stranger can deploy unaided" and the truth is deployment, not
-code. After that, the proof of work: it runs at a 64 KiB pad, the 2 GiB the
+The proof of work: it runs at a 64 KiB pad, the 2 GiB the
 documents promised is unreachable at 185.7 s per evaluation, and making it
 genuinely memory-hard means an amortised dataset across three implementations
 ([`pow-parameters.md`](pow-parameters.md)). See [CONTRIBUTING.md](../CONTRIBUTING.md) and the

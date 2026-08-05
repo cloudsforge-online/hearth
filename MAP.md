@@ -43,7 +43,9 @@ this network on 2026-08-05: `eth_chainId` → `0x1cf3`, `web3_clientVersion` →
 was mined 2026-08-04 19:12 UTC, so the chain is hours old and under 200 blocks
 tall, it is still at the `GENESIS_TARGET` difficulty floor (`difficulty: 0x100`,
 `node/src/params.js:185`), and it runs on one home server behind one Cloudflare
-Tunnel. **There is no publicly reachable testnet.**
+Tunnel. **The public testnet is also live** — chain id 7412 at
+`https://rpc-testnet.cloudsforge.online`, verified from outside on 2026-08-05
+(`eth_chainId` → `0x1cf4`), on the same single home server and the same tunnel.
 
 ---
 
@@ -70,8 +72,9 @@ here first.
 | Contract verification (`forge verify-contract`-compatible) | `tools/verify/` | ✅ **merged**, 116 checks |
 | Property fuzzing | `node/test/fuzz/` | ✅ **merged**, 82,481 checks; two open findings — §4.7, §11 |
 | **Consensus on the account model** | `node/src/chain/`, `node/src/evmnode.js` | ✅ **merged.** Blocks are produced, validated and reorged — `evmchain` 191 checks, `evm-p2p-fork` 51 across two real nodes; three run under `docker-compose.testnet.yml` |
-| **Public mainnet** | — | ✅ **published 2026-08-04.** Chain id 7411 at `https://rpc.cloudsforge.online`, mining, publicly trusted TLS. Under 200 blocks tall, at the difficulty floor, on one home server behind one tunnel — reachable, not established |
-| Public testnet, any deployed contract | — | ⬜ **still unpublished.** Chain 7412 runs on `127.0.0.1` and nothing routes it: the `*.testnet.cloudsforge.online` names resolve but fail the TLS handshake, because Cloudflare Universal SSL's `*.cloudsforge.online` is single-label. Off mainnet, no genesis outlives a `docker compose down -v` |
+| **Public mainnet** | — | ✅ **published 2026-08-04.** Chain id 7411 at `https://rpc.cloudsforge.online`, mining, publicly trusted TLS. At the difficulty floor, on one home server behind one tunnel — reachable, not established |
+| **Public testnet** | — | ✅ **published.** Chain id 7412 at `https://rpc-testnet.cloudsforge.online` — verified from outside on 2026-08-05, `eth_chainId` → `0x1cf4`. Explorer at `explorer-testnet.cloudsforge.online`, faucet at `network-testnet.cloudsforge.online/faucet`, P2P at `wss://p2p-testnet.cloudsforge.online/p2p` (**only the `/p2p` path is routed**). Hostnames are single-label `<surface>-testnet.` — the `*.testnet.cloudsforge.online` form fails TLS, because Cloudflare Universal SSL's `*.cloudsforge.online` covers one label |
+| Any deployed contract of record | — | ⬜ **still none.** Off mainnet, no genesis outlives a `docker compose down -v`, so testnet state is disposable |
 | The UTXO chain (ledger, P2P, REST, reorg) | `node/src/chain.js`, `tx.js`, `p2p.js`, `rpc.js` | ✅ runs, and **is being retired** |
 | `rust/hearthd` | `rust/` | 🟡 a self-check and a benchmark. **Not a node, not consensus** — §3.3 |
 

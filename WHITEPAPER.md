@@ -23,8 +23,9 @@ claim before you read the claim.
 | EVM-aware explorer · secp256k1 browser wallet · `hearth` CLI with an opcode tracer | **Built** |
 | AMM contracts (WEMBER, Factory, Pair, Router, Multicall3) | **Compiled, and executed — on our own EVM.** A full Uniswap V2 deployment and a real swap run in `node/test/dex.js`, and WEMBER deploys to a local node. **Deployed to no public chain** — every mainnet block so far carries zero transactions |
 | **Consensus on the account model** | **Built.** Blocks are produced, validated and reorged; two real nodes partition and converge (`node/test/evm-p2p-fork.js`). **No block has ever been produced at production PoW parameters** — §2.4 |
-| A public endpoint | **Exists, for mainnet only.** `https://rpc.cloudsforge.online`, publicly trusted TLS, JSON-RPC over POST. The three-node testnet still binds `127.0.0.1` and nothing routes it |
-| Mainnet | **Live and mining.** Chain id 7411; block 1 mined 2026-08-04 19:12 UTC. Under 200 blocks tall, at the `GENESIS_TARGET` difficulty floor, on one home server behind one tunnel |
+| A public endpoint | **Exists, for both networks.** `https://rpc.cloudsforge.online` (mainnet) and `https://rpc-testnet.cloudsforge.online` (testnet), publicly trusted TLS, JSON-RPC over POST |
+| Mainnet | **Live and mining.** Chain id 7411; block 1 mined 2026-08-04 19:12 UTC. At the `GENESIS_TARGET` difficulty floor, on one home server behind one tunnel |
+| Testnet | **Live and mining.** Chain id 7412 at `https://rpc-testnet.cloudsforge.online`, with an explorer and a faucet. Same single home server; no genesis there outlives a `docker compose down -v` |
 
 There is **no market, no listed price, and no EMBER of any monetary value** in
 existence. A reachable chain is not a traded asset: there is no listing, no

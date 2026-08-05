@@ -31,7 +31,7 @@ honest account of what is not built yet.
 | `eth_*` JSON-RPC surface | **Built and mounted** on 8545, 41 methods, 422 checks against a fake chain and 170 against a real one — see the caveat below |
 | AMM contracts | **Compiled, and executed on our own EVM** — a full Uniswap V2 deployment and a real swap, `node/test/dex.js`, 167/167 |
 | **Header v2 and consensus on the account model** | **Built.** Blocks are produced, validated and reorged |
-| Public testnet on the account model | **Not published.** Chain 7412 runs on `127.0.0.1`, nothing routes it, and its `*.testnet.cloudsforge.online` names fail TLS — so there is nowhere but mainnet to integrate against |
+| Public testnet on the account model | **Published.** Chain 7412 at `https://rpc-testnet.cloudsforge.online`, with an explorer at `explorer-testnet.cloudsforge.online` and a faucet at `network-testnet.cloudsforge.online/faucet` — integrate against this before mainnet. Hostnames are single-label `<surface>-testnet.`; the `*.testnet.cloudsforge.online` form fails TLS |
 | Mainnet | **Live.** Chain id 7411 at `https://rpc.cloudsforge.online`. Hours old, under 250 blocks, zero transactions, at the difficulty floor, on one home server with no failover |
 
 **The caveat on the RPC row, because it is the row you care about.** The method
@@ -56,8 +56,11 @@ secp256k1, RLP and Keccak code and you can reproduce it byte for byte.
 
 **What you can do today, at zero cost:** point your stack at
 `https://rpc.cloudsforge.online` (chain id 7411) and read from it — every `eth_*`
-method below answers. To exercise your write path without touching a public
-chain, point it instead at `node tools/rpc-probe/stub.js`, which serves this
+method below answers. To exercise your **write** path, point it at
+`https://rpc-testnet.cloudsforge.online` (chain id 7412) and fund an address
+from `https://network-testnet.cloudsforge.online/faucet`. To exercise it without
+touching a public chain at all, point it instead at
+`node tools/rpc-probe/stub.js`, which serves this
 repository's real `eth_*` method surface and hex encoder over a chain with no
 state. It will not execute anything,
 but it will prove your chain id handling, your encoding assumptions and your
@@ -579,14 +582,20 @@ chain.
 - Network isolation is enforced at the P2P handshake and in the transaction
   signature binding, so testnets cannot leak into mainnet.
 
-**Before any exchange integration we owe you:** a public account-model testnet
-with a stable RPC endpoint, a faucet, and an explorer that renders `0x`
-addresses. **The testnet chain id is decided — `7412`** ([`evm-spec.md`](evm-spec.md)
-§1), and it is deliberately distinct from mainnet's 7411 because a shared id
-would make every testnet transaction replayable on mainnet. What is missing from
-that list is deployment, not code: the explorer, the faucet and the
-Etherscan-compatible `/api` all run against a local node today and none of them
-is hosted anywhere you could reach. Tracked in
+**The public account-model testnet we owed you now exists**, with a stable RPC
+endpoint, a faucet and an explorer that renders `0x` addresses:
+
+| | |
+| --- | --- |
+| RPC | `https://rpc-testnet.cloudsforge.online` (POST only) |
+| Chain ID | **`7412`** — hex `0x1cf4` |
+| Explorer | `https://explorer-testnet.cloudsforge.online` |
+| Faucet | `https://network-testnet.cloudsforge.online/faucet` |
+| P2P | `wss://p2p-testnet.cloudsforge.online/p2p` — only the `/p2p` path is routed |
+
+7412 is deliberately distinct from mainnet's 7411 because a shared id would make
+every testnet transaction replayable on mainnet ([`evm-spec.md`](evm-spec.md)
+§1). What remains open is tracked in
 [`listing-checklist.md`](listing-checklist.md).
 
 ---

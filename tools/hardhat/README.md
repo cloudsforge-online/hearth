@@ -74,8 +74,9 @@ and needs `--legacy`; see [`../foundry/README.md`](../foundry/README.md).
 (gitignored) or export the variable in your shell.
 
 ```bash
-export HEARTH_RPC_URL=https://rpc.cloudsforge.online   # mainnet, chain id 7411
-# …or http://127.0.0.1:8545 for a node you run yourself
+export HEARTH_RPC_URL=https://rpc-testnet.cloudsforge.online   # testnet, chain id 7412
+# …or https://rpc.cloudsforge.online          for mainnet, chain id 7411
+# …or http://127.0.0.1:8545                  for a node you run yourself
 export HEARTH_PRIVATE_KEY=0x…
 export HEARTH_FEE_TO_SETTER=0x…         # only for deploy-dex.js; must be a multisig
 ```

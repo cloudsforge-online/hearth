@@ -20,9 +20,14 @@ Start at [`../docs/quickstart.md`](../docs/quickstart.md).
 ## The one thing to understand first
 
 **Mainnet is published: `https://rpc.cloudsforge.online`, chain id 7411** — and
-it is hours old, holds no transactions, is unaudited and runs on a single home
-server. There is **no publicly reachable testnet**; chain 7412 runs on loopback
-only.
+it is days old, is unaudited and runs on a single home server.
+
+**Testnet is published too: `https://rpc-testnet.cloudsforge.online`, chain id
+7412**, with an explorer at `https://explorer-testnet.cloudsforge.online` and a
+faucet at `https://network-testnet.cloudsforge.online/faucet`. Testnet
+hostnames are single-label — `<surface>-testnet.cloudsforge.online` — because
+Cloudflare's wildcard certificate covers exactly one label. Build against
+testnet first.
 
 Locally, `node bin/hearthd.js --evm --mine` produces blocks and serves the
 `eth_*` surface on `http://127.0.0.1:8545/`, and `docker-compose.testnet.yml`

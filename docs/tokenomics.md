@@ -6,7 +6,8 @@
 those disagree with this file, this file is right and the reason is in §9.
 
 > **Status.** Mainnet is live (chain id 7411, `https://rpc.cloudsforge.online`)
-> and hours old. That changes nothing here: **no EMBER of monetary value exists,
+> and so is testnet (chain id 7412, `https://rpc-testnet.cloudsforge.online`).
+> Both are days old. That changes nothing here: **no EMBER of monetary value exists,
 > there is no market, there is no liquidity and there is no listed price.** A
 > reachable chain is not a traded asset. Everything below describes the emission
 > rules the reference node enforces today and will continue to enforce across the

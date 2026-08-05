@@ -19,7 +19,9 @@ blocks a listing now is everything that being reachable does not buy you:
 - It is **one home server behind one tunnel**, with no redundancy and no
   restored backup. Exchanges ask about node infrastructure early.
 - **Nothing has been independently audited** ([`../SECURITY.md`](../SECURITY.md)).
-- There is still **no publicly reachable testnet** to integrate against.
+- The public testnet is now reachable at `https://rpc-testnet.cloudsforge.online`
+  (chain id 7412), so there is somewhere to integrate against — but it shares the
+  single home server and tunnel that mainnet runs on.
 
 Everything below is downstream of those.
 
@@ -34,7 +36,7 @@ Everything below is downstream of those.
 | B1 | EVM interpreter, state transition, receipts, logs bloom | ✅ **built and vector-gated** — 609/609 VMTests, 20,077/20,077 GeneralStateTests, 188/188 TransactionTests |
 | B2 | `eth_*` JSON-RPC surface | ✅ **built and mounted** — `node/src/evmnode.js:186` serves it on 8545. 41 methods, 422 checks against a fake chain and 170 against a real one over HTTP |
 | B2a | **Header v2, and consensus on the account state model** | ✅ **landed.** Two real nodes partition, reorg and agree state roots byte for byte (`node/test/evm-p2p-fork.js`, 51 checks); three run under `docker-compose.testnet.yml` |
-| B3 | Public account-model testnet with a stable endpoint | ⬜ **still missing.** Chain 7412 binds `127.0.0.1`, nothing routes it, and its `*.testnet.cloudsforge.online` names fail TLS at Cloudflare's edge |
+| B3 | Public account-model testnet with a stable endpoint | ✅ **done.** Chain 7412 at `https://rpc-testnet.cloudsforge.online`, publicly trusted TLS, verified from outside 2026-08-05 (`eth_chainId` → `0x1cf4`). Explorer `explorer-testnet.cloudsforge.online`, faucet `network-testnet.cloudsforge.online/faucet`. Single-label hostnames only — the two-label `*.testnet.` form fails TLS at Cloudflare's edge |
 | B4 | Mainnet genesis, launch, and demonstrated hashrate | 🟡 **genesis and launch done** — chain 7411 published 2026-08-04, mining, publicly reachable. **Hashrate is not demonstrated**: the chain sits at the difficulty floor, so there is no number to quote |
 | B5 | Independent audit of consensus and the EVM | ⬜ |
 
@@ -121,11 +123,11 @@ reason. Blocked on the naming decision in §1.2.
 
 | Item | Status | Note |
 | --- | --- | --- |
-| Public HTTPS RPC endpoint (`https://rpc.…`) | ✅ | `https://rpc.cloudsforge.online`, publicly trusted certificate. TLS and rate limiting come from Cloudflare, **not** from the node, which still has neither ([`exchange-integration.md`](exchange-integration.md) §2) |
+| Public HTTPS RPC endpoint (`https://rpc.…`) | ✅ | `https://rpc.cloudsforge.online` (7411) and `https://rpc-testnet.cloudsforge.online` (7412), both on publicly trusted certificates. TLS and rate limiting come from Cloudflare, **not** from the node, which still has neither ([`exchange-integration.md`](exchange-integration.md) §2) |
 | Public WSS endpoint | ⬜ | `eth_subscribe` is v2, not v1 |
 | Redundant RPC (≥2 independent providers) | ⬜ | Aggregators and wallets expect more than one |
 | DNS seeds / documented seed nodes | ⬜ | Peers are currently supplied by hand with `--peer` |
-| Faucet (testnet) | ⬜ | Required for the `faucets[]` field in §1.1 |
+| Faucet (testnet) | ✅ | `https://network-testnet.cloudsforge.online/faucet` — funds chain 7412. Note this is the *testnet* faucet, so it does not fill the `faucets[]` field of the **mainnet** 7411 entry in §1.1 |
 | Status page / network dashboard | ⬜ | |
 
 ---

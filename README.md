@@ -16,6 +16,8 @@
   <br/><br/>
   🌐 <b><a href="https://explorer.cloudsforge.online/">explorer.cloudsforge.online</a></b> · <code>https://rpc.cloudsforge.online</code> · chain id <code>7411</code>
   <br/>
+  🧪 testnet · <b><a href="https://explorer-testnet.cloudsforge.online/">explorer-testnet.cloudsforge.online</a></b> · <code>https://rpc-testnet.cloudsforge.online</code> · chain id <code>7412</code>
+  <br/>
   <sub>Hearth is the <b>Mine</b> in <a href="https://cloudsforge.online/">CloudsForge</a>'s one crypto world — mine it, trade it, mint it, spend it, play in it.</sub>
   <br/><br/>
   <code>proof of work · CPU mining · ASIC-resistant · fair launch · EVM · chain id 7411</code>
@@ -26,9 +28,10 @@
 ## Status, before anything else
 
 **Hearth is an account-model, EVM-executing proof-of-work chain. Mainnet is
-reachable and mining — chain id `7411` at `https://rpc.cloudsforge.online`. There
-is no publicly reachable testnet, and there is no EMBER of any monetary value:
-no market, no listed price, no liquidity.**
+reachable and mining — chain id `7411` at `https://rpc.cloudsforge.online`. A
+public testnet is now reachable too — chain id `7412` at
+`https://rpc-testnet.cloudsforge.online`. There is no EMBER of any monetary
+value: no market, no listed price, no liquidity.**
 
 **"Live" means reachable, not established, and the difference matters here.**
 Block 1 was mined **2026-08-04 19:12 UTC**; the chain is hours old and under 200
@@ -50,7 +53,8 @@ The original UTXO ledger is being retired.
 | **Proved end to end** | **Uniswap V2 runs on our own EVM** — `node/test/dex.js`, 167/167, a real swap at **112,456 gas** |
 | **Built and running locally** | Consensus on the account model. `hearthd --evm --mine` produces and validates blocks and serves `eth_*` on 8545; two real nodes partition and reorg in `node/test/evm-p2p-fork.js`; `docker-compose.testnet.yml` runs three on chain id 7412 |
 | **Published** | **Mainnet, chain id 7411**, at `https://rpc.cloudsforge.online` — publicly trusted TLS, JSON-RPC over POST (a GET answers 405), plus an explorer at [`explorer.cloudsforge.online`](https://explorer.cloudsforge.online). The node ports still bind `127.0.0.1`; a Cloudflare Tunnel on one home server is the only thing routing them, so this is one machine with no failover |
-| **Still not published** | Any **testnet** anyone else can reach — chain 7412 runs on loopback and under `docker-compose.testnet.yml`, and the `*.testnet.cloudsforge.online` names fail TLS. No faucet, no deployed contract, and off mainnet no genesis outlives a `docker compose down -v` |
+| **Published** | **Testnet, chain id 7412**, at `https://rpc-testnet.cloudsforge.online` — same POST-only surface, same publicly trusted TLS, with an explorer at [`explorer-testnet.cloudsforge.online`](https://explorer-testnet.cloudsforge.online) and a faucet at [`network-testnet.cloudsforge.online/faucet`](https://network-testnet.cloudsforge.online/faucet). P2P is a WebSocket at `wss://p2p-testnet.cloudsforge.online/p2p` — **only the `/p2p` path is routed**, the host root answers 404 |
+| **Still not published** | Any deployed contract of record. Off mainnet no genesis outlives a `docker compose down -v`, so testnet state is not durable and should be treated as disposable |
 | **Measured, and open** | The proof of work is 64 KiB and cannot be raised: a 2 GiB pad measures **185.7 s per evaluation** and a validator pays one per block received ([`docs/pow-parameters.md`](docs/pow-parameters.md)). Making it meaningfully memory-hard needs an amortised dataset, not a constant |
 
 [`MAP.md`](MAP.md) is the verified inventory — every claim in it cites `path:line`
@@ -217,7 +221,15 @@ cd node && node test/dex.js                                    # 167/167
 
 ```bash
 cast chain-id     --rpc-url https://rpc.cloudsforge.online      # 7411
-cast block-number --rpc-url https://rpc.cloudsforge.online      # under 200, and climbing
+cast block-number --rpc-url https://rpc.cloudsforge.online      # climbing
+```
+
+**Or at the public testnet**, which is where you should be if you are deploying
+anything you have not deployed before:
+
+```bash
+cast chain-id     --rpc-url https://rpc-testnet.cloudsforge.online   # 7412
+cast block-number --rpc-url https://rpc-testnet.cloudsforge.online   # climbing
 ```
 
 Or serve the real RPC layer locally over a fake chain, to check your wiring and
@@ -268,8 +280,7 @@ hearth/
 ## Contributing
 
 Hearth is a commons. See **[CONTRIBUTING.md](CONTRIBUTING.md)**. Highest-leverage
-areas right now: **publishing the testnet** (it runs on loopback and nothing
-routes it), **an amortised proof of work** so the memory-hardness argument is
+areas right now: **an amortised proof of work** so the memory-hardness argument is
 more than a construction ([docs/pow-parameters.md](docs/pow-parameters.md)), and
 closing the items in **[docs/listing-checklist.md](docs/listing-checklist.md)**
 §7. Contract verification is **already built** (`tools/verify/`, 116/116) and the

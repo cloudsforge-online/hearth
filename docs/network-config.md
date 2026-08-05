@@ -11,12 +11,18 @@ guess and nobody has to ask.
 > `--resolve` and no CA override is needed. An explorer is at
 > `https://explorer.cloudsforge.online`.
 >
-> **Mainnet only.** There is **no publicly reachable testnet**: every
-> `*.testnet.cloudsforge.online` name resolves to Cloudflare but fails the TLS
-> handshake at the edge, because Universal SSL's `*.cloudsforge.online` wildcard
-> is single-label and does not cover a two-label name. Only the bare
-> `testnet.cloudsforge.online` apex answers. Do not configure any testnet
-> subdomain — it cannot work today.
+> **The public testnet endpoint is `https://rpc-testnet.cloudsforge.online`,
+> chain id 7412 (`0x1cf4`)**, with an explorer at
+> `https://explorer-testnet.cloudsforge.online` and a faucet at
+> `https://network-testnet.cloudsforge.online/faucet`.
+>
+> **Testnet hostnames are SINGLE-LABEL — `<surface>-testnet.cloudsforge.online`,
+> not `<surface>.testnet.cloudsforge.online`.** The two-label form is dead and
+> always was: it resolves to Cloudflare but fails the TLS handshake at the edge,
+> because Universal SSL's `*.cloudsforge.online` wildcard covers exactly one
+> label. The site apex `testnet.cloudsforge.online` is itself one label and so
+> keeps its name. Do not configure a two-label testnet subdomain — it cannot
+> work.
 >
 > **And "live" means reachable, not established.** Block 1 was mined
 > 2026-08-04 19:12 UTC. The chain is hours old, is at the `GENESIS_TARGET`
@@ -40,10 +46,12 @@ guess and nobody has to ask.
 >   [`testing.md`](testing.md) §4, and it is not a short list: no long-range
 >   reorg, no sustained load, and **no run at production PoW parameters**
 >   ([`pow-parameters.md`](pow-parameters.md)).
-> - **Mainnet is deployed; nothing else is.** Every port in the compose file
+> - **Mainnet and testnet are both deployed.** Every port in the compose file
 >   still binds `127.0.0.1` — the tunnel, not the bind address, is what makes
->   mainnet reachable. There is still no public faucet, and no testnet hostname
->   that completes a TLS handshake.
+>   either reachable. Testnet adds a public faucet
+>   (`network-testnet.cloudsforge.online/faucet`) and a WebSocket P2P endpoint
+>   at `wss://p2p-testnet.cloudsforge.online/p2p`; **only the `/p2p` path is
+>   routed**, and a GET to the host root answers 404.
 >
 > So everything below is **both** the specification you configure against and,
 > where marked **[LOCAL]**, a description of something you can run in a
@@ -73,7 +81,7 @@ guess and nobody has to ask.
 | Block gas limit | 30,000,000 | |
 | Consensus | proof-of-work (Homefire), heaviest-cumulative-work | |
 | Finality | probabilistic, **unbounded reorg depth** | [`exchange-integration.md`](exchange-integration.md) §4 |
-| RPC URL | ✅ **mainnet: `https://rpc.cloudsforge.online`** — POST only, root path, publicly trusted TLS. **[LOCAL]** `http://127.0.0.1:8545` — `hearthd --evm`, or `docker compose -f docker-compose.testnet.yml up`, serves the same surface. The port and path are settled: 8545, root path — see §3. **No testnet URL exists**; see the status block above | [`evm-spec.md`](evm-spec.md) §6 |
+| RPC URL | ✅ **mainnet: `https://rpc.cloudsforge.online`** · ✅ **testnet: `https://rpc-testnet.cloudsforge.online`** — both POST only, root path, publicly trusted TLS. **[LOCAL]** `http://127.0.0.1:8545` — `hearthd --evm`, or `docker compose -f docker-compose.testnet.yml up`, serves the same surface. The port and path are settled: 8545, root path — see §3 | [`evm-spec.md`](evm-spec.md) §6 |
 | WebSocket URL | ⬜ not in v1 at all (`eth_subscribe` is v2). Port **8546 is reserved** for it and deliberately left unbound; poll `eth_newFilter`/`eth_getFilterChanges` meanwhile (`node/src/jsonrpc/filters.js`) | [`evm-spec.md`](evm-spec.md) §6 |
 | Block explorer URL | ✅ **`https://explorer.cloudsforge.online`** (200), **but the explorer that was built is no longer in this repository** — `web/` was deleted in `48bc28a`. The estate surface is [`micro-explorer-web`](https://github.com/cloudsforge-online/micro-explorer-web), which reads `micro-indexer` rather than `eth_*`. The Etherscan-compatible `/api` is still here and runs against a real chain in CI ([`../tools/explorer-api`](../tools/explorer-api)) | [`listing-checklist.md`](listing-checklist.md) §3 |
 | Faucet URL | ⬜ nothing published — the service is built and tested, at [`../tools/faucet`](../tools/faucet) | |
@@ -155,11 +163,12 @@ guessed.
 **These are loopback bindings.** `127.0.0.1:8545` is a chain you can point
 Hardhat at. It is not itself reachable from outside; what makes mainnet
 reachable is a **Cloudflare Tunnel** in front of it, not a change of bind
-address. The compose file above is unchanged, and the testnet ports it lists are
-still routed by nothing.
+address. The compose file above is unchanged; the same tunnel now also routes
+the testnet node.
 
-Publicly this is one hostname — `rpc.cloudsforge.online` → 8545 — and it is now
-serving. That URL is what goes into `ethereum-lists/chains` and
+Publicly this is two hostnames — `rpc.cloudsforge.online` → 8545 for mainnet and
+`rpc-testnet.cloudsforge.online` → the testnet node's 8545 — and both are now
+serving. The mainnet URL is what goes into `ethereum-lists/chains` and
 `chainid.network`, where MetaMask caches it, exchanges hardcode it and dapps bake
 it into configs. **It cannot be changed after publication without stranding all
 of them at once**, which is now a live constraint rather than a future one.
@@ -229,8 +238,8 @@ The short version:
 | MetaMask field | Value |
 | --- | --- |
 | Network name | `Hearth` |
-| New RPC URL | `https://rpc.cloudsforge.online`. **[LOCAL]** `http://127.0.0.1:8545` also works |
-| Chain ID | `7411` — MetaMask's UI takes **decimal**. The local-only testnet is **`7412`** |
+| New RPC URL | `https://rpc.cloudsforge.online`. For testnet, `https://rpc-testnet.cloudsforge.online`. **[LOCAL]** `http://127.0.0.1:8545` also works |
+| Chain ID | `7411` — MetaMask's UI takes **decimal**. The testnet is **`7412`** |
 | Currency symbol | `EMBER` |
 | Block explorer URL | `https://explorer.cloudsforge.online` (optional field) |
 

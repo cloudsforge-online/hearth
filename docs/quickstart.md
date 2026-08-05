@@ -18,8 +18,10 @@ Read it before you trust it. It is **hours old** — block 1 was mined 2026-08-0
 19:12 UTC — under 250 blocks tall, carries zero transactions so far, sits at its
 launch difficulty, and runs on **one home server behind one Cloudflare Tunnel**
 with no redundancy and no restored backup. Nothing here has been independently
-audited. There is **no publicly reachable testnet**, so mainnet is the only
-public chain to point at.
+audited. A **public testnet** is reachable at
+`https://rpc-testnet.cloudsforge.online` (chain id 7412), with a faucet at
+`https://network-testnet.cloudsforge.online/faucet` — point anything that writes
+at that, not at mainnet.
 
 Which is why most of this page still runs against a chain of your own. One
 command starts one:
@@ -642,7 +644,7 @@ Do not plan around any of these:
 | | |
 | --- | --- |
 | A **published** RPC endpoint | ✅ `https://rpc.cloudsforge.online`, chain id 7411, POST only. What it does **not** have is age, transactions, a demonstrated hashrate, an audit or a second machine |
-| A **public** testnet | ⬜ the three-node testnet runs on `127.0.0.1` and nothing routes it; its `*.testnet.cloudsforge.online` names resolve but fail the TLS handshake. Its chain id **is** chosen: **7412**, and its genesis hash is published in [`../TESTNET.md`](../TESTNET.md) |
+| A **public** testnet | ✅ chain id **7412** at `https://rpc-testnet.cloudsforge.online`, explorer `https://explorer-testnet.cloudsforge.online`, faucet `https://network-testnet.cloudsforge.online/faucet`. Hostnames are single-label `<surface>-testnet.` — the two-label `*.testnet.cloudsforge.online` form fails the TLS handshake and is not used. Genesis hash in [`../TESTNET.md`](../TESTNET.md) |
 | A **deployed** `0x`-native block explorer | 🟡 one is deployed at `https://explorer.cloudsforge.online`, but **not from this repository** — `web/` was deleted in `48bc28a`. The estate surface is [`micro-explorer-web`](https://github.com/cloudsforge-online/micro-explorer-web), which reads `micro-indexer` rather than talking `eth_*` to your node — so there is still **nothing here you can point at your own node** |
 | Contract source verification | 🟡 the services are written — [`../tools/verify`](../tools/verify) (116/116, and it speaks what `forge verify-contract` speaks) and [`../tools/explorer-api`](../tools/explorer-api) (the Etherscan-compatible `/api`, 177/177 plus 27/27 against a real chain). Neither is hosted |
 | A deployed faucet | ⬜ the service is written and tested; nowhere public to run it. Mine instead — §4 |

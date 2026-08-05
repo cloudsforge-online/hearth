@@ -148,8 +148,8 @@ Hardhat's publicly known default account.
 
 | Variable | Default | Notes |
 | --- | --- | --- |
-| `HEARTH_RPC_URL` | `http://127.0.0.1:8645` | ⬜ no faucet is hosted anywhere. Mainnet is at `https://rpc.cloudsforge.online`, but **do not point a faucet at it** — there is no public testnet to fund, and a faucet on mainnet gives away the only EMBER there is |
-| `HEARTH_CHAIN_ID` | `7411` | **A mismatch against the node is fatal at boot.** A testnet faucet pointed at mainnet is an unauthenticated withdrawal endpoint |
+| `HEARTH_RPC_URL` | `http://127.0.0.1:8645` (`src/env.js:92`) | Point it at **`https://rpc-testnet.cloudsforge.online`**, never at `https://rpc.cloudsforge.online` — a faucet on mainnet gives away the only EMBER there is. The estate's hosted faucet is a different service (`micro-faucet`, served at `https://network-testnet.cloudsforge.online/faucet`); this one is the reference implementation |
+| `HEARTH_CHAIN_ID` | `7411` (`src/env.js:94`) | **The shipped default is the MAINNET id, and that is the wrong default for a faucet — set `7412` explicitly.** A mismatch against the node is fatal at boot, which is the safety net: a testnet faucet pointed at mainnet is an unauthenticated withdrawal endpoint |
 | `HEARTH_FAUCET_PORT` / `_HOST` | `9646` / `127.0.0.1` | |
 | `HEARTH_FAUCET_DRIP_EMBER` | `10` | |
 | `HEARTH_FAUCET_ADDRESS_COOLDOWN_S` | `86400` | |
