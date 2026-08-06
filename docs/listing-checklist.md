@@ -34,7 +34,7 @@ Everything below is downstream of those.
 | # | Blocker | Status |
 | --- | --- | --- |
 | B1 | EVM interpreter, state transition, receipts, logs bloom | ✅ **built and vector-gated** — 609/609 VMTests, 20,077/20,077 GeneralStateTests, 188/188 TransactionTests |
-| B2 | `eth_*` JSON-RPC surface | ✅ **built and mounted** — `node/src/evmnode.js:186` serves it on 8545. 41 methods, 422 checks against a fake chain and 170 against a real one over HTTP |
+| B2 | `eth_*` JSON-RPC surface | ✅ **built and mounted** — `node/src/evmnode.js` serves it on 8545. 41 methods, 422 checks against a fake chain and 170 against a real one over HTTP |
 | B2a | **Header v2, and consensus on the account state model** | ✅ **landed.** Two real nodes partition, reorg and agree state roots byte for byte (`node/test/evm-p2p-fork.js`, 51 checks); three run under `docker-compose.testnet.yml` |
 | B3 | Public account-model testnet with a stable endpoint | ✅ **done.** Chain 7412 at `https://rpc-testnet.cloudsforge.online`, publicly trusted TLS, verified from outside 2026-08-05 (`eth_chainId` → `0x1cf4`). Explorer `explorer-testnet.cloudsforge.online`, faucet `network-testnet.cloudsforge.online/faucet`. Single-label hostnames only — the two-label `*.testnet.` form fails TLS at Cloudflare's edge |
 | B4 | Mainnet genesis, launch, and demonstrated hashrate | 🟡 **genesis and launch done** — chain 7411 published 2026-08-04, mining, publicly reachable. **Hashrate is not demonstrated**: the chain sits at the difficulty floor, so there is no number to quote |
@@ -148,7 +148,7 @@ minimum set:
 
 **The existing `/supply` REST endpoint is not usable as-is.** Its `circulating`
 field is the sum of the entire UTXO set and *includes* the Commons treasury
-(`node/src/rpc.js:228-240`, `node/src/chain.js:166-170`). Whatever replaces it on
+(`node/src/rpc.js`, `node/src/chain.js`). Whatever replaces it on
 the account-model chain must return the figure defined in
 [`tokenomics.md`](tokenomics.md) §7, or aggregators will publish a circulating
 supply that is wrong by the treasury balance.
@@ -251,10 +251,10 @@ premine and no allocation.**
 The supporting facts, each verifiable:
 
 - Genesis creates zero spendable supply
-  (`node/src/chain.js:55-70`; verification command in
+  (`node/src/chain.js`; verification command in
   [`tokenomics.md`](tokenomics.md) §9).
 - The only issuance path is a mined block, and the coinbase amount is checked
-  exactly against a height-derived schedule (`node/src/chain.js:304-315`).
+  exactly against a height-derived schedule (`node/src/chain.js`).
 - There has been no sale of any kind: no ICO, no private round, no SAFT, no
   pre-sale, no airdrop.
 - No entity holds a founder or team balance.
@@ -286,20 +286,20 @@ launch and free before it.
 | --- | --- | --- |
 | M1 | ~~Raise `POW_SCRATCH_KIB` from 64 to ~2 GiB~~ — **retired, measured.** One evaluation at 2 GiB is **185.7 s**; a validator pays one per block received against a 15 s interval, and a 200-block `getblocks` page is ~10 hours of one core. `params.js` now refuses to start above `POW_MAX_SCRATCH_KIB` 4096. A 64 KiB pad is still not meaningfully memory-hard, and closing that needs an amortised dataset across `pow.js`, the browser miner and the Rust core — a redesign, not a constant. [`pow-parameters.md`](pow-parameters.md) | ✅ **decided** |
 | M2 | ~~Raise `COINBASE_MATURITY` from 10 to ~100~~ — **a no-op on the launch chain.** `_creditReward` adds the subsidy straight to the balance; the constant is read only by the retired UTXO path (`tx.js`, `wallet.js`, `rpc.js`, `chain.js`). Whether the account model should have a maturity rule at all is a separate, open question | ✅ **decided** |
-| M3 | **Implement `SPARKS_PER_EMBER` → 18 decimals.** `params.js:6` still defines 1e8 | ⬜ |
+| M3 | **Implement `SPARKS_PER_EMBER` → 18 decimals.** `params.js` still defines 1e8 | ⬜ |
 | M4 | ~~Put chain id 7411 in the code~~ · ~~make it per-network~~ | ✅ **done** — `node/src/params.js` `CHAIN_IDS` resolves it per network (7411 mainnet, 7412 testnet, 7413 the in-process test chain) and `node/src/chain/transaction.js` reads it. An unregistered network is a hard error, not a default |
-| M5 | **Choose and fix the mainnet `NETWORK` id.** It defaults to `hearth` (`params.js:9`). Note this is the UTXO-era P2P/tx-binding id; under the account model EIP-155's chain id does that job | ⬜ |
+| M5 | **Choose and fix the mainnet `NETWORK` id.** It defaults to `hearth` (`params.js`). Note this is the UTXO-era P2P/tx-binding id; under the account model EIP-155's chain id does that job | ⬜ |
 | M6 | **Write the account-model genesis** and publish its state root as the verifiable no-premine artifact | ⬜ |
-| M7 | **A new Commons address in `0x` form.** The current one is a non-checksummed UTXO sink (`params.js:127`) | ⬜ |
+| M7 | **A new Commons address in `0x` form.** The current one is a non-checksummed UTXO sink (`params.js`) | ⬜ |
 | M8 | **A governance or spend mechanism for the Commons**, or an explicit written decision that there is none | ⬜ |
-| M9 | ~~Implement precompiles `0x06`–`0x09`~~ | ✅ **done** — `node/src/evm/bn128.js`, `node/src/evm/blake2f.js`, wired at `node/src/evm/precompiles.js:368-382`. All nine of Shanghai's set are implemented; EIP-196/197/1108 and EIP-152 vectors pass |
+| M9 | ~~Implement precompiles `0x06`–`0x09`~~ | ✅ **done** — `node/src/evm/bn128.js`, `node/src/evm/blake2f.js`, wired at `node/src/evm/precompiles.js`. All nine of Shanghai's set are implemented; EIP-196/197/1108 and EIP-152 vectors pass |
 | M10 | **`feeToSetter` must be a multisig from the moment the factory is deployed**, not moved later — moving it later requires the key you are trying to stop relying on ([`evm-spec.md`](evm-spec.md) §7) | ⬜ |
 | M11 | **Verify the Router init code hash against the live factory** before any liquidity is added ([`evm-spec.md`](evm-spec.md) §7) | 🟡 — the check is automated (`contracts/scripts/compile.mjs` refuses to build on mismatch; `node/test/dex.js` verifies it against a factory deployed on our own EVM before liquidity moves) and must still be re-run against the **live** factory at launch |
 | M12 | **Reproducible builds**, claimed in older documents and not implemented | ⬜ |
 | M14 | **Decide `nativeCurrency.name` and `shortName`.** SLIP-44 170 is already `MBRS / Ember`, so the *name* collides while the symbol does not (§1.2). It propagates into every registration and form | ⬜ |
 | M15 | **Decide Multicall3**: replay the canonical presigned deployment, or deploy ours at a different address (`evm-spec.md` §3, §7; [`decisions.md`](decisions.md) §2.2) | ⬜ |
 | M16 | ~~**Reconcile the browser miner and the node on the coinbase key.**~~ **Done, and the item was misdiagnosed.** It cited `node/src/rpc.js` and `node/src/block.js` — the UTXO chain, which is not the chain the browser miner talks to and which will require Ed25519 for as long as it exists. The account model already required secp256k1 (`node/src/chain/miner.js` `issue()`). The real defect was the signature LENGTH: 64 bytes sent, 65 required (`r \|\| s \|\| recoveryId`). Fixed; `node/test/browser-proof.js` drives the browser's own signer through the node's template flow | ✅ |
-| M13 | ~~Add the EVM conformance suites to the CI workflow~~ | 🟡 — CI now runs `npm test` as a **single command** (`.github/workflows/ci.yml:48-49`), so a new suite is covered the moment it is added. Two things remain: the **full corpus** is gitignored and CI runs only the harness self-test over the committed fixtures, and **the node job is currently failing outright** — `node/test/blake2f.js:304` references an undeclared `skipped` on the corpus-absent path, which is every clean checkout ([`../MAP.md`](../MAP.md) §11) |
+| M13 | ~~Add the EVM conformance suites to the CI workflow~~ | 🟡 — CI now runs `npm test` as a **single command** (`.github/workflows/ci.yml`), so a new suite is covered the moment it is added. Two things remain: the **full corpus** is gitignored and CI runs only the harness self-test over the committed fixtures, and **the node job is currently failing outright** — `node/test/blake2f.js` references an undeclared `skipped` on the corpus-absent path, which is every clean checkout ([`../MAP.md`](../MAP.md) §11) |
 
 ---
 

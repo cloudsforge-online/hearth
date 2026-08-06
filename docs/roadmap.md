@@ -24,7 +24,7 @@ the plan the work is being executed against. Everything else is downstream of it
 | **3. Execution** | interpreter, gas, opcodes, precompiles | VMTests pass | ✅ **609/609** |
 | **4. Transition** | tx application, receipts, bloom, header v2 | GeneralStateTests pass | ✅ **20,077/20,077** — the last ten fixed by EIP-7610 (`c93a524`) — see [`MAP.md`](../MAP.md) §4.3. *Header v2 belongs to phase 5* |
 | **5. Consensus** | block production and validation on the new state model | testnet produces and reorgs | ✅ **met.** `node/test/evm-p2p-fork.js` (51 checks) partitions two real nodes over real sockets, reorgs them onto the heavier branch, agrees state roots byte for byte and replays a restarted node to the same tip; `docker-compose.testnet.yml` runs three. The standing caveat here was throughput on storage-heavy load — `StateDB` re-rooting both tries per mutation, measured at 443 MB and 65 s for one 30M-gas transaction. Fixed and gated: `node/test/bench/block-execution.js` measures the same transaction at 5.2 s and 9.2 MiB and fails if it regresses |
-| **6. RPC** | `eth_*` surface | MetaMask connects; Hardhat deploys | ✅ **mounted** on 8545 by `node/src/evmnode.js:186`. 41 methods (43 with `HEARTH_RPC_FEE_HISTORY=1`), 422 checks against a fake chain and 170 against a real one over HTTP. A contract deploys and answers through it ([`quickstart.md`](quickstart.md) §5.0). No WebSocket surface — 8546 is reserved for v2 |
+| **6. RPC** | `eth_*` surface | MetaMask connects; Hardhat deploys | ✅ **mounted** on 8545 by `node/src/evmnode.js`. 41 methods (43 with `HEARTH_RPC_FEE_HISTORY=1`), 422 checks against a fake chain and 170 against a real one over HTTP. A contract deploys and answers through it ([`quickstart.md`](quickstart.md) §5.0). No WebSocket surface — 8546 is reserved for v2 |
 | **7. DeFi** | WEMBER, Factory, Pair, Router, Multicall3 | a swap succeeds end to end | ✅ **met** — `node/test/dex.js`, 167/167, a swap at 112,456 gas *on our own EVM*. Deployed to no chain |
 | **8. Ecosystem** | EVM-aware explorer, faucet, verified sources, docs | a stranger can deploy unaided | 🟡 the gate is **met locally** — one command starts a chain and the next deploys to it — but not publicly, because nothing is hosted. explorer ✅, faucet ✅, CLI + tracer ✅, templates ✅, verified contract sources ✅ (`tools/verify`, 116/116), Etherscan-compatible `/api` ✅ (`tools/explorer-api`, 177/177 plus 27/27 against a real chain). All undeployed |
 
@@ -51,7 +51,7 @@ Every item below is now in the tree:
   is why `hearthd --evm` refuses `--miner-address`: the coinbase must sign the
   block, so a node can only mine to a key it holds — see
   [`decisions.md`](decisions.md) §2.5.
-- **Mount the JSON-RPC server** on 8545 at the root path — `evmnode.js:186`
+- **Mount the JSON-RPC server** on 8545 at the root path — `evmnode.js`
   constructs it.
 - **An account-model genesis**, and its state root published as the verifiable
   no-premine artifact.
@@ -67,7 +67,7 @@ status is [`listing-checklist.md`](listing-checklist.md) §7.
 | --- | --- |
 | ✅ | ~~**Raise `POW_SCRATCH_KIB`** from 64 to ~2 GiB~~ — **measured and closed the other way.** 2 GiB is 185.7 s per evaluation against a 15 s interval, and a validator pays one per block received; `params.js` refuses to start above 4 MiB. A 64 KiB pad still fits in L2 and is still not meaningfully memory-hard — fixing that needs an amortised dataset, not a constant ([`pow-parameters.md`](pow-parameters.md)) |
 | ✅ | ~~**Raise `COINBASE_MATURITY`** from 10 to ~100~~ — a no-op on the account model, which credits the subsidy straight to the balance. The constant is read only by the retired UTXO path |
-| ⬜ | **Implement 18 decimals.** `params.js:6` still defines 1e8 |
+| ⬜ | **Implement 18 decimals.** `params.js` still defines 1e8 |
 | ⬜ | **A `0x` Commons address**, and a decision about whether anything can ever spend from it |
 | ⬜ | **Decide `nativeCurrency.name`** — SLIP-44 170 is already `MBRS / Ember`, so the name collides while the symbol does not |
 | ⬜ | **Decide Multicall3** — replay the canonical presigned deployment, or deploy ours at a different address |
@@ -145,7 +145,7 @@ it since the EVM began, and this roadmap does not pretend otherwise.
 1. **Phase 5.** Nothing else matters until a block exists.
 2. **The Etherscan-compatible `/api` shim** — a small job that removes a large
    amount of downstream integration friction.
-3. **`node/test/blake2f.js:304`** — a one-line fix that is currently turning CI
+3. **`node/test/blake2f.js`** — a one-line fix that is currently turning CI
    red and hiding the results of ten suites ([`../MAP.md`](../MAP.md) §11).
 
 See [CONTRIBUTING.md](../CONTRIBUTING.md).

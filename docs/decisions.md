@@ -26,8 +26,8 @@ what most proof-of-work EVM forks still do — would be nearly useless here,
 because our target moves slowly and is close to constant between adjacent
 blocks. So it returns the parent block's Homefire proof-of-work digest: a real
 256-bit hash, deterministic, and verifiable by anyone
-(`node/src/evm/interpreter.js:211-214`, `:568`; the same value the RPC serves as
-`mixHash`, `node/src/jsonrpc/methods.js:71`).
+(`node/src/evm/interpreter.js`; the same value the RPC serves as
+`mixHash`, `node/src/jsonrpc/methods.js`).
 
 **It is miner-influenceable.** A miner who dislikes an outcome can discard the
 block and grind another. That is true of every proof-of-work-derived randomness
@@ -42,12 +42,12 @@ Reasoning: [`evm-spec.md`](evm-spec.md) §5.
 `BASEFEE` (`0x48`) exists because Shanghai includes EIP-3198, and removing it
 would make Shanghai-compiled Solidity fail here while working on Ethereum. v1 has
 no EIP-1559, so it pushes zero until a fee market lands in v2
-(`node/src/evm/interpreter.js:215-216`). Do not price anything off it.
+(`node/src/evm/interpreter.js`). Do not price anything off it.
 
 ### 1.3 Nine precompiles are warmed; all nine are now implemented
 
 EIP-2929 pre-warms `0x01`–`0x09`, and so do we
-(`node/src/chain/statetransition.js:71-78`, `:305-315`). The warm set is a **gas
+(`node/src/chain/statetransition.js`). The warm set is a **gas
 rule, not a capability claim**: Ethereum warms all nine, the GeneralStateTests
 assume it, and treating an address as cold that Ethereum treats as warm costs
 2,500 gas per access — which is a chain split.
@@ -59,7 +59,7 @@ verifier calling a missing pairing check would read the empty return as a zero
 and accept a forged proof. Failing the call and burning the forwarded gas is the
 only behaviour that surfaces the gap.
 
-**All nine are implemented now** (`node/src/evm/precompiles.js:368-382`, bn128 in
+**All nine are implemented now** (`node/src/evm/precompiles.js`, bn128 in
 `node/src/evm/bn128.js`, blake2f in `node/src/evm/blake2f.js`), so warmed and
 implemented coincide. The interpreter keeps the machinery to fail a warmed,
 unimplemented address, because a future fork can pull the two apart again.
@@ -74,14 +74,14 @@ The two conventions are both consensus and they are opposites:
 Validity checks live in `run`, never in `gas`, and that is a security property
 rather than a style choice: `gas` is consulted before the interpreter tests
 affordability, so any work it does is work an attacker buys for the ~130 gas a
-`CALL` costs (`node/src/evm/precompiles.js:28-40`).
+`CALL` costs (`node/src/evm/precompiles.js`).
 
 Reasoning: [`evm-spec.md`](evm-spec.md) §5.
 
 ### 1.4 Pre-EIP-155 transactions are accepted
 
 Both EIP-155-protected and pre-155 unprotected transactions are accepted, exactly
-as Ethereum does (`node/src/chain/transaction.js:12-22`).
+as Ethereum does (`node/src/chain/transaction.js`).
 
 This is not laziness. A whole tier of ecosystem infrastructure is deployed by
 *keyless* presigned transactions — a made-up signature broadcast from an address
@@ -110,7 +110,7 @@ in question; only the key type changed.
 
 The wire form of the proof signature is `r || s || recoveryId`, 65 bytes, and it is now
 defined in exactly one place that is also the only implementation of it — `signProof`
-in `node/src/chain/header.js:213-223`. The `POW_SIG_FORM` constant that used to mirror
+in `node/src/chain/header.js`. The `POW_SIG_FORM` constant that used to mirror
 it in the browser miner is gone, along with the miner
 (`48bc28a`). See §2.5.
 
@@ -122,9 +122,9 @@ Reasoning: [`evm-spec.md`](evm-spec.md) §4.
 native asset; keeping 8 would produce subtly wrong displays everywhere and cost
 more than the migration does — and the chain is being reset regardless.
 
-**This is specified and not yet implemented.** `node/src/params.js:6` still
+**This is specified and not yet implemented.** `node/src/params.js` still
 defines `SPARKS_PER_EMBER = 100_000_000`, and the emission function at
-`params.js:140-151` still returns sparks. Integrate against 18; see §2.6.
+`params.js` still returns sparks. Integrate against 18; see §2.6.
 
 Reasoning: [`evm-spec.md`](evm-spec.md) §1.
 Tracked: [`listing-checklist.md`](listing-checklist.md) §7 M3.
@@ -137,7 +137,7 @@ deposit and 240 for a large one, ~15 minutes and ~1 hour respectively
 natural orphan depth on a 15-second chain.
 
 The estate's own payment rail now credits at that same depth —
-`repos/forge-pay/services/pay/src/chains.ts:35` records EMBER's depth as 60
+`repos/forge-pay/services/pay/src/chains.ts` records EMBER's depth as 60
 blocks. It previously did not, and the mismatch between what was published and
 what was credited is exactly the class of error this page exists to stop.
 
@@ -153,11 +153,11 @@ developer's first guess is correct. Verified free across the whole composed
 stack.
 
 The REST API stays on 8645. Mounting the Ethereum RPC there would have collided
-with the legacy `POST /rpc` handler (`node/src/rpc.js:152`), and a client would
+with the legacy `POST /rpc` handler (`node/src/rpc.js`), and a client would
 have received a 200 that is not JSON-RPC 2.0 — which reads as an empty chain
 rather than as a misconfiguration. Two ports, two protocols, no ambiguity.
 
-**It is served.** `node/src/evmnode.js:186` constructs
+**It is served.** `node/src/evmnode.js` constructs
 `node/src/jsonrpc/server.js` and listens on 8545; `hearthd --evm` is the flag
 that gets you there. 8546 stays reserved and unbound for the v2 WebSocket
 endpoint.
@@ -175,7 +175,7 @@ replaces that with the chain id — and if both networks declare 7411, **every
 testnet transaction is replayable on mainnet and back**: same key, same nonce,
 same bytes, valid on both.
 
-`node/src/chain/transaction.js:57` currently declares a single `CHAIN_ID`
+`node/src/chain/transaction.js` currently declares a single `CHAIN_ID`
 constant. **Nothing may hardcode it** — it is per-network configuration.
 
 Reasoning: [`evm-spec.md`](evm-spec.md) §1.
@@ -250,7 +250,7 @@ Blocks: [`listing-checklist.md`](listing-checklist.md) §5.
 ### 2.4 The Commons address under the account model, and whether anything can spend it
 
 The current Commons sink is `ember1commons00000000000000000000000000cmns`
-(`node/src/params.js:127`) — a UTXO-era address that is not even checksum-valid.
+(`node/src/params.js`) — a UTXO-era address that is not even checksum-valid.
 Under the account model it becomes a `0x…` address, and **that address has not
 been chosen** and is not in the spec.
 
@@ -289,13 +289,13 @@ real winning digest and require the node's template flow to accept the block.
 
 **That machinery is gone, and so is the failure mode.** The browser miner and both
 suites were deleted in `48bc28a`. There is now exactly one implementation of the proof
-signature — `HDR.signProof` — and every miner calls it (`node/src/chain/miner.js:85`,
-`node/src/mine/session.js:247`). Two implementations cannot drift when there is one.
+signature — `HDR.signProof` — and every miner calls it (`node/src/chain/miner.js`,
+`node/src/mine/session.js`). Two implementations cannot drift when there is one.
 The principle still applies to the next port anyone writes.
 
 ### 2.6 `SPARKS_PER_EMBER` is still 1e8
 
-18 decimals is decided (§1.6) and not implemented. Until `node/src/params.js:6`
+18 decimals is decided (§1.6) and not implemented. Until `node/src/params.js`
 moves, the tree's arithmetic is in sparks while every document integrates against
 wei. This is a hard fork to change and free before mainnet.
 

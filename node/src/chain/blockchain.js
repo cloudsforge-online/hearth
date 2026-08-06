@@ -331,7 +331,7 @@ class Blockchain extends EventEmitter {
   nextTarget() { return this._nextTarget(this.tipId); }
 
   /**
-   * The same branch-aware LWMA the UTXO chain uses (../chain.js:212-235) — 60
+   * The same branch-aware LWMA the UTXO chain uses (../chain.js) — 60
    * solve times, each clamped to [1, 6×target], linearly weighted, scaling the
    * window's mean target. Unchanged on purpose: spec §4 says the proof of work and
    * the retarget are untouched and only the key they bind moves.

@@ -5,7 +5,7 @@
  *
  * The node's existing `GET /supply` reports a field named `circulating` whose
  * value is the sum of the ENTIRE UTXO set, INCLUDING the Commons treasury
- * (docs/tokenomics.md §7, node/src/rpc.js:228-240). An aggregator that takes
+ * (docs/tokenomics.md §7, node/src/rpc.js). An aggregator that takes
  * that at face value publishes a circulating supply overstated by the whole
  * treasury — currently 10% of everything ever mined.
  *

@@ -353,7 +353,7 @@ module.exports = {
    * 8545 is the port the ecosystem already defaults to: MetaMask's localhost
    * default, and what every Hardhat and Foundry tutorial assumes, so a
    * developer's first guess is correct. The REST API stays on 8645 exactly as
-   * it is, because `rpc.js:152` answers `POST /rpc` with the legacy
+   * it is, because `rpc.js` answers `POST /rpc` with the legacy
    * `{method:'getinfo'}` shape and mounting eth_* alongside it would hand a
    * client a 200 that is not JSON-RPC 2.0 — which reads as an empty chain
    * rather than as a misconfiguration. Two ports, two protocols, no ambiguity.
@@ -397,7 +397,7 @@ module.exports = {
   EVM_BLOCK_GAS_LIMIT: 30_000_000,
 
   /* The Commons sink on the account model. `COMMONS_ADDRESS` above is a bech32
-   * string that has no meaning here, and docs/tokenomics.md:253-254 records
+   * string that has no meaning here, and docs/tokenomics.md records
    * that a 0x address HAS NOT BEEN CHOSEN. That is a governance decision, not
    * one a node can make, so the default is the zero address — universally
    * rendered as a burn — and the 10% is destroyed rather than paid to a key

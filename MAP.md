@@ -39,10 +39,10 @@ vectors pass. §4 is the evidence.
 reachable at `https://rpc.cloudsforge.online` and mining. Verified from outside
 this network on 2026-08-05: `eth_chainId` → `0x1cf3`, `web3_clientVersion` →
 `Hearth/v0.2.0/linux-x64/node22.23.1`, genesis `extraData` → `0x6865617274682f37343131`
-(`"hearth/7411"`, the format `node/src/chain/genesis.js:59` describes). Block 1
+(`"hearth/7411"`, the format `node/src/chain/genesis.js` describes). Block 1
 was mined 2026-08-04 19:12 UTC, so the chain is hours old and under 200 blocks
 tall, it is still at the `GENESIS_TARGET` difficulty floor (`difficulty: 0x100`,
-`node/src/params.js:185`), and it runs on one home server behind one Cloudflare
+`node/src/params.js`), and it runs on one home server behind one Cloudflare
 Tunnel. **The public testnet is also live** — chain id 7412 at
 `https://rpc-testnet.cloudsforge.online`, verified from outside on 2026-08-05
 (`eth_chainId` → `0x1cf4`), on the same single home server and the same tunnel.
@@ -116,7 +116,7 @@ and `node/test/bench/block-execution.js` fails if that regresses. §11.
 
 ### 3.1 `node/` — the node, and the EVM
 
-One process is a full node, a wallet and a miner (`node/src/node.js:27-41`). The
+One process is a full node, a wallet and a miner (`node/src/node.js`). The
 directory now holds two chains' worth of code, deliberately separated so both can
 be tested in isolation during the transition (`docs/evm-spec.md` §5).
 
@@ -175,7 +175,7 @@ be tested in isolation during the transition (`docs/evm-spec.md` §5).
 
 `bin/hearth.js` and `bin/hearth-cli.js` are **two tools for two chains** and are
 deliberately not merged — merging them would mean one address format silently
-accepting the other's addresses (`node/bin/hearth.js:19-22`).
+accepting the other's addresses (`node/bin/hearth.js`).
 
 ### 2.1.1 The account-model chain (`hearthd --evm`)
 
@@ -223,7 +223,7 @@ What differs from §3, and each difference is consensus:
 
 Two HTTP surfaces: **port 8545 path `/`** is Ethereum JSON-RPC 2.0, and port
 8645 is a small REST API (`/info`, `/supply`, `/mempool`, `/mining/*`,
-`/events`). They are separate servers precisely because `rpc.js:152` owns
+`/events`). They are separate servers precisely because `rpc.js` owns
 `POST /rpc` with a different protocol.
 
 Tested by `node/test/evmchain.js` (consensus, 191 checks), `node/test/evm-rpc.js`
@@ -232,8 +232,8 @@ real nodes, partition, reorg, 51 — including an open `eth_newFilter` that has 
 deliver the winning branch's logs after the reorg).
 
 Published to npm as `@cloudsforge/hearth-node`, currently **0.2.0**
-(`node/package.json:3`), exporting `.`, `./crypto`, `./chain`, `./tx`, `./wallet`
-and `./params` (`node/package.json:12-21`) — **all six are UTXO-era modules.**
+(`node/package.json`), exporting `.`, `./crypto`, `./chain`, `./tx`, `./wallet`
+and `./params` (`node/package.json`) — **all six are UTXO-era modules.**
 None of `crypto/`, `state/`, `evm/`, `chain/` or `jsonrpc/` is exported. See §11
 for the version skew this creates.
 
@@ -254,7 +254,7 @@ which is the number whose silent drift breaks a V2 fork — the Router derives p
 addresses from that constant rather than asking the factory, so a mismatch sends
 it looking for pools at addresses where nothing exists, and a call to a codeless
 address *succeeds and returns empty*. `compile.mjs` refuses to build on mismatch
-and CI runs it (`.github/workflows/ci.yml:159-163`).
+and CI runs it (`.github/workflows/ci.yml`).
 
 `Multicall3.sol` is **not** the canonical bytecode and deploying it would not
 produce the canonical address. That is an open decision — see
@@ -265,24 +265,24 @@ produce the canonical address. That is an open decision — see
 **Do not read this crate as a second opinion about what a valid block is.** It has
 no block type, no chain, no fork choice, no storage, no RPC and no P2P server;
 `main.rs` runs a self-check over the library modules and then benchmarks Homefire
-against a stand-in header literal (`rust/hearthd/src/main.rs:28-102`, `:122`).
+against a stand-in header literal (`rust/hearthd/src/main.rs:28-102`).
 Nothing in the directory has ever accepted a block, because there is nothing there
 to accept one into.
 
 Two modules would produce the **wrong answer** if wired up:
 
 1. **`pow.rs` omits the coinbase public key from the seed.** Consensus binds
-   `(headerCoreHash, nonce, coinbasePubHex)` (`node/src/pow.js:45-47`); the Rust
+   `(headerCoreHash, nonce, coinbasePubHex)` (`node/src/pow.js`); the Rust
    `homefire()` hashes whatever seed bytes it is handed, and the binary only ever
    hands it `header || nonce_le` (`rust/hearthd/src/pow.rs:31`,
    `main.rs:127-130`). Same header, different digest.
 2. **`difficulty.rs` retargets ±1 leading-zero bit per block** — a factor of two
    per step, ignoring the magnitude of the miss
    (`rust/hearthd/src/difficulty.rs:47-53`). Consensus retargets a continuous
-   256-bit target with a 60-block LWMA (`node/src/chain.js:212-235`).
+   256-bit target with a 60-block LWMA (`node/src/chain.js`).
 
 The crate's own header comments say all of this (`main.rs:3-20`, `pow.rs:7-15`,
-`difficulty.rs:7-17`, `rust/README.md:1-17`). What it does have that is real: a
+`difficulty.rs:7-17`, `rust/README.md`). What it does have that is real: a
 pure-`std` SHA-256 tested against FIPS vectors, an emission schedule that matches
 consensus, and unwired libraries for the ledger, mempool, P2P framing and Tab
 payment channels (`src/lib.rs:15-22`). CI builds it under
@@ -332,12 +332,12 @@ from their own runners — `npm test` in each — and those totals are theirs to
 
 **Two ports, and the lesson is about the node, not the page.** This is kept because it
 is a fact about `node/`, which is still here. The node runs two servers: the REST API
-+ SSE on `:8645` (`node/src/rpc.js`) and Ethereum JSON-RPC 2.0 on `:8545`
++ SSE on (`node/src/rpc.js`) and Ethereum JSON-RPC 2.0 on
 (`node/src/evmnode.js`). They are a different **port**, not a different path, because
-`node/src/rpc.js:139` already owns `POST /rpc` with the legacy `{method:'getinfo'}`
+`node/src/rpc.js` already owns `POST /rpc` with the legacy `{method:'getinfo'}`
 shape. A client that sends `eth_*` to the REST port is answered HTTP 404 with
 `{"err":"this is the REST API — the Ethereum JSON-RPC endpoint is a different port"}`,
-plus the port and path it should have used (`node/src/evmnode.js:481-486`) — a
+plus the port and path it should have used (`node/src/evmnode.js`) — a
 deliberate pointer, because it is "the single most likely first mistake". A body
 carrying neither `result` nor `error` reads to a JSON-RPC client as a malformed
 response rather than as a wrong address, which is how the deployed explorer once
@@ -346,10 +346,9 @@ reported a dead chain while the chain was fine (CF-13). Any new client points at
 
 **The chain id is deployment configuration, not a constant**, and that is still true of
 the node. `CHAIN_IDS` is `{hearth: 7411, 'hearth-testnet': 7412}`
-(`node/src/params.js:36-38`), resolved for the running network into the exported
-`CHAIN_ID` (`:87`) and overridable with `HEARTH_CHAIN_ID` for a private network
-(`:47-49`). The refusal to guess is stated in the source itself: a node must never
-guess a chain id (`node/src/params.js:57`). A client must not take the chain id from
+(`node/src/params.js`), resolved for the running network into the exported
+`CHAIN_ID` and overridable with `HEARTH_CHAIN_ID` for a private network. The refusal to guess is stated in the source itself: a node must never
+guess a chain id (`node/src/params.js`). A client must not take the chain id from
 `eth_chainId` on an endpoint its user can override, or the endpoint would be choosing
 what its visitor's signature is valid on.
 
@@ -395,7 +394,7 @@ ordinals are asserted on both paths that serve them, against a real chain.
 CI parses the templates and boots the probe, asserting `eth_chainId` is `0x1cf3`
 and `net_version` is `"7411"` — the same number in two encodings, which is the one
 mistake that makes MetaMask refuse a network outright
-(`.github/workflows/ci.yml:184-200`).
+(`.github/workflows/ci.yml`).
 
 ### 3.6 Marketing — no longer in this repository
 
@@ -419,7 +418,7 @@ no inbound port.
 Three parts, and the split is the point:
 
 * **`ui/`** — plain HTML/CSS/JS, no framework and no build step
-  (`app-desktop/ui/app.js:20-21`). It is told the *address* and never the key.
+  (`app-desktop/ui/app.js`). It is told the *address* and never the key.
 * **`engine/engine.js`** — one mining session and one key, as JSON lines on
   stdin/stdout. It runs on the Node runtime bundled with the app.
 * **`src-tauri/`** — the window, the OS keychain (`src/keychain.rs`), the
@@ -432,7 +431,7 @@ gives the reason, which is the 64-byte browser-miner proof.
 **The key is encrypted at rest** — scrypt N=2¹⁸ over a passphrase, AES-256-GCM
 over the key, address in the clear and bound in as GCM additional data
 (`node/src/mine/keystore.js`). That is the one thing `hearth-mine` and `hearthd`
-do *not* do: `node/src/coinbase.js:52-57` writes the key in the clear at mode 600,
+do *not* do: `node/src/coinbase.js` writes the key in the clear at mode 600,
 which is right for an unattended server and wrong for a laptop.
 
 **What replaced what.** The previous contents were scaffolding that documented its
@@ -456,11 +455,11 @@ triples in `scripts/fetch-node.mjs`, per-platform keychain backends in
 ### 3.8 `proto/` — teaching artifacts, and one trap
 
 `proto/pow.js` + `proto/mine.js` are a minimal model of memory-hardness and of the
-signature-binding property; `proto/pow.js:19-25` states plainly that this is not
+signature-binding property; `proto/pow.js` states plainly that this is not
 non-outsourceability.
 
 `proto/emission.js` is run in CI as a sanity check
-(`.github/workflows/ci.yml:50-51`) — but **it is a smooth exponential model, not
+(`.github/workflows/ci.yml`) — but **it is a smooth exponential model, not
 the integer schedule consensus runs**, and its numbers differ from the chain's by
 about 3.5% in year one. See §11.
 
@@ -554,7 +553,7 @@ scores the Shanghai section of each fixture.
 `--no-gas` on VMTests is not a concession. `legacytests/Constantinople/VMTests` is
 Constantinople *semantics* at Frontier *prices*: running the 609 with gas checking
 produces 434 divergences that decompose exactly into EIP-2929, EIP-160 and EIP-150
-with nothing left over (`node/test/interpreter.js:12-21`). Gas conformance comes
+with nothing left over (`node/test/interpreter.js`). Gas conformance comes
 from GeneralStateTests.
 
 **A harness quirk worth knowing.** `--suite=VMTests --dir=test/conformance/vectors`
@@ -602,8 +601,8 @@ dependencies and this one needs solc's output.
 ### 4.5 The two opcodes that had to be decided
 
 `PREVRANDAO` (`0x44`) returns the parent block's Homefire digest and is
-**miner-influenceable** (`node/src/evm/interpreter.js:211-214`, `:568`).
-`BASEFEE` (`0x48`) pushes zero (`:215-216`). Both, with the reasoning, are in
+**miner-influenceable** (`node/src/evm/interpreter.js`).
+`BASEFEE` (`0x48`) pushes zero. Both, with the reasoning, are in
 [`docs/decisions.md`](docs/decisions.md) §1.1 and §1.2.
 
 ### 4.6 The JSON-RPC layer, and exactly what it is
@@ -612,7 +611,7 @@ dependencies and this one needs solc's output.
 passes 422 checks against a fake chain plus 170 against a real one over HTTP
 (`test/evm-rpc.js`). **It is written against an interface, and a chain now
 implements that interface** — `chain/rpcadapter.js`, mounted by
-`evmnode.js:186`. The fake is still where the edge cases live, because a real
+`evmnode.js`. The fake is still where the edge cases live, because a real
 chain will not produce a malformed receipt on demand.
 
 So "the `eth_*` surface is built" means: the method table, the QUANTITY/DATA codec,
@@ -654,35 +653,35 @@ it is documented because it is the only chain that has ever produced a block.
 
 ### 5.1 Block validation
 
-`Chain._validate` (`chain.js:254-318`) runs checks in a deliberate order — cheap
+`Chain._validate` (`chain.js`) runs checks in a deliberate order — cheap
 comparisons, then the proof, then serialization, then signature work — so that
 everything an anonymous peer can make the node do is gated behind a proof it had
-to pay for (`chain.js:238-253`).
+to pay for (`chain.js`).
 
 | Rule | Where |
 | --- | --- |
-| height = parent + 1 | `chain.js:256` |
-| non-empty, ≤ `MAX_BLOCK_TXS` (5,000) | `chain.js:257-258`, `params.js:85` |
-| timestamp ≤ now + `MAX_FUTURE_DRIFT_S` (7200s) | `chain.js:262`, `params.js:96` |
-| timestamp > median-time-past over 11 blocks | `chain.js:263`, `params.js:97` |
-| `header.target` equals the recomputed LWMA target | `chain.js:265` |
-| Homefire proof verifies | `chain.js:267-268` → `block.js:39-57` |
-| canonical bytes ≤ `MAX_BLOCK_BYTES` (2 MB) | `chain.js:273-274`, `params.js:94` |
-| tx 0 is a coinbase with no inputs and **no records** | `chain.js:281-287` |
-| no second coinbase | `chain.js:289` |
-| every other tx passes `validateNormal` against a scratch UTXO | `chain.js:290-292` |
-| coinbase has 1–2 outputs, each integer, ≥ 0, ≤ `MAX_MONEY` | `chain.js:299-303` |
-| miner output = subsidy − commons + tips, **exactly** | `chain.js:304-309` |
-| commons output present and exact | `chain.js:310-313` |
-| total minted = subsidy + tips, exactly (**anti-inflation**) | `chain.js:314-315` |
+| height = parent + 1 | `chain.js` |
+| non-empty, ≤ `MAX_BLOCK_TXS` (5,000) | `chain.js`, `params.js` |
+| timestamp ≤ now + `MAX_FUTURE_DRIFT_S` (7200s) | `chain.js`, `params.js` |
+| timestamp > median-time-past over 11 blocks | `chain.js`, `params.js` |
+| `header.target` equals the recomputed LWMA target | `chain.js` |
+| Homefire proof verifies | `chain.js` → `block.js` |
+| canonical bytes ≤ `MAX_BLOCK_BYTES` (2 MB) | `chain.js`, `params.js` |
+| tx 0 is a coinbase with no inputs and **no records** | `chain.js` |
+| no second coinbase | `chain.js` |
+| every other tx passes `validateNormal` against a scratch UTXO | `chain.js` |
+| coinbase has 1–2 outputs, each integer, ≥ 0, ≤ `MAX_MONEY` | `chain.js` |
+| miner output = subsidy − commons + tips, **exactly** | `chain.js` |
+| commons output present and exact | `chain.js` |
+| total minted = subsidy + tips, exactly (**anti-inflation**) | `chain.js` |
 
 A coinbase may not carry application records, because a coinbase is signed by
 nobody and a record in one would be an unauthenticated write the miner alone
-chooses (`chain.js:284-286`).
+chooses (`chain.js`).
 
 ### 5.2 Transaction validation
 
-`TX.validateNormal` (`tx.js:121-156`): ≥1 input and output and ≤1,000 of each; the
+`TX.validateNormal` (`tx.js`): ≥1 input and output and ≤1,000 of each; the
 record shape/size rules; size ≤ `MAX_TX_BYTES`; **double-spend within the
 transaction** (a repeated `txid:vout`) and **against the set**; the input's public
 key must hash to the output's address; an Ed25519 signature over the canonical
@@ -691,49 +690,48 @@ tree, against a production ~100); positive integer outputs ≤ `MAX_MONEY`;
 `fee = inputs − outputs ≥ base fee + data fee`; and `tx.id` equal to the recomputed
 txid.
 
-The signed body includes `net: P.NETWORK` (`tx.js:39`), so a signature from one
+The signed body includes `net: P.NETWORK` (`tx.js`), so a signature from one
 network cannot be replayed onto another. **The account model has no equivalent
 field** — EIP-155's chain id replaces it, which is exactly why the testnet needed
 its own id (`docs/evm-spec.md` §1, [`docs/decisions.md`](docs/decisions.md) §1.9).
 
 ### 5.3 Difficulty — LWMA, and `MIN_TARGET`
 
-`Chain._nextTarget` (`chain.js:212-235`) is branch-aware: it walks back from a
+`Chain._nextTarget` (`chain.js`) is branch-aware: it walks back from a
 given parent, takes up to `LWMA_WINDOW` = 60 solve times, clamps each solve to
 `[1, 6 × TARGET_BLOCK_TIME]`, takes a linearly-weighted average, scales the
 arithmetic mean of the window's targets by `avgSolve / TARGET_BLOCK_TIME`, and
 clamps into `[MIN_TARGET, MAX_TARGET]`. Because the expected target is recomputed
-per block and compared exactly (`chain.js:265`, and again on the fork path at
-`:349`), **the retarget rule *is* consensus.**
+per block and compared exactly (`chain.js`, and again on the fork path), **the retarget rule *is* consensus.**
 
 `MIN_TARGET` is the difficulty **ceiling** — the hardest the chain may get. It was
 ~2⁻²⁰, which capped a block at ~1.1M attempts and therefore bound at roughly
 300–500 cores, after which the clamp fires, blocks arrive faster than 15s, and
 emission permanently accelerates because the schedule is indexed by height and not
 by time. It is now `0000000000000000ffff…` — 2⁻⁶⁴, ~1.8×10¹⁹ attempts per block
-(`params.js:57-80`). `node/test/unit.js:105-113` pins the property rather than the
+(`params.js`). `node/test/unit.js` pins the property rather than the
 literal: work-per-block must exceed 2⁴⁰.
 
 **This was a hard chain break with no migration.** Any data directory holding a
 block whose target was clamped at the old ceiling now fails to load, and nodes on
 either side reject each other with `wrong difficulty target`. The parameter comment
-prescribes `docker compose down -v` (`params.js:71-79`).
+prescribes `docker compose down -v` (`params.js`).
 
 ### 5.4 Addresses, hashing and records
 
 An address is `ember1` + 40 hex of `sha256(pubkey_der)` + 6 hex of checksum
-(`crypto.js:58-62`). Canonical JSON sorts object keys recursively, so every hash is
-stable (`crypto.js:8-13`).
+(`crypto.js`). Canonical JSON sorts object keys recursively, so every hash is
+stable (`crypto.js`).
 
 Records are the only consensus-committed place for application bytes; they live
-*inside* the signed transaction body. Bounds, all consensus (`tx.js:59-78`,
-`params.js:41-47`): ≤16 records per tx, ≤4,096 payload bytes per record, ≤8,192
+*inside* the signed transaction body. Bounds, all consensus (`tx.js`,
+`params.js`): ≤16 records per tx, ≤4,096 payload bytes per record, ≤8,192
 across a tx, `app` matching `/^[a-z][a-z0-9-]{1,15}$/`, `key` matching
 `/^[0-9a-z._-]{1,72}$/`, `data` an even-length lowercase hex string. Full reference:
 [`docs/records.md`](docs/records.md).
 
 The critical serialization detail: **`records` is omitted from the body when
-empty** (`tx.js:47-49`). That is what keeps every pre-records transaction hashing to
+empty** (`tx.js`). That is what keeps every pre-records transaction hashing to
 the same id, and it is the root of the cross-repo skew in §11.
 
 **Records are a UTXO construct and have no account-model equivalent.** Nothing in
@@ -746,7 +744,7 @@ current form, and nothing says so anywhere else.
 ## 6. Homefire — what it actually is
 
 ```
-pad   = 64 KiB (8,192 × 8-byte words)              params.js:51, pow.js:26
+pad   = 64 KiB (8,192 × 8-byte words)              params.js, pow.js
 fill  : cur = SHA256(seed); repeat 8,192×: cur = SHA256(cur); take cur[0..8] into pad
 walk  : acc = SHA256(seed ‖ pad[0..64])
         repeat 256×:  idx = acc.readUInt32LE(0) % 8192
@@ -754,28 +752,28 @@ walk  : acc = SHA256(seed ‖ pad[0..64])
                       pad[idx] ^= acc[0..8]          ← read-write, not read-only
 out   = SHA256(acc ‖ pad[last 64 bytes])
 ```
-(`node/src/pow.js:29-42`; walk-step count at `params.js:52`.)
+(`node/src/pow.js`; walk-step count at `params.js`.)
 
 One attempt is roughly 8,450 sequential SHA-256 compressions and touches the whole
 pad. Dev sizes are 64 KiB / 256 steps; the comment records intended production
-sizes of ~2 GiB and 2048+ steps (`params.js:50-52`).
+sizes of ~2 GiB and 2048+ steps (`params.js`).
 
 **The properties this has:** memory-hard (every attempt must fill and then randomly
 read *and rewrite* a scratchpad, so the walk is unskippable); CPU-friendly and
 ASIC-resistant (the bottleneck is commodity memory latency, not gate count); and
 **work handed to a hasher cannot be redirected** — the winning digest must be signed
 by the coinbase key, and `verifyPow` requires the coinbase's first output to pay the
-address derived from that key (`node/src/block.js:39-51`).
+address derived from that key (`node/src/block.js`).
 
 **The property it does NOT have — non-outsourceability.** `powSeed` binds
 `(headerCoreHash, nonce, coinbasePubHex)` — only the coinbase **public** key
-(`pow.js:45-47`). The private key is used exactly once, *after* a nonce has already
-won, to sign the digest (`node/src/miner.js:115`). So a pool operator can distribute
+(`pow.js`). The private key is used exactly once, *after* a nonce has already
+won, to sign the digest (`node/src/miner.js`). So a pool operator can distribute
 `coreHash` together with its own pubkey, collect `(nonce, digest)` pairs from hashers
 who genuinely cannot steal the reward, and sign the blocks itself. Making that
 impossible requires the private key inside the hash loop, which forks the chain and
 breaks the CI-conformance-tested browser miner — so it is a recorded open decision,
-not an oversight (`pow.js:8-15`).
+not an oversight (`pow.js`).
 
 Homefire also **compiles nothing**. It is chained SHA-256 over a pad. Any
 description of it as "RandomX-class" is wrong.
@@ -791,8 +789,8 @@ moved; the node side has not — §9.2.
 
 ## 7. REST API surface (`node/src/rpc.js`)
 
-HTTP on `DEFAULT_RPC_PORT` 8645 (`params.js:130`). CORS is `*` on every response
-(`rpc.js:19-25`). There is no authentication of any kind. **This surface belongs to
+HTTP on `DEFAULT_RPC_PORT` 8645 (`params.js`). CORS is `*` on every response
+(`rpc.js`). There is no authentication of any kind. **This surface belongs to
 the UTXO chain**; the Ethereum JSON-RPC is a separate server on 8545 that nothing
 mounts yet.
 
@@ -812,7 +810,7 @@ mounts yet.
 | `/events` | SSE. Unfiltered: unnamed `data:` frames per new block. With `?app=…[&key=…]`: named `record` events only |
 
 Block frames are deliberately **unnamed** so `EventSource.onmessage` receives them
-(`rpc.js:68-74`).
+(`rpc.js`).
 
 ### POST routes
 
@@ -820,7 +818,7 @@ Block frames are deliberately **unnamed** so `EventSource.onmessage` receives th
 | --- | --- |
 | `/tx` | Accepts `{tx}` or a bare tx. Validates into the mempool and gossips it |
 | `/mining/submit` | `{templateId, nonce, powDigest, powSig}`. 200 accepted, **409** when the tip moved (stale — the miner did nothing wrong), 400 for a bad proof |
-| `/rpc` | A **legacy** `{method, params}` shape: `getinfo`, `getbalance`, `getblockcount`, `sendtx` (`rpc.js:139`, `:152`, `:242-254`). Anything else returns `{err:'unknown method'}` at HTTP 200 |
+| `/rpc` | A **legacy** `{method, params}` shape: `getinfo`, `getbalance`, `getblockcount`, `sendtx` (`rpc.js`). Anything else returns `{err:'unknown method'}` at HTTP 200 |
 
 That last row is why the Ethereum RPC does not mount here: a JSON-RPC 2.0 client
 posting `eth_chainId` to `POST /rpc` receives a 200 that is not JSON-RPC, which
@@ -837,12 +835,12 @@ destroyed.
 deposits at depth. **It is not any more.** Forge Pay has rebuilt EMBER as an
 account-model EVM coin and now credits from `eth_getBalance` at
 `latest - confirmations`, exactly as it does ETH
-(`repos/forge-pay/services/pay/src/chains.ts:18-41`, `:161-192`). EMBER's depth
+(`repos/forge-pay/services/pay/src/chains.ts`). EMBER's depth
 there is **60 blocks**, which matches what
 [`docs/exchange-integration.md`](docs/exchange-integration.md) §4 publishes.
 
 That file also records what it is waiting on: the RPC endpoint
-(`chains.ts:282` — *"Every EMBER probe and payment will fail until it is
+(`chains.ts` — *"Every EMBER probe and payment will fail until it is
 repointed"*). So the estate's payment rail is already built against a chain this
 repository has not yet produced a block on.
 
@@ -851,28 +849,28 @@ repository has not yet produced a block on.
 ## 8. P2P (`node/src/p2p.js`)
 
 Plain TCP, newline-delimited JSON, no dependencies. Default port 8646
-(`params.js:131`). **UTXO-era in origin**, but what a block *is* now sits behind a
-three-function `wire` seam (`p2p.js:36,63`) that `src/evmnode.js` supplies for the
+(`params.js`). **UTXO-era in origin**, but what a block *is* now sits behind a
+three-function `wire` seam (`p2p.js,63`) that `src/evmnode.js` supplies for the
 account model, so both chains gossip through this one implementation.
 
 **Messages.** `hello {net, genesis, chainId, commonsAddress, height, tip}`,
 `getblocks {locator}`, `getblock {id}`, `blocks {blocks[]}`, `block {block}`,
-`tx {tx}` (`p2p.js:413-531`).
+`tx {tx}` (`p2p.js`).
 
 **Handshake.** `hello` carries the network id **and the chain's identity**; a
 mismatch on any of them drops the peer immediately, with a log line naming both
-values (`p2p.js:417-455`). `net` alone is a label two incompatible chains agree on
+values (`p2p.js`). `net` alone is a label two incompatible chains agree on
 for free — the genesis hash is the identity, and `chainId`/`commonsAddress` ride
-alongside because block 0 does not hash them (`p2p.js:212`), so a shared genesis is
+alongside because block 0 does not hash them (`p2p.js`), so a shared genesis is
 not by itself a shared chain. A hello with no genesis hash is dropped: fail closed.
 Sync is negotiated on *any* tip the node does not hold, not merely a taller one —
 the fix for equal-height peers on different branches splitting forever
-(`p2p.js:456`).
+(`p2p.js`).
 
 **Sync.** A locator of exponentially-spaced hashes is built back from the heaviest
 *stored* branch, always ending at genesis. It is memoized on `(tipId, store.size)`
 so a peer spamming invented tips cannot buy an O(chain) walk per message
-(`p2p.js:163-165`). At most `P2P_MAX_BLOCKS` = 200 per round trip. `getblock` by
+(`p2p.js`). At most `P2P_MAX_BLOCKS` = 200 per round trip. `getblock` by
 hash exists specifically so a side-branch block can be fetched at all, which
 height-based paging structurally cannot do.
 
@@ -880,20 +878,20 @@ height-based paging structurally cannot do.
 connected transitively once an ancestor lands.
 
 **Fork choice and reorg.** `Chain._ingest` has a fast path for extending the active
-tip and a fork path otherwise (`chain.js:323-370`). On the fork path the proof is
+tip and a fork path otherwise (`chain.js`). On the fork path the proof is
 verified **before** `_stateAt` replays the UTXO set from genesis, so a remote peer
 cannot buy a full replay with an unproven block. Cumulative work is
 `Σ 2²⁵⁶ / (target+1)`, and the heaviest branch wins. A reorg also *unwrites*
 records — a message on an orphaned branch was never sent as far as the chain is
-concerned (`chain.js:402-404`).
+concerned (`chain.js`).
 
 **The peer verification budget.** One PoW verification is a full Homefire
 evaluation, so an unmetered peer could pin a core with junk that fails the very
-check it paid for. `_acceptFrom` (`p2p.js:241-272`) takes a token before the work
+check it paid for. `_acceptFrom` (`p2p.js`) takes a token before the work
 and **refunds it** when the block turns out to be useful or to have cost no hashing
 at all — so honest initial sync never touches the limiter while junk keeps its
 token. `P2P_BLOCK_VERIFY_BURST` = 200 refilling at 25/s, and
-`P2P_MAX_INVALID_BLOCKS` = 16 before disconnection (`params.js:104-123`).
+`P2P_MAX_INVALID_BLOCKS` = 16 before disconnection (`params.js`).
 
 **Tested over real sockets.** `node/test/p2p-fork.js` stands up two real `Node`
 instances with real TCP and RPC servers, partitions them, mines competing branches,
@@ -932,14 +930,14 @@ The comparisons that bear on `node/`:
 
 | Claim checked against `node/src` | Where |
 | --- | --- |
-| keccak256 agrees at every length across the rate boundary | `test/oracle-primitives.test.ts:22` |
-| RLP encodes byte-identically, and rejects the same non-canonical forms | `:52`, `:89` |
-| signatures are byte-identical and each recovers to the same key | `:127` |
-| public keys, addresses and contract-creation addresses re-derive identically | `:105`, `:163` |
-| a keystore record this library seals is opened by `node/src/cli/keystore.js`, **and the reverse** | `test/oracle-keystore.test.ts:50`, `:68` |
-| the PBKDF2 iteration count matches the node's 600,000 (`node/src/cli/keystore.js:38`) | `test/oracle-keystore.test.ts:82` |
-| a testnet-signed transaction is refused by the node as a mainnet one | `test/oracle-transaction.test.ts:95` |
-| the node refuses an EIP-1559 envelope — which is why the successor marks Hearth as having no base fee | `test/oracle-transaction.test.ts:105` |
+| keccak256 agrees at every length across the rate boundary | `test/oracle-primitives.test.ts` |
+| RLP encodes byte-identically, and rejects the same non-canonical forms | |
+| signatures are byte-identical and each recovers to the same key | |
+| public keys, addresses and contract-creation addresses re-derive identically | |
+| a keystore record this library seals is opened by `node/src/cli/keystore.js`, **and the reverse** | `test/oracle-keystore.test.ts` |
+| the PBKDF2 iteration count matches the node's 600,000 (`node/src/cli/keystore.js`) | `test/oracle-keystore.test.ts` |
+| a testnet-signed transaction is refused by the node as a mainnet one | `test/oracle-transaction.test.ts` |
+| the node refuses an EIP-1559 envelope — which is why the successor marks Hearth as having no base fee | `test/oracle-transaction.test.ts` |
 
 The rule the old self-test could not state is stated there: nothing is compared against a
 fixture the library produced itself.
@@ -978,7 +976,7 @@ Mining you can actually run is elsewhere in this repository:
 **Why it was not worth carrying.** The browser miner signed its proofs in a 64-byte
 form with no recovery id, on the reasoning that the header already carried the coinbase
 key. The node had chosen the **65-byte recoverable form** — `r || s || recoveryId`,
-`node/src/chain/header.js:213-223` — because `verifyPow` recovers the signer from the
+`node/src/chain/header.js` — because `verifyPow` recovers the signer from the
 signature rather than trusting a key supplied alongside it. So every block the browser
 miner ever found was answered `bad signature`: after all the work, and indistinguishable
 from bad luck.
@@ -998,14 +996,14 @@ which is the limit of what a constant naming a format can do.
 imported `web/assets/mining/` and were removed in the same commit. The node's `/mining/*`
 path is still covered, by suites that test the node rather than a browser port of it:
 `evmchain`, `mine-session`, `miner-cli` and `mining-budget` (`node/package.json`).
-The surviving signing path is `HDR.signProof`, used by `node/src/chain/miner.js:85` and
-`node/src/mine/session.js:247`.
+The surviving signing path is `HDR.signProof`, used by `node/src/chain/miner.js` and
+`node/src/mine/session.js`.
 
 **Which endpoint, because there are two chains here.** `GET /mining/template?pub=` on the
 **UTXO** REST server still requires an 88-hex SPKI DER Ed25519 key
-(`node/src/rpc.js:130-134`), and always will — that is the other chain. The light miners
+(`node/src/rpc.js`), and always will — that is the other chain. The light miners
 above talk to the **account model**'s REST server (`node/src/evmnode.js`), which takes a
-65-byte uncompressed secp256k1 key (`node/bin/hearth-mine.js:11`).
+65-byte uncompressed secp256k1 key (`node/bin/hearth-mine.js`).
 
 `/mining/submit` **does not trust the submission**: only `nonce`, `powDigest` and
 `powSig` are taken from it; the header core and the transactions come from the
@@ -1034,9 +1032,9 @@ hearth devnet <init|accounts|run>  a throwaway chain for development
 ```
 
 Commands are required lazily, so `hearth trace` never pays for the wallet's crypto
-and a syntax error in one command cannot stop the others (`bin/hearth.js:14-18`).
+and a syntax error in one command cannot stop the others (`bin/hearth.js`).
 Exit codes are part of the interface: 0 succeeded, 1 the thing you asked about
-failed (a revert, an unreachable node), 2 you asked wrongly (`:78-81`).
+failed (a revert, an unreachable node), 2 you asked wrongly.
 
 **The tracer is not a phase-8 nicety.** `src/cli/trace.js` is 878 lines and was
 built *during* phase 3, alongside the interpreter, for a selfish reason: when a
@@ -1045,7 +1043,7 @@ week is whether you can see the exact opcode where our stack diverged from the
 reference (`docs/evm-spec.md` §8).
 
 Note `HEARTH_RPC_URL` still defaults to `http://127.0.0.1:8645`
-(`node/src/cli/client.js:34`),
+(`node/src/cli/client.js`),
 which is the **REST** port. The Ethereum RPC is settled on 8545
 (`docs/evm-spec.md` §6), so that default will have to move when phase 5 mounts the
 server.
@@ -1070,15 +1068,15 @@ only externally reachable caller is the unauthenticated `/mining/template`.
 ## 10. Not reachable, or not finished
 
 - ~~**Nothing produces an account-model block.**~~ Closed, and then published.
-  `node/src/evmnode.js:184` constructs and mounts `node/src/jsonrpc/server.js`
+  `node/src/evmnode.js` constructs and mounts `node/src/jsonrpc/server.js`
   over a real account-model chain, and mainnet — chain id 7411 — serves it at
   `https://rpc.cloudsforge.online`. What is still true of §4 is narrower: its
   vectors and fixtures are the evidence, and the public chain has not yet added
   much to them — it is hours old, holds **zero transactions**, and has never run
   at production proof-of-work parameters.
 - ~~**The browser miner and the node disagree about the coinbase key.**~~ Closed,
-  and both bullets here were reading the wrong chain. `node/src/rpc.js:130-134`
-  and `node/src/block.js:45` are the **UTXO** REST server and the **UTXO** block
+  and both bullets here were reading the wrong chain. `node/src/rpc.js`
+  and `node/src/block.js` are the **UTXO** REST server and the **UTXO** block
   rules; they require Ed25519 and always will, because that is a different chain
   with a different curve. The browser miner talks to the account model, whose
   `issue()` (`node/src/chain/miner.js`) has always required a 65-byte
@@ -1097,9 +1095,9 @@ only externally reachable caller is the unauthenticated `/mining/template`.
 - **The `eth_*` JSON-RPC server mounts on port 8545, path `/`** — settled, and
   implemented by `node/src/evmnode.js` for `hearthd --evm` (`docs/evm-spec.md`
   §6). It is a different PORT from the REST API, not a different path, because
-  `node/src/rpc.js:139` owns `POST /rpc` with the legacy `{method:'getinfo'}`
+  `node/src/rpc.js` owns `POST /rpc` with the legacy `{method:'getinfo'}`
   shape. A client that sends `eth_*` to the REST port is answered with a pointer to
-  the right port rather than `{"err":"no route"}` (`node/src/evmnode.js:481-486`).
+  the right port rather than `{"err":"no route"}` (`node/src/evmnode.js`).
   CF-13 was exactly this mistake made in a deployment: the explorer defaulted to the
   REST prefix, asked it for `eth_*`, and correctly reported "answered, but not with
   JSON-RPC 2.0" against a perfectly healthy chain. §3.4.
@@ -1112,7 +1110,7 @@ only externally reachable caller is the unauthenticated `/mining/template`.
   and `src/mempool.rs` are libraries wired to nothing but the self-check.
 - **Chain replay is silent about rejects.** `Chain.load()` re-validates every
   persisted block through `_ingest(…, persist=false)` and discards the return value
-  (`chain.js:48-51`), so a data directory containing an invalid block loads a
+  (`chain.js`), so a data directory containing an invalid block loads a
   shorter chain without saying why.
 
 ---
@@ -1152,12 +1150,12 @@ self-fed side branch that is stored and relayed forever.
   the RPC body cap — exhausts the JS stack. Worse than the crash: the threshold
   moves with remaining stack, so the *same* input decodes from a shallow call site
   and throws from a deep one, and a `RangeError` carries no `code` for a caller to
-  switch on. `Trie._deref` (`trie.js:159`) and `StateDB` (`statedb.js:117`, `:336`)
+  switch on. `Trie._deref` (`trie.js`) and `StateDB` (`statedb.js`)
   are on that path. Blast radius is limited today because
   `transaction.validate()` catches everything and reports `RLP_ERROR`. Also
   [`docs/robustness-review.md`](docs/robustness-review.md) §4.
 - **`isNormalized` is still not a complete test.** It now checks `nonce`, `data`
-  and `to` (`transaction.js:281-285`), which closed the gas undercharge — verified:
+  and `to` (`transaction.js`), which closed the gas undercharge — verified:
   `intrinsicGas` returns 856,126 for a `to: ''` draft either way. But six fields
   are still unchecked, and the divergence is demonstrable: a decimal-string
   `value` on an otherwise-normalised draft produces a **different `signingHash`**
@@ -1166,15 +1164,15 @@ self-fed side branch that is stored and relayed forever.
   node's own path reaches this — `decode()` normalises everything it produces — so
   it is a wallet/caller-facing footgun rather than a consensus bug.
 
-**The `@cloudsforge/hearth-node` version skew.** `node/package.json:3` is at
+**The `@cloudsforge/hearth-node` version skew.** `node/package.json` is at
 **0.2.0**, whose `txBody` emits a `records` key inside the signed body whenever a
-transaction carries records (`node/src/tx.js:47-49`). ForgeKeyvault deliberately
+transaction carries records (`node/src/tx.js`). ForgeKeyvault deliberately
 pins **`^0.1.0`**, which omits the key entirely. A record-carrying transaction
 therefore hashes differently on the two builds and a signature over it is valid on
 **exactly one**. Keyvault's response is to refuse `records` in EMBER signing
 altogether. **Do not let a blanket re-lock pull that dependency forward.**
 
-**The published package does not export the EVM.** `node/package.json:12-21`
+**The published package does not export the EVM.** `node/package.json`
 exports six UTXO-era modules and nothing under `crypto/`, `state/`, `evm/`,
 `chain/` or `jsonrpc/`. Anything downstream wanting the transaction encoder — the
 RPC probe does, and so does ForgeKeyvault eventually — must reach past the export
@@ -1182,14 +1180,14 @@ map or vendor it.
 
 **`proto/emission.js` is a model, not the schedule.** It computes
 `R0 · 2^(−h/HL)` in floating point; consensus computes a deterministic integer
-schedule with linear interpolation inside each epoch (`node/src/params.js:140-151`).
+schedule with linear interpolation inside each epoch (`node/src/params.js`).
 Year one differs by ~3.5% — **11,045,161 EMBER** from consensus against
 **10,667,873** from the model. [`docs/tokenomics.md`](docs/tokenomics.md) §3 carries
 the consensus numbers and is the file to use.
 
 **Other constraints and gaps:**
 
-- **`SPARKS_PER_EMBER` is still 1e8** (`node/src/params.js:6`) while every document
+- **`SPARKS_PER_EMBER` is still 1e8** (`node/src/params.js`) while every document
   integrates against 18 decimals. Specified, not implemented.
 - **`GET /address/:addr` is O(UTXO set) per call**, unauthenticated and under
   CORS `*`. `Chain.balance` and `Chain.supply` are the same shape, and `/supply`
@@ -1209,11 +1207,11 @@ the consensus numbers and is the file to use.
   body cap. The node is meant to sit behind a proxy. **This repository no longer ships
   one** — `web/nginx.conf` went with `web/` in `48bc28a` — so the proxy is now the
   deployment's responsibility, and an exposed node has nothing in front of it by default.
-- **Persistence is an append-only NDJSON file** (`chain.js:407`), never rewritten
+- **Persistence is an append-only NDJSON file** (`chain.js`), never rewritten
   and never compacted. Forked blocks are appended too.
 - **The whole chain state is in memory** — `store`, `utxo`, `txIndex` and
   `recordIndex` are all `Map`s, and `_reindex` on every reorg walks the full chain.
-- **`ember1commons…` is not a checksummed address** (`params.js:127`). Under the
+- **`ember1commons…` is not a checksummed address** (`params.js`). Under the
   account model it becomes a `0x…` address that **has not been chosen**, and there
   is no spend path of any kind ([`docs/decisions.md`](docs/decisions.md) §2.4).
 - **Hearth does not do fiat, custody or conversion.** This repository's wallets are
@@ -1257,10 +1255,10 @@ skipped case (§11).
 
 | Job | What it runs |
 | --- | --- |
-| Node reference client | `npm test` — **one command, not a list**, so a new suite is covered the moment it is added to `package.json` (`ci.yml:19-49`). Plus the coinnomics model sanity check |
+| Node reference client | `npm test` — **one command, not a list**, so a new suite is covered the moment it is added to `package.json` (`ci.yml`). Plus the coinnomics model sanity check |
 | Rust production core | `cargo fmt --check`, `clippy -D warnings`, build, test |
-| Web assets | ⚠️ **Runs nothing.** The syntax check, explorer self-test and wallet self-test that stood here all read `web/assets`, and went with it in `48bc28a` (`ci.yml:86-106`). The job still checks out the repo, reports green, and gates nothing. Its remaining body is a comment recording where the wallet gate went — §9.1. **A green job that executes no assertion is worth deleting rather than reading as a pass** |
-| Secret hygiene | `.env` untracked; no API tokens; a private-key matcher that requires a PEM header **followed by real base64** rather than the header alone, so a bare PEM literal in source cannot force the check to be muted (`ci.yml:126-140`) |
+| Web assets | ⚠️ **Runs nothing.** The syntax check, explorer self-test and wallet self-test that stood here all read `web/assets`, and went with it in `48bc28a` (`ci.yml`). The job still checks out the repo, reports green, and gates nothing. Its remaining body is a comment recording where the wallet gate went — §9.1. **A green job that executes no assertion is worth deleting rather than reading as a pass** |
+| Secret hygiene | `.env` untracked; no API tokens; a private-key matcher that requires a PEM header **followed by real base64** rather than the header alone, so a bare PEM literal in source cannot force the check to be muted (`ci.yml`) |
 | DeFi contracts | `pnpm compile` (which refuses on an init-code-hash mismatch) and the build tests |
 | Developer kit | The faucet's 66 checks; `tools/explorer-api`'s 177 fixture checks **and its 27-check live-chain gate**; `tools/verify`'s 116; the templates and probe parse; the probe boots and answers the chain id in both encodings. Every step carries `if: ${{ !cancelled() }}`, because one failing step used to skip every step after it |
 
@@ -1273,7 +1271,7 @@ What is red now:
 
 | Job | Failure | Is it an implementation failure? |
 | --- | --- | --- |
-| Node reference client | `node/test/mine-session.js` — `FAIL — 68/71 checks`, on the group *"but real refusals do stop it, rather than burning a core into a wall"* | **No — it is a flaky deadline.** The check races a real proof-of-work search against a fixed 20-second wall clock (`node/test/mine-session.js:285`). A win is geometrically distributed, so on a slow runner the search simply has not finished and the assertion reports `TIMED OUT`. The sibling group immediately above it allows 120 seconds for the same kind of wait (`:262`) |
+| Node reference client | `node/test/mine-session.js` — `FAIL — 68/71 checks`, on the group *"but real refusals do stop it, rather than burning a core into a wall"* | **No — it is a flaky deadline.** The check races a real proof-of-work search against a fixed 20-second wall clock (`node/test/mine-session.js`). A win is geometrically distributed, so on a slow runner the search simply has not finished and the assertion reports `TIMED OUT`. The sibling group immediately above it allows 120 seconds for the same kind of wait |
 
 **It was a deadline, not a defect, and it is fixed.** `node/test/mine-session.js`
 raced a **real proof-of-work search against a 20-second clock**, and it had to win
@@ -1289,13 +1287,13 @@ even varied between runs — "after exactly 2 refusals", then "3" — because th
 interpolates however far the search had got.
 
 The deadline is now **120 seconds, the same budget the group immediately above it
-already allows** (`:262`), whose own comment states the rule this assertion was not
-taking: *wait for the event, not for the clock* (`:257-261`). The guarantee is
+already allows**, whose own comment states the rule this assertion was not
+taking: *wait for the event, not for the clock*. The guarantee is
 unchanged — it still distinguishes a session that stops itself after five refusals
 from one that grinds forever.
 
 > **The benchmark beside it is healthy, and an earlier note here was wrong about
-> that.** `node/test/bench/block-execution.js:219` asserts that widening the state
+> that.** `node/test/bench/block-execution.js` asserts that widening the state
 > trie 5× costs **< 1.15×** the time. It measured 1.18× once and was briefly recorded
 > here as a second flaky threshold — but that reading was taken while two other test
 > suites were running on the same machine. Four clean sequential runs measured

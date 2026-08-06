@@ -134,11 +134,11 @@ These are documented, deliberate, and tracked. A report restating one of them
 without new impact will be closed with a pointer here.
 
 - **Homefire is not a non-outsourceable puzzle.** The seed binds only the
-  coinbase *public* key (`node/src/pow.js:45-47`), so a pool operator can
+  coinbase *public* key (`node/src/pow.js`), so a pool operator can
   distribute work and sign blocks itself. This is an open consensus decision
-  recorded at `node/src/pow.js:8-15` and in [`WHITEPAPER.md`](WHITEPAPER.md) §2.3.
+  recorded at `node/src/pow.js` and in [`WHITEPAPER.md`](WHITEPAPER.md) §2.3.
 - **Consensus parameters in this tree are dev-tuned** — a 64 KiB Homefire pad,
-  256 walk steps, coinbase maturity 10 (`node/src/params.js:51-52`, `:95`). They
+  256 walk steps, coinbase maturity 10 (`node/src/params.js`). They
   must be raised before mainnet and are tracked in
   [`docs/listing-checklist.md`](docs/listing-checklist.md) §7.
 - **Reorgs have no depth limit.** Fork choice is heaviest-cumulative-work with no
@@ -149,7 +149,7 @@ without new impact will be closed with a pointer here.
   is the same trade Ethereum makes; the reasoning is in
   [`docs/evm-spec.md`](docs/evm-spec.md) §3.
 - **`PREVRANDAO` is miner-influenceable.** It returns the parent block's Homefire
-  digest (`node/src/evm/interpreter.js:211-214`), and a miner who dislikes an
+  digest (`node/src/evm/interpreter.js`), and a miner who dislikes an
   outcome can discard the block and grind another. Contracts must not use it as a
   randomness source for anything an adversarial miner would profit from biasing.
 - **Precompiles `0x06`–`0x09` fail hard where `0x01`–`0x05` fail soft.** Both
@@ -185,7 +185,7 @@ without new impact will be closed with a pointer here.
   `RLP_ERROR`, so it is latent. **A reachable path that turns this into a consensus
   disagreement is very much wanted.**
 - **`isNormalized(tx)` is not a complete test.** It checks `nonce`, `data` and `to`
-  (`node/src/chain/transaction.js:281-285`); the remaining fields are read in
+  (`node/src/chain/transaction.js`); the remaining fields are read in
   whatever representation the caller left them in. A decimal-string `value` on an
   otherwise-normalised draft yields a different `signingHash` than the same draft
   normalised. Nothing on the node's own path reaches it — `decode()` normalises —
@@ -197,8 +197,8 @@ without new impact will be closed with a pointer here.
   ([`docs/robustness-review.md`](docs/robustness-review.md) §2, §3, §5). Documented
   and not yet fixed; re-reporting them adds nothing, but a *cheaper* variant does.
 - **The browser miner and the node agree about the coinbase key, and this entry
-  used to say otherwise.** It cited `node/src/rpc.js:130-134` and
-  `node/src/block.js:45` requiring Ed25519 — both of which belong to the UTXO
+  used to say otherwise.** It cited `node/src/rpc.js` and
+  `node/src/block.js` requiring Ed25519 — both of which belong to the UTXO
   chain, which is not the chain the browser miner talks to. The account model's
   issuer (`node/src/chain/miner.js` `issue()`) requires a 65-byte uncompressed
   secp256k1 key and `node/src/chain/header.js` `verifyPow` recovers one from the

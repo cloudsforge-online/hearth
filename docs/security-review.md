@@ -62,7 +62,7 @@ Legend: ✅ fixed & tested · 🟡 partially addressed · ⬜ tracked (not yet a
 | # | Finding | Status |
 |---|---------|--------|
 | **L1** | No cross-network replay domain in signatures. | ✅ The network id is bound into the signed transaction body. |
-| **L2** | RPC has open CORS, unbounded POST body, unbounded SSE clients. | 🟡 The POST body is now capped at `MAX_TX_BYTES + 8,192` = 108,192 bytes, answered with 413, and the socket destroyed (`node/src/rpc.js:257-290`). CORS is still `*` and SSE clients are still uncapped, both deliberately — the node is meant to sit behind a proxy, and [`../SECURITY.md`](../SECURITY.md) declares that out of scope rather than pretending otherwise. |
+| **L2** | RPC has open CORS, unbounded POST body, unbounded SSE clients. | 🟡 The POST body is now capped at `MAX_TX_BYTES + 8,192` = 108,192 bytes, answered with 413, and the socket destroyed (`node/src/rpc.js`). CORS is still `*` and SSE clients are still uncapped, both deliberately — the node is meant to sit behind a proxy, and [`../SECURITY.md`](../SECURITY.md) declares that out of scope rather than pretending otherwise. |
 | **L3** | Append-only persistence with no atomicity; blocks trusted on reload. | 🟡 Blocks are now **re-validated on reload** (full replay through consensus). Atomic writes/fsync + integrity marker ⬜ tracked. |
 
 ## Bottom line

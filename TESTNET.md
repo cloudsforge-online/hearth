@@ -148,13 +148,12 @@ This brings up exactly three node containers, all on `HEARTH_NETWORK=hearth-test
 
 | Container                | Role                  | Host RPC | Notes                                   |
 |--------------------------|-----------------------|----------|-----------------------------------------|
-| `hearth-testnet-seed`    | non-mining bootstrap  | `:8645`  | P2P on host `:8646` (TCP) and `:8648/p2p` (WebSocket) |
-| `hearth-testnet-miner1`  | mining, peers to seed | `:8647`  | `HEARTH_MINE=1`, `HEARTH_THROTTLE=0.6`  |
-| `hearth-testnet-miner2`  | mining, peers to seed | `:8649`  | `HEARTH_MINE=1`, `HEARTH_THROTTLE=0.6`  |
+| `hearth-testnet-seed`    | non-mining bootstrap  |  | P2P on host (TCP) and `:8648/p2p` (WebSocket) |
+| `hearth-testnet-miner1`  | mining, peers to seed |  | `HEARTH_MINE=1`, `HEARTH_THROTTLE=0.6`  |
+| `hearth-testnet-miner2`  | mining, peers to seed |  | `HEARTH_MINE=1`, `HEARTH_THROTTLE=0.6`  |
 
 Inside every container the RPC binds to `8645` and P2P to `8646`; only the
-**host** port mapping differs (the miners map host `:8647`/`:8649` → container
-`:8645`). Each container has its own named volume so its chain persists across
+**host** port mapping differs (the miners map host/ → container). Each container has its own named volume so its chain persists across
 restarts.
 
 ## Mining from your own machine

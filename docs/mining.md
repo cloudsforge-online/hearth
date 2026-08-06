@@ -45,11 +45,11 @@ reward and the fees and so must be an account this chain can credit
 ([`evm-spec.md`](evm-spec.md) §4). Homefire — the pad fill, the walk, the digest —
 is untouched, as is LWMA. The miners follow the key: `node/bin/hearth-mine.js` and
 `app-desktop/` both request a template with a 65-byte uncompressed secp256k1 key and
-sign the winning digest with it (`node/src/chain/header.js:213-223`).
+sign the winning digest with it (`node/src/chain/header.js`).
 
 **The node moved, and this paragraph did not.** It used to say the node still
-required an 88-hex SPKI DER *Ed25519* key, citing `node/src/rpc.js:130-134` and
-`node/src/block.js:45`, and concluded that the browser miner could not mine a
+required an 88-hex SPKI DER *Ed25519* key, citing `node/src/rpc.js` and
+`node/src/block.js`, and concluded that the browser miner could not mine a
 block this node would accept. Three other documents said the same thing. All four
 were reading THE UTXO CHAIN — `rpc.js` and `block.js` are that chain's REST server
 and that chain's block rules, and they will require Ed25519 for as long as they
@@ -64,14 +64,14 @@ one of them agreeing with the node.
 
 **There WAS a real mismatch, and it was one byte.** The browser miner's `POW_SIG_FORM`
 said `r || s`, 64 bytes, no recovery id; the node requires 65 — `r || s || recoveryId`
-(`node/src/chain/header.js:213-223`) — because `verifyPow` recovers the coinbase key
+(`node/src/chain/header.js`) — because `verifyPow` recovers the coinbase key
 from the signature rather than reading one. Every block the browser miner found was
 answered `bad signature` after the work was done. It was fixed — and then the whole
 tree was deleted in `48bc28a`, along with the `node/test/browser-proof.js` that had
 started checking the form rather than describing it. **The mismatch cannot recur,
 because there is no second signing implementation left to drift**: every miner in this
-repository calls `HDR.signProof` (`node/src/chain/miner.js:85`,
-`node/src/mine/session.js:247`).
+repository calls `HDR.signProof` (`node/src/chain/miner.js`,
+`node/src/mine/session.js`).
 
 **This is not non-outsourceability, and this document used to say it was.** The
 private key is used *after* a nonce wins (`node/src/miner.js`), never inside the
@@ -94,9 +94,9 @@ that forks the chain and rewrites every miner. It is deliberately open, not over
 
 - the **effort control** is a real duty cycle — the miner sleeps proportionally between
   batches rather than pinning a core. It is `--throttle F` (0..1) on the command line
-  (`node/bin/hearth-mine.js:109`), a percentage slider in the desktop app
-  (`app-desktop/ui/index.html:100-101`), and it is enforced in one place for both
-  (`node/src/mine/session.js:346`).
+  (`node/bin/hearth-mine.js`), a percentage slider in the desktop app
+  (`app-desktop/ui/index.html`), and it is enforced in one place for both
+  (`node/src/mine/session.js`).
 
 What did **not** survive, because both were properties of a browser tab and nothing
 replaces them:
@@ -159,7 +159,7 @@ pool can exist (§2).
 
 **A NEW TEMPLATE IS NOT NEW WORK, and a miner that assumes otherwise stops
 mining.** Building a candidate executes a full block, so the node memoizes it on
-(tip, mempool version, coinbase key) — `node/src/chain/miner.js:62-77`. While the
+(tip, mempool version, coinbase key) — `node/src/chain/miner.js`. While the
 tip is still, every `GET /mining/template` therefore returns a **byte-identical
 `coreHash` with a frozen `timestamp`**; only `templateId` and `expiresAt` change.
 A template lives 120 s, so a miner re-fetches roughly every two minutes and gets
@@ -200,7 +200,7 @@ it is why the hot path matters more than the language.
 
 **Politeness, concretely.** The effort setting is a duty cycle: the miner sleeps
 proportionally between batches rather than pinning a core
-(`node/src/mine/session.js:346`). The loop yields for a second reason too — a grind that
+(`node/src/mine/session.js`). The loop yields for a second reason too — a grind that
 never yields cannot notice a stop request or take new work. The hidden-tab trickle and
 the stop-on-battery behaviour were browser-tab properties and did not survive; see §4.
 
@@ -227,7 +227,7 @@ the same checks. The one that matters most is not about hashing: **the endpoint
 chooses the work**, so before spending a single evaluation the session recomputes
 the core hash from the header fields the template carries and refuses anything
 that does not commit to them, or that pays a different coinbase, or that was
-built with different proof-of-work parameters (`node/src/mine/session.js:147-188`).
+built with different proof-of-work parameters (`node/src/mine/session.js`).
 Without it a hostile endpoint cannot *steal* a block — the proof is signed by the
 coinbase key — but it can hand out work paying someone else, and every submission
 would be refused *after* the electricity was spent.
@@ -239,7 +239,7 @@ same JavaScript the command-line miner runs, in a bundled Node runtime, rather
 than a port. `app-desktop/src-tauri/src/engine.rs:7-17` is the long version.
 
 **The key is the difference between them.** `hearth-mine` and `hearthd` write the
-coinbase key in the clear at mode 600 (`node/src/coinbase.js:52-57`), which is the
+coinbase key in the clear at mode 600 (`node/src/coinbase.js`), which is the
 right trade for a server that must come back up unattended after a reboot — a
 passphrase the machine can read by itself is not a passphrase. A laptop is the
 opposite case: the file is synced, backed up to a cloud and carried around. So the

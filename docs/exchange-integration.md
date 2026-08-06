@@ -38,8 +38,8 @@ honest account of what is not built yet.
 table, the strict QUANTITY/DATA hex codec, the JSON-RPC 2.0 transport, the error
 mapping and the block/receipt shapes are all built and tested. They are tested
 against an in-memory fake chain **and** against a real one — 422 checks and 170
-respectively — and `node/src/evmnode.js:184` mounts the server, which mainnet is
-now serving from. (The header comment at `node/src/jsonrpc/methods.js:1-20` still
+respectively — and `node/src/evmnode.js` mounts the server, which mainnet is
+now serving from. (The header comment at `node/src/jsonrpc/methods.js` still
 says "the chain does not exist yet". That comment is stale; the code around it is
 not.)
 
@@ -144,7 +144,7 @@ it. When it does, it will listen on **8545** per §1.
 - **Flags:** `--data`, `--rpc`, `--p2p`, `--peer H:P` (repeatable), `--mine`,
   `--miner-address`, `--throttle`, `--quiet`. Each has an environment override:
   `HEARTH_DATA`, `HEARTH_RPC`, `HEARTH_P2P`, `HEARTH_PEERS`, `HEARTH_MINE`,
-  `HEARTH_THROTTLE` (`node/bin/hearthd.js:12-39`).
+  `HEARTH_THROTTLE` (`node/bin/hearthd.js`).
 - **Logging** is pino-shaped JSON in a container and prose at a TTY, switchable
   with `HEARTH_LOG_FORMAT` / `HEARTH_LOG_LEVEL`.
 - **Docker:** `docker compose up --build` brings up a seed, two miners and the web
@@ -153,18 +153,18 @@ it. When it does, it will listen on **8545** per §1.
 ### Operational facts you will care about, stated bluntly
 
 - **There is no RPC authentication and no rate limiting** beyond a 108,192-byte
-  request body cap, and CORS is `*` on every response (`node/src/rpc.js:19-25`).
+  request body cap, and CORS is `*` on every response (`node/src/rpc.js`).
   **Do not expose a node to the internet.** Bind it to loopback and put it behind
   your own proxy. **The repository no longer ships an nginx config** — `web/nginx.conf`
   was deleted with `web/` in `48bc28a` — so the proxy is entirely yours to provide.
 - **The whole chain state is held in memory.** `store`, the state map and the
-  indexes are all JavaScript `Map`s (`node/src/chain.js:31-40`). Memory grows with
+  indexes are all JavaScript `Map`s (`node/src/chain.js`). Memory grows with
   chain length and there is no pruning.
 - **Persistence is an append-only NDJSON file**, never compacted, and it includes
-  orphaned blocks (`node/src/chain.js:407`, `:360`). Disk grows monotonically.
+  orphaned blocks (`node/src/chain.js`). Disk grows monotonically.
 - **Startup replays and re-validates every persisted block**, and it does so
   silently — a data directory containing an invalid block loads a shorter chain
-  without saying why (`node/src/chain.js:48-51`). If your node comes up at an
+  without saying why (`node/src/chain.js`). If your node comes up at an
   unexpected height, that is the reason.
 - **No snapshot sync, no fast sync, no state pruning.** Initial sync is a full
   replay from genesis. This is explicitly out of scope for v1
@@ -209,7 +209,7 @@ walks blocks forward and never queries historical state.
 
 **Fork choice is heaviest-cumulative-work, with no depth limit.**
 `Chain._ingest` switches to any branch with strictly greater cumulative work
-(`node/src/chain.js:361-368`), and there is **no maximum reorg depth rule**, no
+(`node/src/chain.js`), and there is **no maximum reorg depth rule**, no
 checkpointing, no finality gadget and no "irreversible block" concept anywhere in
 the codebase. A 500-block reorg is not rejected by the protocol; it is simply
 expensive. Your accounting must be able to unwind a credited deposit, and you
@@ -218,14 +218,14 @@ should subscribe to reorg events rather than assuming depth implies safety.
 **Natural reorgs are shallow.** 15-second blocks over a gossip network produce
 occasional 1–2 block orphans. Difficulty retargets every block on a 60-block
 LWMA with each solve time clamped to `[1, 90]` seconds
-(`node/src/chain.js:212-235`), so the chain absorbs hashrate changes in about a
+(`node/src/chain.js`), so the chain absorbs hashrate changes in about a
 minute and does not oscillate. 60 confirmations is roughly 60× the natural orphan
 depth, which is the same margin exchanges apply on other 15-second chains.
 
 **60 is what we publish and what we credit at.** Stating that explicitly because
 the two used to differ: this document recommended 60 while the estate's own
 payment rail credited EMBER deposits at a shallower depth. It now credits at 60
-(`repos/forge-pay/services/pay/src/chains.ts:35`). If you are told a different
+(`repos/forge-pay/services/pay/src/chains.ts`). If you are told a different
 number by anyone, this table is the one to believe.
 
 **Adversarial reorgs are the real risk, and confirmations do not fix them.** The
@@ -253,7 +253,7 @@ hashrate data.**
 
 If you ever mine EMBER yourself, block rewards are unspendable until they are
 `COINBASE_MATURITY` blocks deep — **10 in this tree, intended to be ~100 in
-production** (`node/src/params.js:95`). This does not affect ordinary deposits.
+production** (`node/src/params.js`). This does not affect ordinary deposits.
 
 ---
 

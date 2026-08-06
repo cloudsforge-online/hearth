@@ -16,7 +16,7 @@ The chain is mid-migration. Read §1 before anything else.
 | Ledger | UTXO | **accounts** `{nonce, balance, storageRoot, codeHash}` |
 | Signatures | Ed25519 | **secp256k1** with public-key recovery |
 | Addresses | `ember1…` bech32 | **`0x…`**, EIP-55 checksummed |
-| Decimals | 8 ("sparks") | **18** (specified; `params.js:6` has not moved) |
+| Decimals | 8 ("sparks") | **18** (specified; `params.js` has not moved) |
 | Transactions | canonical JSON | **RLP legacy (type 0)**, EIP-155 |
 | Execution | none — records only | **the EVM**, Shanghai semantics |
 | API | REST + SSE on 8645 | **`eth_*` JSON-RPC on 8545** |

@@ -37,7 +37,7 @@ value: no market, no listed price, no liquidity.**
 Block 1 was mined **2026-08-04 19:12 UTC**; the chain is hours old and under 200
 blocks tall. It sits at its launch difficulty — `eth_getBlockByNumber` returns
 `difficulty: 0x100`, which is exactly the `GENESIS_TARGET` floor in
-`node/src/params.js:185`, so no block has yet been produced at production
+`node/src/params.js`, so no block has yet been produced at production
 proof-of-work parameters. The first 194 blocks averaged **~49 s apart**; 15 s is
 the protocol *target*, not an observed rate. And the whole thing runs on **one
 home server behind a single Cloudflare Tunnel** — no redundancy, no failover, and
@@ -89,7 +89,7 @@ Full argument: **[WHITEPAPER.md](WHITEPAPER.md)**. The specification:
 ## The coin
 
 - **Network:** Hearth · **Coin:** Ember · **Ticker:** `EMBER` · **Chain ID:** `7411` (testnet `7412`)
-- **Decimals:** **18** — specified; `node/src/params.js:6` still defines 1e8 and has not moved yet
+- **Decimals:** **18** — specified; `node/src/params.js` still defines 1e8 and has not moved yet
 - **Block time:** 15 seconds · **PoW:** Homefire (memory-hard, CPU-friendly, ASIC-resistant)
 - **Emission:** a deterministic integer schedule — 6 EMBER at genesis, 2-year half-life, perpetual 0.3 EMBER tail; 10% to the Commons
 - **Supply:** uncapped, disinflationary. **No hard cap and no fee burn** — gas is paid to the coinbase in v1
@@ -104,7 +104,7 @@ Full argument: **[WHITEPAPER.md](WHITEPAPER.md)**. The specification:
 ```
 
 Those are the numbers the **consensus schedule** produces
-(`node/src/params.js:140-151`); reproduce them with the command in
+(`node/src/params.js`); reproduce them with the command in
 [docs/tokenomics.md](docs/tokenomics.md) §3. `docs/coinnomics.md` carries a
 *different* table from a smooth exponential model with an assumed fee burn — it is
 the historical design rationale and its numbers are not the chain's.

@@ -21,14 +21,14 @@ those disagree with this file, this file is right and the reason is in §9.
 | Field | Value | Source |
 | --- | --- | --- |
 | Name | Hearth | — |
-| Ticker | `EMBER` | `node/src/params.js:10` |
-| Network id (P2P/tx binding) | `hearth` | `node/src/params.js:9` |
-| Chain ID (EIP-155) | `7411` mainnet · `7412` testnet | `node/src/chain/transaction.js:57` declares 7411. The testnet id is decided ([`evm-spec.md`](evm-spec.md) §1) and **nothing may hardcode it** — it must become per-network configuration |
+| Ticker | `EMBER` | `node/src/params.js` |
+| Network id (P2P/tx binding) | `hearth` | `node/src/params.js` |
+| Chain ID (EIP-155) | `7411` mainnet · `7412` testnet | `node/src/chain/transaction.js` declares 7411. The testnet id is decided ([`evm-spec.md`](evm-spec.md) §1) and **nothing may hardcode it** — it must become per-network configuration |
 | Decimals | **18** (target) / 8 (today) | see §2 |
 | Contract address | **none — EMBER is a native coin, not a token** | — |
-| Block time | 15 s | `node/src/params.js:14` |
-| Blocks per year | 2,103,840 | `node/src/params.js:15` |
-| Consensus | proof-of-work (Homefire), heaviest-cumulative-work fork choice | `node/src/pow.js`, `node/src/chain.js:323-370` |
+| Block time | 15 s | `node/src/params.js` |
+| Blocks per year | 2,103,840 | `node/src/params.js` |
+| Consensus | proof-of-work (Homefire), heaviest-cumulative-work fork choice | `node/src/pow.js`, `node/src/chain.js` |
 
 EMBER is the **native asset** of the chain. It has no contract address on Hearth.
 Any "EMBER" contract on any other chain is not this asset and is not endorsed.
@@ -41,7 +41,7 @@ Any "EMBER" contract on any other chain is not this asset and is not endorsed.
 | --- | --- | --- |
 | Decimals | 8 | **18** |
 | Smallest unit | 1 spark = 1e-8 EMBER | 1 wei = 1e-18 EMBER |
-| Constant | `SPARKS_PER_EMBER = 100_000_000` (`node/src/params.js:6`) | `WEI_PER_EMBER = 10n ** 18n` (`node/src/params.js`) |
+| Constant | `SPARKS_PER_EMBER = 100_000_000` (`node/src/params.js`) | `WEI_PER_EMBER = 10n ** 18n` (`node/src/params.js`) |
 
 `decimals: 8 → 18` is a deliberate, specified change
 ([`evm-spec.md`](evm-spec.md) §1): ERC-20 tooling, wallets and DEX maths all
@@ -73,7 +73,7 @@ number, and any listing form asking for "max supply" should be answered
 **"uncapped / no maximum supply"** rather than with a large placeholder.
 
 Supply at height *H* is exactly `Σ subsidy(h)` for `h = 0..H`, with `subsidy`
-defined at `node/src/params.js:140-151`. It is fully deterministic: given a
+defined at `node/src/params.js`. It is fully deterministic: given a
 height, the total supply is computable offline with no chain access.
 
 | Year | Issued that year | Cumulative supply | of which Commons |
@@ -112,20 +112,20 @@ Long-run issuance is a flat **631,152 EMBER/year** (0.3 × 2,103,840), which is 
 ## 4. Emission schedule
 
 ```
-R0        = 6 EMBER/block            node/src/params.js:19
-half-life = 2 years = 4,207,680 blocks   node/src/params.js:20, :15
-TAIL      = 0.3 EMBER/block, perpetual   node/src/params.js:21
+R0        = 6 EMBER/block            node/src/params.js
+half-life = 2 years = 4,207,680 blocks   node/src/params.js, :15
+TAIL      = 0.3 EMBER/block, perpetual   node/src/params.js
 ```
 
 Consensus cannot use floating point — two engines disagreeing by one spark is a
 chain split — so the on-chain rule is a **deterministic integer schedule**
-(`node/src/params.js:140-151`):
+(`node/src/params.js`):
 
 1. `epoch = floor(height / 4,207,680)`
 2. `base  = floor(600,000,000 sparks / 2^epoch)`, `next = floor(base / 2)`
 3. reward is `base` linearly interpolated down to `next` across the epoch
 4. `reward = max(TAIL, reward)`
-5. at `epoch >= 30` the schedule short-circuits to `TAIL` (`params.js:145`)
+5. at `epoch >= 30` the schedule short-circuits to `TAIL` (`params.js`)
 
 This is **not** a Bitcoin-style halving with a cliff: the reward decreases every
 single block and is continuous at epoch boundaries.
@@ -157,17 +157,17 @@ console.log('tail from height', lo, '=', P.subsidy(lo)/P.SPARKS_PER_EMBER, 'EMBE
 
 | Recipient | Share | At genesis | Enforcement |
 | --- | --- | --- | --- |
-| Miner | 90% of subsidy + all tips | 5.4 EMBER | `node/src/chain.js:306-309` |
-| Commons treasury | 10% of subsidy | 0.6 EMBER | `node/src/chain.js:310-313` |
+| Miner | 90% of subsidy + all tips | 5.4 EMBER | `node/src/chain.js` |
+| Commons treasury | 10% of subsidy | 0.6 EMBER | `node/src/chain.js` |
 
-`COMMONS_SHARE = 0.10` (`node/src/params.js:22`); the commons amount is
+`COMMONS_SHARE = 0.10` (`node/src/params.js`); the commons amount is
 `floor(subsidy × 0.10)` and the miner receives `subsidy − commons + tips`
 **exactly** — not "at most". A coinbase that mints one spark more or less than
-`subsidy + tips` is rejected (`node/src/chain.js:314-315`). This is the
+`subsidy + tips` is rejected (`node/src/chain.js`). This is the
 anti-inflation rule and it is checked on both the fast path and the fork path.
 
 The coinbase may carry at most 2 outputs and no application records
-(`chain.js:281-303`), so there is no room to attach anything else to a block
+(`chain.js`), so there is no room to attach anything else to a block
 reward.
 
 ---
@@ -177,7 +177,7 @@ reward.
 **Today (UTXO chain):** a flat base fee of 40,000 sparks (0.0004 EMBER) per
 transaction plus 100 sparks per byte of application-record payload, both
 **burned** — only the excess above that is a miner tip
-(`node/src/params.js:25-29`, `node/src/tx.js:24-26`, `node/src/chain.js:304`).
+(`node/src/params.js`, `node/src/tx.js`, `node/src/chain.js`).
 The fee is flat, not congestion-priced.
 
 **Target (account/EVM chain):** standard EVM gas. `gasUsed × gasPrice` is paid
@@ -216,7 +216,7 @@ the undisbursed remainder stays excluded.
 foundation reserve and no escrow, because none of those exist.
 
 **The node's `/supply` endpoint does not do this subtraction for you.**
-`GET /supply` (`node/src/rpc.js:228-240`) returns:
+`GET /supply` (`node/src/rpc.js`) returns:
 
 ```json
 { "circulating": 1234500000000, "circulatingEmber": 12345.0,
@@ -225,8 +225,8 @@ foundation reserve and no escrow, because none of those exist.
 ```
 
 Its `circulating` field is the sum of the **entire** UTXO set, which *includes*
-the Commons balance (`rpc.js:231-234` calls `chain.supply()`, and
-`chain.supply()` at `chain.js:166-170` sums every unspent output). Aggregators
+the Commons balance (`rpc.js` calls `chain.supply()`, and
+`chain.supply()` at `chain.js` sums every unspent output). Aggregators
 should compute `circulating − commonsTreasury`. The field name is misleading and
 is a known issue; the arithmetic is unambiguous.
 
@@ -239,7 +239,7 @@ yet — see [`listing-checklist.md`](listing-checklist.md).
 
 **What it is.** 10% of every block subsidy is minted to
 `ember1commons00000000000000000000000000cmns`
-(`node/src/params.js:127`), enforced at `node/src/chain.js:310-313`. Its purpose
+(`node/src/params.js`), enforced at `node/src/chain.js`. Its purpose
 is to fund development, security audits, explorers and infrastructure without
 selling the network to investors.
 
@@ -257,7 +257,7 @@ mechanism. Until it exists, the treasury is an accumulator.
 Two further notes an integrator will hit:
 
 - The Commons address is **not checksum-valid** — it fails `isValidAddress`
-  (`node/src/crypto.js:64-71`). It is a deliberately unspendable sink in the
+  (`node/src/crypto.js`). It is a deliberately unspendable sink in the
   UTXO model. The deleted explorer's address search skipped the checksum test for
   this reason; that page went with `web/` in `48bc28a`, so any replacement surface has
   to rediscover the exception rather than inherit it.
@@ -280,11 +280,11 @@ Two further notes an integrator will hit:
 **The claim:** at genesis, total spendable supply is zero. No allocation, no
 sale, no vesting, no founder balance, no ecosystem fund.
 
-**The code:** `Chain.genesis()` (`node/src/chain.js:55-70`) builds a fixed,
+**The code:** `Chain.genesis()` (`node/src/chain.js`) builds a fixed,
 mined-free genesis whose single coinbase output pays amount `0` to the Commons
 address. There is no other output and no other issuance path — every subsequent
 coin must come from a coinbase that `_validate` checked against `P.subsidy(height)`
-(`node/src/chain.js:304-315`).
+(`node/src/chain.js`).
 
 **Verify it in one command**, from a clean clone, with no network access:
 
@@ -318,7 +318,7 @@ height 0 supply 0
 `supply 0` is the claim. The coinbase `id` above is the genesis coinbase txid of
 the *current* tree; it will change when the account-model genesis is written.
 
-The same property is asserted in CI at `node/test/unit.js:101`
+The same property is asserted in CI at `node/test/unit.js`
 (`chain.supply() === 0`, "genesis creates no spendable supply"), which runs on
 every push (`.github/workflows/ci.yml`).
 
@@ -359,14 +359,14 @@ verify it directly rather than relying on this paragraph.
 - **All year-based figures assume blocks land exactly on the 15-second target.**
   The schedule is indexed by **height, not by time**. If the network mines faster
   than target — which is what the `MIN_TARGET` clamp exists to prevent
-  (`node/src/params.js:57-80`) — emission accelerates in wall-clock terms. Height
+  (`node/src/params.js`) — emission accelerates in wall-clock terms. Height
   is the ground truth; years are a convenience.
-- **`MAX_MONEY` is 90,000,000 EMBER** (`node/src/params.js:84`) and is a
+- **`MAX_MONEY` is 90,000,000 EMBER** (`node/src/params.js`) and is a
   **per-output** ceiling, not a supply cap. Cumulative supply crosses it around
   year 96. In the UTXO model that only constrains single outputs; the
   account-model equivalent has not been specified.
 - **Consensus parameters in this tree are dev-tuned**, including
-  `COINBASE_MATURITY: 10` against a production ~100 (`node/src/params.js:95`).
+  `COINBASE_MATURITY: 10` against a production ~100 (`node/src/params.js`).
   Changing any of them is a hard fork.
 - **No independent economic review has been done.** These are the rules the code
   enforces, not a claim that the rules are good ones.

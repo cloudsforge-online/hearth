@@ -3,14 +3,14 @@
  *
  * The loop is the UTXO miner's, unchanged in shape and for the same reason: nonces
  * are searched in batches on a `setImmediate` loop so the event loop never blocks,
- * with a duty-cycle throttle for polite mining (../miner.js:96-129).
+ * with a duty-cycle throttle for polite mining (../miner.js).
  *
  * WHAT IS DIFFERENT IS WHAT A CANDIDATE COSTS. On the UTXO chain, assembling a
  * candidate validates signatures against a copy of the UTXO set. Here it EXECUTES
  * every selected transaction — up to 30,000,000 gas of EVM — to learn the state
  * root the header must commit to. There is no cheaper way: the root is a function
  * of the execution and nothing else. So the candidate is memoized on
- * (tip, mempool version) exactly as ../miner.js:43-66 memoizes its selection, and
+ * (tip, mempool version) exactly as ../miner.js memoizes its selection, and
  * for a sharper version of the same reason: `/mining/template` is unauthenticated
  * and served under `access-control-allow-origin: *`, so without the memo any
  * stranger could buy a full block of execution per HTTP request.

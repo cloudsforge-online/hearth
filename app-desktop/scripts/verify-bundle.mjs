@@ -275,7 +275,7 @@ async function mineWithIt(bin) {
   group('THE INSTALLED APPLICATION MINES, ON THIS PLATFORM, AND THE CHAIN SAYS SO');
 
   /* `hearth-test` shrinks the PoW pad so a block is seconds rather than minutes
-   * — node/src/params.js:15 and its POW_SCRATCH_KIB. Difficulty, retargeting,
+   * — node/src/params.js and its POW_SCRATCH_KIB. Difficulty, retargeting,
    * signing, the proof format and the acceptance rules are untouched, so what is
    * being proven is unchanged; only the grind is affordable. Both processes get
    * the same value or they are on different chains. */

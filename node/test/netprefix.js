@@ -14,7 +14,7 @@
  * accept-key vector: a check whose expected values all came from the implementation under test
  * agrees with that implementation about a bug. The eleven cases in the first group are the ones
  * `@cloudsforge/contracts-auth`'s own suite asserts about `truncateIp`
- * (contracts/packages/auth/src/index.test.ts:372-402), which micro-identity's session prefixes are
+ * (contracts/packages/auth/src/index.test.ts), which micro-identity's session prefixes are
  * stored by. If this file and that one ever disagree, the estate has two definitions of "a network
  * prefix" and one of them is wrong.
  *

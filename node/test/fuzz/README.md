@@ -122,8 +122,8 @@ Two things about this, in order of importance:
   throws from a deep one. Observed directly: at default stack size, depth 3,000
   threw while depth 5,000 succeeded in the same process. Anything that treats
   "RLP threw" and "RLP returned" as different outcomes is therefore not a pure
-  function of its input. `Trie._deref` → `RLP.decode` (`trie.js:159`) and
-  `StateDB` (`statedb.js:117`, `:336`) are on that list.
+  function of its input. `Trie._deref` → `RLP.decode` (`trie.js`) and
+  `StateDB` (`statedb.js`) are on that list.
 - **It is not a typed error.** The module's contract is that every rejection
   names the rule broken (`rlp: …`); a `RangeError` names nothing and carries no
   code.
@@ -136,7 +136,7 @@ levels — would close it.
 
 ### 2. `isNormalized(tx)` sniffs two fields out of nine
 
-`src/chain/transaction.js:281`:
+`src/chain/transaction.js`:
 
 ```js
 function isNormalized(tx) {

@@ -8,7 +8,7 @@
 >
 > **Consensus does not run that.** It runs a deterministic *integer* schedule with
 > linear interpolation inside each two-year epoch
-> (`node/src/params.js:140-151`), because floating point in consensus means two
+> (`node/src/params.js`), because floating point in consensus means two
 > engines disagreeing by one spark and splitting the chain.
 >
 > The two differ, and by more than rounding: **the chain issues 11,045,161 EMBER
@@ -30,7 +30,7 @@
 | ticker | `EMBER` |
 | decimals | **18** on the account-model chain (`evm-spec.md` §1) |
 
-The **"spark" (1e-8) is retired with the UTXO chain.** `node/src/params.js:6`
+The **"spark" (1e-8) is retired with the UTXO chain.** `node/src/params.js`
 still defines `SPARKS_PER_EMBER = 100_000_000` — the migration to 18 decimals is
 specified and not yet implemented ([`decisions.md`](decisions.md) §1.6) — so the
 tables below are in whole EMBER, which is unit-independent. Multiply by `1e18`
@@ -61,7 +61,7 @@ reward(height) = max(TAIL, R0 · 2^(−height / HALFLIFE_BLOCKS))
 **The on-chain rule** is its deterministic integer approximation: the reward halves
 each half-life epoch, linearly interpolated within the epoch. It tracks the
 exponential closely and is computed bit-identically on any engine
-(`node/src/params.js:140-151` ↔ `rust/hearthd/src/ledger.rs`, pinned by a parity
+(`node/src/params.js` ↔ `rust/hearthd/src/ledger.rs`, pinned by a parity
 test — `subsidy(4_207_680) == 300_000_000`).
 
 **Linear interpolation is above the exponential everywhere inside an epoch**, which
@@ -112,7 +112,7 @@ approached issuance. **That is withdrawn, and `proto/emission.js` still contains
 the burn ramp that produced it.** Two facts kill it:
 
 - The UTXO chain's fee is a **flat** 40,000 sparks plus 100 per record byte
-  (`node/src/params.js:25-29`) — burned, but not congestion-priced, so it never
+  (`node/src/params.js`) — burned, but not congestion-priced, so it never
   scales with usage the way the model assumed.
 - **The account-model chain has no burn at all.** `gasUsed × gasPrice` is paid to
   the block's coinbase, with no burn in v1 (`evm-spec.md` §1). `BASEFEE` exists
@@ -142,7 +142,7 @@ demonstrated to exist.
 ## 6. Distribution: fair launch
 
 - **No premine.** Genesis holds no spendable balance
-  (`node/src/chain.js:55-70`; the one-command verification is in
+  (`node/src/chain.js`; the one-command verification is in
   [`tokenomics.md`](tokenomics.md) §9).
 - **No ICO, no sale, no private round, no airdrop.** You mine or you earn.
 - **No founder or VC allocation.** The only "allocation" is the transparent,
@@ -155,7 +155,7 @@ re-verified against its state root when it exists.
 ## 7. The Commons treasury — and what does not exist
 
 10% of every block subsidy accrues to an on-chain treasury
-(`node/src/params.js:22`, enforced at `node/src/chain.js:310-313`). It is intended
+(`node/src/params.js`, enforced at `node/src/chain.js`). It is intended
 to fund core development, security audits, explorers and infrastructure without
 selling the network to investors.
 

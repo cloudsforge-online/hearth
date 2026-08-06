@@ -62,6 +62,6 @@ THIS IS NOT A NODE. No state, no execution, no mining. Deployments will hang.
 | `HEARTH_PROBE_QUIET` | unset | `1` stops the per-call log |
 
 Note that the default port collides with the UTXO-era REST API, which occupies
-8645 (`node/src/params.js:130`). Use a different one if a `hearthd` is running —
+8645 (`node/src/params.js`). Use a different one if a `hearthd` is running —
 that collision is itself an open question, documented at
 [`../../docs/network-config.md`](../../docs/network-config.md) §3.

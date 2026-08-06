@@ -31,7 +31,7 @@ guess and nobody has to ask.
 > ever restored. Precisely:
 >
 > - **The chain runs.** `node/src/evmnode.js` builds the blockchain, the miner
->   and the JSON-RPC server and mounts it on 8545 (`evmnode.js:186`).
+>   and the JSON-RPC server and mounts it on 8545 (`evmnode.js`).
 >   `hearthd --evm --mine` is a one-command account-model chain on your own
 >   machine, and [`../docker-compose.testnet.yml`](../docker-compose.testnet.yml)
 >   runs three of them on `hearth-testnet`, chain id **7412**, with the genesis
@@ -141,7 +141,7 @@ assumes, so a developer's first guess is correct.
 
 **The allocation below is built and bound.** Both columns are served today:
 `node/src/evmnode.js` constructs the JSON-RPC server and listens on 8545
-(`evmnode.js:186`), and `docker-compose.testnet.yml` publishes all three host
+(`evmnode.js`), and `docker-compose.testnet.yml` publishes all three host
 ports. This paragraph used to say the opposite — "nothing serves 8545 yet, grep
 and you will find nothing" — and it was true when it was written.
 
@@ -177,8 +177,7 @@ of them at once**, which is now a live constraint rather than a future one.
 
 Because `POST /rpc` there is already a different protocol. The REST server answers
 it with a `{method, params}` shape whose method set is
-`getinfo` / `getbalance` / `getblockcount` / `sendtx` (`node/src/rpc.js:139`,
-`:242-254`), and anything else gets `{"err":"unknown method"}` at **HTTP 200** —
+`getinfo` / `getbalance` / `getblockcount` / `sendtx` (`node/src/rpc.js`), and anything else gets `{"err":"unknown method"}` at **HTTP 200** —
 with no `jsonrpc` field and no error object.
 
 Observed against a running node in this tree:

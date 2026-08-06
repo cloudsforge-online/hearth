@@ -360,16 +360,16 @@ function fakeFetch(handler) {
   // The cause is an interaction, which is why neither half looks wrong alone:
   //
   //   THE NODE MEMOIZES THE CANDIDATE on (tip, mempool version, coinbase key)
-  //   — src/chain/miner.js:62-77 — because /mining/template is unauthenticated
+  //   — src/chain/miner.js — because /mining/template is unauthenticated
   //   and building one EXECUTES a full block. So while the tip is still, every
   //   request returns a byte-identical `coreHash` with a frozen `timestamp`;
   //   only `templateId` and `expiresAt` change. That is asserted below rather
   //   than assumed.
   //
   //   THE MINER RESTARTED ITS SEARCH AT NONCE 0 on every re-fetch, and a
-  //   template expires every 120 s (src/chain/miner.js:35), so it re-fetched
+  //   template expires every 120 s (src/chain/miner.js), so it re-fetched
   //   every 115 s (EXPIRY_MARGIN_MS). The seed is h(coreHash, nonce,
-  //   coinbasePub) (src/pow.js:56-58): the same nonce over the same coreHash has
+  //   coinbasePub) (src/pow.js): the same nonce over the same coreHash has
   //   the same digest, forever. So the miner re-tested exactly the nonces it had
   //   already rejected, at full speed, and if no winner lay in the range one
   //   window covers it could NEVER find one. Six blocks a second of honest work,

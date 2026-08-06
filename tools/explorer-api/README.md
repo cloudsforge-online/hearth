@@ -84,7 +84,7 @@ Plain text, no JSON wrapper and no units, because that is the shape
 
 **The trap this service exists to close.** The node's own `GET /supply` reports
 a field called `circulating` whose value is the sum of the entire UTXO set —
-**including the Commons treasury** (`node/src/rpc.js:228-240`,
+**including the Commons treasury** (`node/src/rpc.js`,
 [`../../docs/tokenomics.md`](../../docs/tokenomics.md) §7). An aggregator taking
 it at face value publishes a circulating supply overstated by the whole
 treasury, currently 10% of everything ever mined.

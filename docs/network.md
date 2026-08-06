@@ -22,7 +22,7 @@ This starts:
 
 | Service | Role | Address |
 |---|---|---|
-| `seed` | bootstrap node (not mining) | RPC on host `:8645`, P2P `:8646` |
+| `seed` | bootstrap node (not mining) | RPC on host, P2P |
 | `miner1` | mining node, peers to seed | internal |
 | `miner2` | mining node, peers to seed | internal |
 | `web` | explorer + wallet + pay demo | http://localhost:8080 |

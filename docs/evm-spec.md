@@ -114,7 +114,7 @@ happens to collide with a mainnet one.
 This surfaced only because retiring the Ed25519 path deleted the `net` field, and the agent doing
 it noticed the protection had gone rather than assuming EIP-155 covered it. `7412` is adjacent,
 memorable and inside the same verified-free range. **Nothing may hardcode `CHAIN_ID`** — it is
-per-network configuration, and `node/src/chain/transaction.js:57` currently declares one constant.
+per-network configuration, and `node/src/chain/transaction.js` currently declares one constant.
 
 ---
 
@@ -176,7 +176,7 @@ instead would produce different code and a different address, which defeats the 
 ## 4. Block header
 
 The existing header is `{version, prevHash, merkleRoot, height, timestamp, target, coinbasePub}`
-(`node/src/block.js:13-23`). Version 2 extends it:
+(`node/src/block.js`). Version 2 extends it:
 
 ```
 { version: 2, prevHash, height, timestamp, target, coinbasePub,
@@ -207,7 +207,7 @@ rejects any swap whose deadline has "passed". Convert at the header, not at the 
 there is one representation on the chain.
 
 *Correction (phase 5): this section previously said "the v1 header stores milliseconds". It does
-not — `node/src/miner.js:88` divides by 1000 and genesis is `1750000000`, so v1 is already in
+not — `node/src/miner.js` divides by 1000 and genesis is `1750000000`, so v1 is already in
 seconds. The requirement stands and is now enforced rather than assumed: `header.js` refuses any
 timestamp past `MAX_TIMESTAMP` (≈ the year 5138), which every millisecond value exceeds today, so a
 producer that forgets to divide fails on its first block instead of silently.*
@@ -551,8 +551,8 @@ latency for anything that cannot poll.
 
 8545 is the port the ecosystem already defaults to: MetaMask's localhost default, and what every
 Hardhat and Foundry tutorial assumes, so a developer's first guess is correct.
-`tools/hardhat/hardhat.config.js:26` already defaults to `http://127.0.0.1:8645` and needs its one
-line changed. **The REST API stays on 8645, untouched**, because `node/src/rpc.js:152` answers
+`tools/hardhat/hardhat.config.js` already defaults to `http://127.0.0.1:8645` and needs its one
+line changed. **The REST API stays on 8645, untouched**, because `node/src/rpc.js` answers
 `POST /rpc` with the legacy `{method:'getinfo'}` shape and mounting eth_* alongside it hands a
 client a 200 that is not JSON-RPC 2.0 — which reads as an empty chain rather than as a
 misconfiguration. Two ports, two protocols, no ambiguity.

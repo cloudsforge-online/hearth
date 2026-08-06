@@ -119,7 +119,7 @@ node scripts/verify-bundle.mjs   # after `npm run build`: what is IN the
 ```
 
 `HEARTH_NETWORK=hearth-test` in front of the two that mine shrinks the
-proof-of-work pad (`node/src/params.js:15`) and turns three minutes into ten
+proof-of-work pad (`node/src/params.js`) and turns three minutes into ten
 seconds. Difficulty, retargeting, signing, the proof format and the acceptance
 rules are untouched, so the claim being proven does not change — only the grind
 is affordable. That is what CI uses.

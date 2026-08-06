@@ -511,7 +511,7 @@ group('block production');
   /* The coinbase is CREDITED INSIDE THE CANDIDATE, so a candidate built for one
    * miner has a state root that is wrong for any other. The UTXO chain does not
    * have this property — its selection genuinely does not depend on who is paid —
-   * so a memo inherited from ../miner.js:43-66 hands the second caller a block that
+   * so a memo inherited from ../miner.js hands the second caller a block that
    * fails its own validation, and `/mining/template` is where that happens. */
   ok(mineCand.header.stateRoot !== otherCand.header.stateRoot,
     'a candidate built for a different coinbase key has a different state root');

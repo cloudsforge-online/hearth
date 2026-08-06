@@ -58,10 +58,10 @@ const EXPIRY_MARGIN_MS = 5000;
  * reason the miner works at all.
  *
  * A node's template is MEMOIZED on (tip, mempool version, coinbase key) —
- * src/chain/miner.js:62-77 — so while the tip is still, every request returns a
+ * src/chain/miner.js — so while the tip is still, every request returns a
  * byte-identical `coreHash` with a frozen `timestamp`; only `templateId` and
  * `expiresAt` differ. The seed is `h(coreHash, nonce, coinbasePub)`
- * (src/pow.js:56-58), so a given nonce over a given template has ONE digest,
+ * (src/pow.js), so a given nonce over a given template has ONE digest,
  * forever. Re-searching a range already searched is therefore not merely
  * wasteful, it is guaranteed to fail.
  *
@@ -74,8 +74,8 @@ const EXPIRY_MARGIN_MS = 5000;
  * they duplicate each other's search, and from a random offset they do not.
  *
  * 2^32 is picked to stay far inside a safe integer even after days of grinding,
- * and the node accepts any non-negative integer nonce (src/chain/miner.js:213;
- * the header field is 8 bytes, src/chain/header.js:95-99).
+ * and the node accepts any non-negative integer nonce (src/chain/miner.js;
+ * the header field is 8 bytes, src/chain/header.js).
  */
 const NONCE_SPACE = 2 ** 32;
 

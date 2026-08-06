@@ -12,7 +12,7 @@
  *                     existing explorer, faucet and browser miner already speak.
  *
  * They are separate servers rather than one server with a router because
- * `src/rpc.js:152` already answers `POST /rpc` with the legacy `{method:'getinfo'}`
+ * `src/rpc.js` already answers `POST /rpc` with the legacy `{method:'getinfo'}`
  * shape. Anything eth_* pointed at that path gets HTTP 200 and a body that is not
  * JSON-RPC 2.0, which every client reports as an empty chain rather than as a
  * misconfiguration — a whole class of support question avoided by not sharing a

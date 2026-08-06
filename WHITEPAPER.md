@@ -107,7 +107,7 @@ Hearth is an attempt to take the first two seriously without ignoring the third.
 ### 2.1 What it is, exactly
 
 ```
-pad  = 64 KiB (8,192 × 8-byte words)          node/src/params.js:51, node/src/pow.js:26
+pad  = 64 KiB (8,192 × 8-byte words)          node/src/params.js, node/src/pow.js
 fill : cur = SHA256(seed)
        repeat 8,192×:  cur = SHA256(cur);  take cur[0..8] into pad
 walk : acc = SHA256(seed ‖ pad[0..64])
@@ -117,7 +117,7 @@ walk : acc = SHA256(seed ‖ pad[0..64])
 out  = SHA256(acc ‖ pad[last 64 bytes])
 ```
 
-`node/src/pow.js:29-42`; step count at `node/src/params.js:52`. One attempt is
+`node/src/pow.js`; step count at `node/src/params.js`. One attempt is
 roughly 8,450 sequential SHA-256 invocations and touches the entire pad.
 
 **Homefire compiles nothing.** It is chained SHA-256 over a scratchpad. It is
@@ -140,14 +140,14 @@ claimed here.
 - **Work handed to a hasher cannot be redirected.** The winning digest must be
   signed by the coinbase key, and `verifyPow` additionally requires the
   coinbase's first output to pay the address derived from that key
-  (`node/src/block.js:45-52`). A candidate built for your public key is worthless
+  (`node/src/block.js`). A candidate built for your public key is worthless
   to anyone else.
 
 ### 2.3 The property it does not have
 
 **Homefire is not a non-outsourceable puzzle.** The seed binds
 `(headerCoreHash, nonce, coinbasePubHex)` — only the coinbase *public* key
-(`node/src/pow.js:45-47`). The private key is used exactly once, *after* a nonce
+(`node/src/pow.js`). The private key is used exactly once, *after* a nonce
 has already won, to sign the digest (`node/src/miner.js`). A pool operator can
 therefore distribute the header core together with its **own** public key,
 collect `(nonce, digest)` pairs from hashers who genuinely cannot steal the
@@ -156,7 +156,7 @@ reward, and sign the blocks itself. Consensus does not notice and cannot.
 Making that impossible requires the private key inside the hash loop, which is a
 consensus change that forks the chain and breaks the CI-conformance-tested
 browser miner. It is a recorded open decision, not an oversight; the source says
-so at `node/src/pow.js:8-15`.
+so at `node/src/pow.js`.
 
 So: **pools can form on Hearth.** "No pools required" is true — solo mining on a
 laptop works and is the default configuration of `hearthd`. "Pools cannot form"
@@ -200,11 +200,11 @@ foundation wallet, no "ecosystem fund" that turns out to be 20% of supply.
 ### 3.2 The three things that make it real
 
 1. **Zero supply at genesis.** The genesis coinbase pays amount `0` to the
-   Commons address and creates no spendable output (`node/src/chain.js:55-70`).
+   Commons address and creates no spendable output (`node/src/chain.js`).
 2. **The only issuance path is a mined block.** `_validate` recomputes the
    expected subsidy for every block from height alone and rejects any coinbase
    that mints one spark more than `subsidy + tips`
-   (`node/src/chain.js:304-315`). There is no other mint.
+   (`node/src/chain.js`). There is no other mint.
 3. **The puzzle runs on hardware people already own.** A CPU is competitive by
    construction, and mining needs neither a full node nor a sync: `node/bin/hearth-mine.js`
    and the desktop app in `app-desktop/` are light miners that take work over HTTP,
@@ -233,8 +233,8 @@ this paper will not claim it until it exists.
 ### 3.4 The Commons treasury
 
 10% of every block subsidy is minted to an on-chain address
-(`node/src/params.js:22`, address at `:127`, enforced at
-`node/src/chain.js:306-313`). It funds development, audits and infrastructure so
+(`node/src/params.js`, address, enforced at
+`node/src/chain.js`). It funds development, audits and infrastructure so
 that the network does not have to be sold to investors to be built.
 
 Two honest notes. First, the Commons is a *mint*, not a premine: it accrues block
@@ -251,11 +251,11 @@ as though it were a mechanism; it is a design sketch. Full accounting is in
 ## 4. Difficulty
 
 Difficulty retargets **every block** with a 60-block linearly-weighted moving
-average (`node/src/chain.js:212-235`, window at `node/src/params.js:16`). Each
+average (`node/src/chain.js`, window at `node/src/params.js`). Each
 solve time is clamped to `[1, 6 × TARGET_BLOCK_TIME]` before it enters the
 average, so a single timestamp outlier cannot swing the target. The target is a
 continuous 256-bit value, and the expected target is recomputed and compared
-exactly on every block including the fork path (`chain.js:265`, `:349`) — the
+exactly on every block including the fork path (`chain.js`) — the
 retarget rule *is* consensus, not a heuristic.
 
 Per-block retargeting is what makes small miners viable. A chain that retargets
@@ -264,12 +264,12 @@ retargets every block absorbs a departure in about a minute.
 
 `MIN_TARGET` — the *hardest* the chain is allowed to become — is
 `0000000000000000ffff…`, about 2⁻⁶⁴, or ~1.8×10¹⁹ attempts per block
-(`node/src/params.js:80`). This is not decoration. The previous value, ~2⁻²⁰,
+(`node/src/params.js`). This is not decoration. The previous value, ~2⁻²⁰,
 bound at roughly 300–500 CPU cores; past that the clamp fires, blocks arrive
 faster than the 15-second target, and **emission permanently accelerates**,
 because the schedule is indexed by height and not by time. For a coin whose whole
 thesis is that ordinary people mine it, a ceiling that binds at a few hundred
-CPUs was a launch blocker. `node/test/unit.js:105-113` pins the property rather
+CPUs was a launch blocker. `node/test/unit.js` pins the property rather
 than the literal.
 
 ---
@@ -283,7 +283,7 @@ tail                   = 0.3 EMBER/block, perpetual
 commons share          = 10% of the subsidy
 ```
 
-`node/src/params.js:19-22`; the schedule itself is `params.js:140-151`.
+`node/src/params.js`; the schedule itself is `params.js`.
 
 Consensus cannot use floating point, so the reward is a **deterministic integer
 schedule**: it halves each two-year epoch, linearly interpolated inside the
@@ -332,7 +332,7 @@ Per [`docs/evm-spec.md`](docs/evm-spec.md):
 | State model | UTXO | accounts `{nonce, balance, storageRoot, codeHash}` |
 | Address | `ember1…` bech32 | `0x…`, last 20 bytes of `keccak256(pubkey[1:])`, EIP-55 checksummed |
 | Signatures | Ed25519 | secp256k1 with public-key recovery |
-| Decimals | 8 ("sparks") | **18** — every EVM tool assumes 18 for a native asset. *Specified; `node/src/params.js:6` still defines 1e8* |
+| Decimals | 8 ("sparks") | **18** — every EVM tool assumes 18 for a native asset. *Specified; `node/src/params.js` still defines 1e8* |
 | Chain ID | none (a `net` field inside the signed body) | **7411** mainnet, **7412** testnet, EIP-155 replay protection |
 | Fork semantics | n/a | **Shanghai** — PUSH0, EIP-3529 refunds, warm coinbase, initcode cap. No blobs |
 | Transactions | custom JSON | RLP legacy (type 0). EIP-1559 deferred |
@@ -377,14 +377,14 @@ Two things about that which matter more than the numbers. VMTests are run with
 gas checking off, and that is not a concession: `legacytests/Constantinople/VMTests`
 is Constantinople *semantics* at Frontier *prices*, and running them with gas on
 produces 434 divergences that decompose exactly into EIP-2929, EIP-160 and
-EIP-150 with nothing left over (`node/test/interpreter.js:12-21`). Gas conformance
+EIP-150 with nothing left over (`node/test/interpreter.js`). Gas conformance
 comes from GeneralStateTests, where it is checked. And the corpus is
 **gitignored** — `node/scripts/fetch-vectors.sh` obtains it — so the full gate is
 a deliberate command rather than something `npm test` runs.
 
 `.github/workflows/ci.yml` now runs `npm test` as a single command rather than
 naming suites individually, so a new suite is covered the moment it is added
-(`ci.yml:19-49`). That closes the gap v0.2 recorded here. What CI still does
+(`ci.yml`). That closes the gap v0.2 recorded here. What CI still does
 **not** run is the full corpus, only the harness self-test over the committed
 fixtures — and at the time of writing the node job is failing outright for an
 unrelated one-line reason ([`MAP.md`](MAP.md) §11).
@@ -436,7 +436,7 @@ believe `MAP.md`.
    False. Homefire compiles nothing (§2.1).
 3. **"An EIP-1559-style base fee sized by congestion, burned"** and the net-zero
    inflation table that followed from it. The fee today is a flat 40,000 sparks
-   plus 100 sparks per record byte (`node/src/params.js:25-29`) — not congestion
+   plus 100 sparks per record byte (`node/src/params.js`) — not congestion
    priced. And under the account model the fee model changes again: gas is paid
    **to the coinbase with no burn in v1**. The "net inflation approaches zero via
    burn" argument does not survive either fact and is withdrawn.
@@ -466,7 +466,7 @@ believe `MAP.md`.
   CPUs gets 10,000 CPUs' worth of hashrate. The goal is *proportional* mining,
   not one-person-one-vote.
 - **Dev-tuned consensus parameters ship in this tree.** Pad size, walk steps and
-  coinbase maturity (10, against a production ~100 — `params.js:95`) are all set
+  coinbase maturity (10, against a production ~100 — `params.js`) are all set
   for local development. Each is a hard fork to change.
 - **Writing an EVM is a serious undertaking.** Conformance vectors make it
   tractable, not safe. The corpus now passes in full, but **no independent audit

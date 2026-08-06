@@ -55,28 +55,28 @@ on `<html>`.
 > ### Three claims in this file were wrong, and they are corrected below
 >
 > 1. **The accent is not `#ff5a1e`.** That value is on the estate's `RETIRED_ACCENTS`
->    list (`ui/packages/ui/src/surfaces.ts:193`), which exists so a retired colour can
+>    list (`ui/packages/ui/src/surfaces.ts`), which exists so a retired colour can
 >    "never reappear anywhere in the registry". It was retired because the switcher
->    could not tell Hearth's orange from the company ember `#e8622c` — dE 4.1 (`:132`).
+>    could not tell Hearth's orange from the company ember `#e8622c` — dE 4.1.
 > 2. **There is no `crypto` product key.** Hearth is the **`network`** surface —
 >    `key: 'network'`, `name: 'Forge Network'`, `verb: 'Mine'`
->    (`ui/packages/ui/src/surfaces.ts:235-247`). The selector is
->    `data-cf-product="network"` (`ui/packages/ui/src/tokens.css:519`).
+>    (`ui/packages/ui/src/surfaces.ts`). The selector is
+>    `data-cf-product="network"` (`ui/packages/ui/src/tokens.css`).
 > 3. **The registry is not `@cloudsforge/shared/products`.** No such package exists in
 >    the estate. It is `@cloudsforge/ui`.
 
 Hearth's accent, as the registry actually declares it
-(`ui/packages/ui/src/tokens.css:519-525`):
+(`ui/packages/ui/src/tokens.css`):
 
 | Role | Token | Resolves to | Use |
 |---|---|---|---|
-| Page | `--cf-bg` | `#0e0c0a` | the coal-dark ground (`--cf-ash-900`, `tokens.css:126`) |
-| Raised | `--cf-bg-raised` | `#141110` | panels, menus (`--cf-ash-850`, `:127`) |
-| Sunken | `--cf-bg-sunken` | `#0b0908` | code blocks, scrollbar track (`--cf-ash-950`, `:125`) |
-| Surfaces | `--cf-ash-800` … `--cf-ash-500` | `#1b1710` → `#493c2d` | cards, borders, dividers (`:128`, `:131`) |
-| Text | `--cf-fg` | `#ece5d6` | body and headings (`--cf-bone`, `:134`) |
-| Text, dim | `--cf-fg-dim` | `#b7ae9b` | secondary prose (`:135`) |
-| Text, mute | `--cf-fg-mute` | `#8e866f` | eyebrows, labels (`:136`) |
+| Page | `--cf-bg` | `#0e0c0a` | the coal-dark ground (`--cf-ash-900`, `tokens.css`) |
+| Raised | `--cf-bg-raised` | `#141110` | panels, menus (`--cf-ash-850`) |
+| Sunken | `--cf-bg-sunken` | `#0b0908` | code blocks, scrollbar track (`--cf-ash-950`) |
+| Surfaces | `--cf-ash-800` … `--cf-ash-500` | `#1b1710` → `#493c2d` | cards, borders, dividers |
+| Text | `--cf-fg` | `#ece5d6` | body and headings (`--cf-bone`) |
+| Text, dim | `--cf-fg-dim` | `#b7ae9b` | secondary prose |
+| Text, mute | `--cf-fg-mute` | `#8e866f` | eyebrows, labels |
 | **Accent** | `--cf-accent` | **`#d6412f`** | the ember — buttons, focus, the one bright thing |
 | Accent hover | `--cf-accent-hover` | `#ef5a45` | hover, emphasis |
 | Accent ink | `--cf-accent-ink` | `#0a0202` | text laid on an ember fill |
@@ -88,7 +88,7 @@ registry records the raw accent at 3.11:1, below the contrast floor, and ships a
 separate token for type at 4.55:1.
 
 **A product accent is drawn as an outline, not as a fill with type on it**
-(`ui/packages/ui/src/tokens.css:515-518`).
+(`ui/packages/ui/src/tokens.css`).
 
 > **Flame `#ffb648` and coal glow `#b62f18` no longer exist anywhere.** They were never
 > registry tokens — they were declared only in the two stylesheets that have been

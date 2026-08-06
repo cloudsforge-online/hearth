@@ -897,7 +897,7 @@ const SPENDER = hex('5b'.repeat(20));
 {
   /* And the malformed case must return address(0) rather than revert, because
    * every permit implementation's `require(recovered != address(0))` depends on
-   * it. src/evm/precompiles.js:11-15 says so; this is the contract asserting it. */
+   * it. src/evm/precompiles.js says so; this is the contract asserting it. */
   const nonce = SIM.read(PAIR, 'nonces(address)', [LP], ['uint256']);
   const digest = permitDigest(LP, SPENDER, 1n, nonce, DEADLINE);
   const sig = secp.sign(digest, KEY.lp);

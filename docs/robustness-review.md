@@ -48,14 +48,13 @@ subsection under it.
 ### 1. `StateDB` re-roots both tries on every single mutation: 1.66 KB permanently retained and 245 µs of CPU for 112 gas
 
 **Severity: critical (latent — blocks the EVM going live).**
-`node/src/state/statedb.js:342-352` (`setStorage`), `:266-272` (`setBalance`),
-`:166-171` (`_write`), and `node/src/state/trie.js:163-170` (`_ref`).
+`node/src/state/statedb.js` (`setStorage`) (`setBalance`) (`_write`), and `node/src/state/trie.js` (`_ref`).
 
 `setStorage` writes the slot, then immediately asks the storage trie for its root,
 then writes the account record — which re-roots the *state* trie too:
 
 ```js
-// statedb.js:342
+// statedb.js
 setStorage(addr, slot, value) {
   const st = this._storageTrie(hex);
   ...
@@ -67,7 +66,7 @@ setStorage(addr, slot, value) {
 ```
 
 Each of those walks re-encodes and re-hashes every node on the path and, at
-`trie.js:163`, unconditionally inserts each one into the node store:
+`trie.js`, unconditionally inserts each one into the node store:
 
 ```js
 _ref(node) {
@@ -79,7 +78,7 @@ _ref(node) {
 }
 ```
 
-`MemoryDB` (`trie.js:93`) is an append-only `Map` with no eviction. This is not an
+`MemoryDB` (`trie.js`) is an append-only `Map` with no eviction. This is not an
 oversight — revert correctness *depends* on old roots staying resolvable
 (`_storageTrie` reconciles a stale trie by re-opening it at the account's root). The
 defect is not "the store does not prune", it is **materialising a root per write in
@@ -107,7 +106,7 @@ Each costs 6.6 new node-store entries, 1,664 bytes and 245 µs. So one transacti
 inside one block's gas limit costs every node on the network:
 
 - **65 seconds of single-threaded CPU**, against a 15-second target block time
-  (`params.js:14`) — 4.3× the block interval;
+  (`params.js`) — 4.3× the block interval;
 - **443 MB of heap retained for the life of the process**, at 14.75 bytes per gas.
 
 And the transaction in the measurement above **runs out of gas and reverts**. Every
@@ -180,13 +179,13 @@ is.
 ### 2. An anonymous peer buys a full copy of the UTXO set with a 39-byte message, and `tx` gossip has no verification budget at all
 
 **Severity: critical (live today).**
-`node/src/mempool.js:21-38`, `node/src/p2p.js:344-350`, `node/src/rpc.js:139-141`.
+`node/src/mempool.js`, `node/src/p2p.js`, `node/src/rpc.js`.
 
 `Mempool.add` copies the entire UTXO set and replays the entire mempool **before**
 validating anything:
 
 ```js
-// mempool.js:30
+// mempool.js
 const scratch = new Map(this.chain.utxo);                      // O(|UTXO|)
 for (const { tx: pooled } of this.txs.values()) TX.applyToUtxo(pooled, scratch);  // O(|mempool|)
 const r = TX.validateNormal(tx, scratch, this.chain.height + 1);
@@ -195,7 +194,7 @@ const r = TX.validateNormal(tx, scratch, this.chain.height + 1);
 `validateNormal`'s very first line is `if (!tx.inputs || tx.inputs.length === 0)
 return { ok: false, err: 'no inputs' }`. So an input-less transaction pays the whole
 copy and is then thrown away. Because nothing is ever admitted, the `this.txs.has(tx.id)`
-dedup at `mempool.js:23` never fires — **the identical message can be replayed verbatim**.
+dedup at `mempool.js` never fires — **the identical message can be replayed verbatim**.
 
 The message that does it is 39 bytes on the wire:
 
@@ -203,10 +202,10 @@ The message that does it is 39 bytes on the wire:
 {"t":"tx","tx":{"id":"a","outputs":[]}}
 ```
 
-`p2p.js:344` gates it on `typeof tx.id === 'string'` and nothing else. Unlike `block`
+`p2p.js` gates it on `typeof tx.id === 'string'` and nothing else. Unlike `block`
 and `blocks`, which go through `_acceptFrom` and its token bucket, `tx` messages have
 **no per-peer budget, no invalid counter and no rate limit**. `POST /tx` on the HTTP
-RPC (`rpc.js:139`) reaches the same function with the same absence of limits.
+RPC (`rpc.js`) reaches the same function with the same absence of limits.
 
 **Measured** (`Mempool.add` with an input-less transaction, mean of 20):
 
@@ -220,7 +219,7 @@ utxo=1000000 | 354.0ms per message |    3 msgs/s
 (`MEMPOOL_MAX_TXS: 50_000`, `MAX_MONEY: 90M EMBER`) — 39 bytes of input buys 354 ms of
 blocked event loop. That is **9 ms of CPU per byte sent**.
 
-It gets worse from the framing. `p2p.js:104` drains every complete line in the read
+It gets worse from the framing. `p2p.js` drains every complete line in the read
 buffer inside one synchronous `data` handler:
 
 ```js
@@ -245,22 +244,21 @@ amplification generally.
 ### 3. A self-fed side branch mines at 1-in-64 forever, and every block on it is stored, persisted and relayed permanently
 
 **Severity: high (live today).**
-`node/src/chain.js:212-235` (`_nextTarget`), `:348-369` (`_ingest` fork path),
-`:383-392` (`_stateAt`), `:407` (`_persist`); `node/src/params.js:81` (`MAX_TARGET`).
+`node/src/chain.js` (`_nextTarget`) (`_ingest` fork path) (`_stateAt`) (`_persist`); `node/src/params.js` (`MAX_TARGET`).
 
 `_nextTarget` computes difficulty from *the branch the block is on*, which is correct
 for fork-choice but means an attacker's branch retargets against the attacker's own
 blocks. Two things then compound:
 
 - `_nextTarget` returns `GENESIS_TARGET` unconditionally for any parent below height 2
-  (`chain.js:214`), and `GENESIS_TARGET` is 1-in-256 — trivially mineable no matter how
+  (`chain.js`), and `GENESIS_TARGET` is 1-in-256 — trivially mineable no matter how
   hard the real chain has become.
-- `MAX_TARGET` (`params.js:81`, `0x03ff…`) is **easier than `GENESIS_TARGET`**: 1-in-64.
+- `MAX_TARGET` (`params.js`, `0x03ff…`) is **easier than `GENESIS_TARGET`**: 1-in-64.
   The LWMA clamps `solve` at `TARGET_BLOCK_TIME * 6 = 90 s`, so a branch whose
   timestamps are 90 s apart multiplies its target by 6 each block until it pins at the
   clamp.
 
-**Measured** — replaying the exact recurrence from `chain.js:212-235` on a self-fed
+**Measured** — replaying the exact recurrence from `chain.js` on a self-fed
 branch with 90-second spacing, and `homefireHash` timed at **6.84 ms** per evaluation:
 
 ```
@@ -272,21 +270,21 @@ branch height 4+ 1 in  64  => 0.44s/block
 
 Every block on that branch is fully valid: it passes `_validate`, is stored in
 `this.store` (an unbounded `Map`), is appended to `blocks.ndjson`, and is **relayed to
-every peer** (`p2p.js:337`, because `_ingest` returns `{ok: true}` even when the branch
+every peer** (`p2p.js`, because `_ingest` returns `{ok: true}` even when the branch
 does not win the fork choice). It never reorgs, so nothing ever cleans it up.
 
-The verification budget does not touch this. `_acceptFrom` (`p2p.js:241`) explicitly
+The verification budget does not touch this. `_acceptFrom` (`p2p.js`) explicitly
 refunds the token whenever `r.ok`, and `cfInvalid` is only incremented on `wasted`
 work. Every one of these blocks is `ok`.
 
 **The arithmetic, and the quadratic.** `_ingest`'s fork path calls
-`_stateAt(hdr.prevHash)` (`chain.js:355`), which replays the branch from genesis. For a
+`_stateAt(hdr.prevHash)` (`chain.js`), which replays the branch from genesis. For a
 branch of length L the victim performs **O(L²)** block applications while the attacker
 pays **O(L) × 0.44 s**. At L = 10,000 — 73 minutes of one attacker core — a victim
 performs ~50 million block applications, stores 10,000 blocks forever, relays all of
 them to every peer, and adds 10,000 × 6.84 ms = **68 seconds of Homefire to every
 subsequent restart**, because `load()` re-validates every persisted block
-(`chain.js:50`).
+(`chain.js`).
 
 Timestamps are not a constraint: forking from genesis (`timestamp 1750000000`, June
 2025) against a `MAX_FUTURE_DRIFT_S` of 7,200 leaves ~34 million seconds of headroom —
@@ -303,7 +301,7 @@ path would remove it.
 
 ### 4. The RLP decoder recurses once per nesting level and blows the JS stack at depth 2,823
 
-**Severity: medium.** `node/src/crypto/rlp.js:107` and `:117` (`item` ↔ `items`).
+**Severity: medium.** `node/src/crypto/rlp.js` and (`item` ↔ `items`).
 
 `item` calls `items` calls `item`, with no depth counter. Each `0xc1` byte adds one
 level, so nesting depth is bounded only by input length.
@@ -318,10 +316,10 @@ stack overflow at nesting depth ~ 2823
 `MAX_TX_BYTES` is 100,000, so a transaction is allowed to be 35× deeper than the limit.
 
 This is *not* currently a crash: the only untrusted caller is
-`chain/transaction.js:218`, reached through `validate()`, whose `try/catch`
-(`transaction.js:376-386`) turns the `RangeError` into `{ ok: false, code: 'RLP_ERROR' }`.
-`receipt.js:135` decodes only locally produced receipts, and `statedb.js:117`/`336` and
-`trie.js:159` decode only the node's own store.
+`chain/transaction.js`, reached through `validate()`, whose `try/catch`
+(`transaction.js`) turns the `RangeError` into `{ ok: false, code: 'RLP_ERROR' }`.
+`receipt.js` decodes only locally produced receipts, and `statedb.js`/`336` and
+`trie.js` decode only the node's own store.
 
 I am reporting it anyway for two reasons. First, it is the one place in this codebase
 where a malformed input produces a `RangeError` that is *indistinguishable from a
@@ -339,18 +337,18 @@ weaker guarantee than never generating it.
 ### 5. A `getblocks` page can exceed the receiving peer's own frame limit, and honest sync stalls
 
 **Severity: medium (live today), and it is a liveness bug rather than an attack.**
-`node/src/p2p.js:301`, `node/src/params.js:98` and `:101`.
+`node/src/p2p.js`, `node/src/params.js` and.
 
 The `getblocks` handler serves up to `P2P_MAX_BLOCKS` (200) whole blocks in one
 newline-delimited JSON frame. The receiver drops any peer whose frame exceeds
-`P2P_MAX_LINE` (4 MiB) (`p2p.js:99-102`).
+`P2P_MAX_LINE` (4 MiB) (`p2p.js`).
 
 ```
 P2P_MAX_BLOCKS x MAX_BLOCK_BYTES = 400 MB   P2P_MAX_LINE = 4.2 MB
 => a page overflows the receiver's frame limit once average block size exceeds 20.5 KB
 ```
 
-`params.js:91` reasons that "MAX_BLOCK_BYTES is well under P2P_MAX_LINE so a full block
+`params.js` reasons that "MAX_BLOCK_BYTES is well under P2P_MAX_LINE so a full block
 still fits one frame" — true for the `block` message, but `blocks` carries 200 of them.
 The invariant holds for one message type and not the other, and nothing enforces it.
 
@@ -394,7 +392,7 @@ Measured through the real interpreter and the real precompiles, 30M gas of each:
 interval, with nothing left for networking, and no margin for a slower machine.
 
 Two notes on individual rows. `blake2f`'s one-gas-per-round price is caller-chosen
-(`precompiles.js:354`), so a *single* CALL can consume 30M gas and 10.7 seconds in one
+(`precompiles.js`), so a *single* CALL can consume 30M gas and 10.7 seconds in one
 uninterruptible loop — the most concentrated work-per-call in the file. `modexp` is
 worst at *small* operands, not large: 32/32/32 with a full-width exponent charges 1,360
 gas for 0.53 ms, whereas 2048/32/2048 charges 5.5M gas for 40 ms. The EIP-2565 formula
@@ -411,29 +409,29 @@ rather than by copying Ethereum's 30M.
 ### 7. Smaller items
 
 - **State reads outside the `try` in `EVM.call` and `EVM.create`.**
-  `interpreter.js:252-261` (`toAddr`, `getBalance`) and `:345-351` (`getBalance`,
+  `interpreter.js` (`toAddr`, `getBalance`) and (`getBalance`,
   `getNonce`) run before the `try` block that produces `_crash`. A `trie: missing node`
   or a non-canonical-storage-value error thrown from `_load` at that point escapes
-  `EVM.call` as a throw, and `statetransition.js:339` calls it with no `try/catch`. Only
+  `EVM.call` as a throw, and `statetransition.js` calls it with no `try/catch`. Only
   reachable with a corrupt node store, but the return-don't-throw contract is meant to
   be absolute, and moving the `try` up two lines costs nothing.
-- **`Trie.get` does not advance on a zero-length extension node.** `trie.js:185-191`:
+- **`Trie.get` does not advance on a zero-length extension node.** `trie.js`:
   a node decoding to `nibbles.length === 0` and `isLeaf === false` leaves `i` unchanged
   and follows `node[1]`, so a chain of such nodes loops forever. `_put`/`_del` cannot
   construct one (extensions are only built with `cpl !== 0` or `sub.length`), and a
   hostile node would have to hash to an address the trie already asked for, so this is
   not reachable today. It becomes reachable the moment any form of state sync accepts
   nodes from a peer.
-- **`Trie` node-shape validation.** `_deref` (`trie.js:159`) returns whatever RLP
+- **`Trie` node-shape validation.** `_deref` (`trie.js`) returns whatever RLP
   decodes to. `hpDecode` on an array yields `NaN` comparisons that all pass, so a
   malformed node produces nonsense rather than an error. Same reachability caveat as
   above; worth a shape check before any sync path exists.
-- **Journal growth.** `_mutable` (`statedb.js:178`) pushes a closure and a fresh
+- **Journal growth.** `_mutable` (`statedb.js`) pushes a closure and a fresh
   account copy per mutation. The SSTORE loop in finding 1 accumulates ~266,000 of them,
   roughly 40 MB — secondary to the 443 MB, but it is the same root cause and the same
   fix removes it.
 - **`chain.js` linear scans.** `balance()`, `supply()` and `utxosFor()`
-  (`chain.js:147-170`) walk the whole UTXO set. They are reached from `rpc.js`'s
+  (`chain.js`) walk the whole UTXO set. They are reached from `rpc.js`'s
   `/address/:addr` and `/supply`, which are unauthenticated. At a million UTXOs that is
   tens of milliseconds per request with no cache and no rate limit. Much smaller than
   finding 2, and mentioned because it is the same shape.
@@ -449,16 +447,16 @@ the other half of the value.
 charge:
 
 - `Memory.charge`/`charge2` compute cost without allocating; `Memory.expand` is called
-  only after `f.gas -= px.cost` at `interpreter.js:462-464`. The ordering comment at the
+  only after `f.gas -= px.cost` at `interpreter.js`. The ordering comment at the
   head of `memory.js` is accurate and the code matches it.
-- `getData` (`precompiles.js:67`) is called with a size that is either a constant (32
+- `getData` (`precompiles.js`) is called with a size that is either a constant (32
   for `CALLDATALOAD`) or one that has already been priced through `copyWordsCost` plus
   memory expansion (`CALLDATACOPY`, `CODECOPY`, `EXTCODECOPY` at
-  `interpreter.js:756-774`).
+  `interpreter.js`).
 - `Memory.read` at `KECCAK256`, `LOG0-4`, `RETURN`, `REVERT`, `CREATE`/`CREATE2` and the
   CALL family's input buffer is in every case preceded by a `charge`/`charge2` for the
   same range in `_price`.
-- `modexpRun`'s allocations are behind `MODEXP_MAX_LEN` (`precompiles.js:249`) as well
+- `modexpRun`'s allocations are behind `MODEXP_MAX_LEN` (`precompiles.js`) as well
   as the gas.
 
 **`gas()` before affordability.** All nine precompile `gas` functions are O(1) in input
@@ -471,7 +469,7 @@ state before affordability is `originalStorage`/`getStorage` for SSTORE, which c
 trie reads against a minimum 2,100-gas instruction whose frame then forfeits all its gas.
 
 **Unbounded loops and recursion.** Call depth is capped at 1,024
-(`interpreter.js:250`, `:347`). `U.exp` and `modPow` are square-and-multiply over an
+(`interpreter.js`). `U.exp` and `modPow` are square-and-multiply over an
 exponent bounded by the gas charged for it. `naf`/`f12Pow`/`g1Mul`/`g2ProjMul` all
 iterate over fixed 254-bit constants. `p2p._connectOrphans` is bounded by
 `P2P_MAX_ORPHANS` (32). `_locator` is memoised on `(tip, store size)`, which is exactly
@@ -501,7 +499,7 @@ measures 7× worse per gas than baseline, which is a property of the Ethereum sc
 (geth shows a similar ratio), not of this implementation.
 
 **The trie under hostile key distributions.** The state and storage tries are secure
-(`trie.js:121`, `secure = true` by default; `StateDB` takes the default), so keys are
+(`trie.js`, `secure = true` by default; `StateDB` takes the default), so keys are
 `keccak256(key)` and the path is 64 nibbles regardless of what the caller chooses.
 Forcing depth *d* costs 16^d grinding for a bounded win, and depth is capped at 64
 anyway. The transaction and receipt tries are non-secure but keyed by `rlp(index)` over
@@ -511,7 +509,7 @@ array, `_deref` passes an array straight through, and `_put` mutating an embedde
 in place is safe because the parent is rewritten on the same path. `_collapseBranch` and
 `_join` read but never mutate the child.
 
-**Aliasing between the node store and decoded values.** `RLP.cut` (`rlp.js:69`) copies
+**Aliasing between the node store and decoded values.** `RLP.cut` (`rlp.js`) copies
 rather than sub-arraying, so a decoded trie node cannot alias — let alone mutate — the
 stored encoding. This is load-bearing given that `_put` mutates node arrays in place,
 and it is right.
@@ -519,12 +517,12 @@ and it is right.
 **Canonical-encoding enforcement.** I looked for a decoder without a minimality rule and
 did not find one. `rlp.js` rejects leading-zero long-form lengths, long form where short
 fits, a single byte below 0x80 not encoded as itself, lengths that overrun their buffer
-*and* lengths that overrun their enclosing list (`items`, `rlp.js:123` — the one that is
-usually missed), and trailing bytes. `transaction.js:193` applies the scalar rule
-per-field with width bounds. `statedb.js:116` applies it to nonce and balance and
-enforces 32-byte `storageRoot`/`codeHash`. `statedb.js:333` rejects a storage value with
-a leading zero, empty, or over 32 bytes. `receipt.js:126` applies the same rule to
-`status` and `cumulativeGasUsed`. `trie.js:68` rejects a flag nibble above 3 and a
+*and* lengths that overrun their enclosing list (`items`, `rlp.js` — the one that is
+usually missed), and trailing bytes. `transaction.js` applies the scalar rule
+per-field with width bounds. `statedb.js` applies it to nonce and balance and
+enforces 32-byte `storageRoot`/`codeHash`. `statedb.js` rejects a storage value with
+a leading zero, empty, or over 32 bytes. `receipt.js` applies the same rule to
+`status` and `cumulativeGasUsed`. `trie.js` rejects a flag nibble above 3 and a
 non-zero padding nibble on an even path. `jsonrpc/hex.js` is strict about QUANTITY vs
 DATA. That is comprehensive.
 
@@ -532,8 +530,8 @@ DATA. That is comprehensive.
 signature:
 
 ```
-tx with high-s: rejected -> INVALID_SIGNATURE_VRS      (transaction.js:260, EIP-2)
-same high-s sig through ecrecover: recovers (correct)  (precompiles.js:171, {lowS:false})
+tx with high-s: rejected -> INVALID_SIGNATURE_VRS      (transaction.js, EIP-2)
+same high-s sig through ecrecover: recovers (correct)  (precompiles.js, {lowS:false})
 ```
 
 Both still hold. `secp256k1.verify` defaults `lowS` to true and the precompile passes
@@ -546,36 +544,36 @@ cost (2600 cold + 9000 value + 25000 new account) exceeds the frame's gas return
 enough gas succeeds and leaves it warm. The asymmetries are right too: gas bought and
 the outermost nonce increment survive a failed transaction because they are applied
 after `beginTransaction` clears the journal and before `EVM.call` takes its snapshot
-(`statetransition.js:287-303`); the creator's nonce bump survives a failed CREATE
-because `create` reassigns `snapshot` after it (`interpreter.js:359-372`); and the
+(`statetransition.js`); the creator's nonce bump survives a failed CREATE
+because `create` reassigns `snapshot` after it (`interpreter.js`); and the
 collision path returns without reverting, which matches geth, where the snapshot is
 likewise taken after the collision check.
 
-**`Number`/`BigInt` boundaries.** `isNormalized` (`transaction.js:281`) now checks
+**`Number`/`BigInt` boundaries.** `isNormalized` (`transaction.js`) now checks
 `Buffer.isBuffer(tx.data)` alongside the nonce, which is the fix for the hex-characters-
 as-bytes bug and is correct. Every `Number(bigint)` conversion in `memory.js`,
 `precompiles.js:getData` and `gas.wordCount` sits downstream of a gas charge that makes
-a value above 2⁵³ unaffordable. `readLen` (`rlp.js:77`) checks `Number.isSafeInteger`.
-`toBytes` (`rlp.js:34`) refuses unsafe integers rather than coercing.
+a value above 2⁵³ unaffordable. `readLen` (`rlp.js`) checks `Number.isSafeInteger`.
+`toBytes` (`rlp.js`) refuses unsafe integers rather than coercing.
 
 **Interpreter error contract.** Every exit from `_interpret` is a `result(...)`. The one
-`throw` (`interpreter.js:693`, on a stack fault that would mean this file and
+`throw` (`interpreter.js`, on a stack fault that would mean this file and
 `opcodes.js` disagree) is inside `call`/`create`'s `try` and surfaces as
 `internalError`, which `applyTransaction` propagates rather than crediting as a
 correctly-failed transaction. `bn128` returns the `INVALID` symbol rather than throwing
 for every decode failure. Precompile soft-fail (0x01–0x05, empty output + success) and
 hard-fail (0x06–0x09, `null` + failed CALL) are wired correctly at
-`interpreter.js:296-299`.
+`interpreter.js`.
 
 **Jump-destination analysis.** The `WeakMap` cache is effective in practice, which was
 worth confirming rather than assuming: `StateDB.getCode` memoises on the code hash
-(`statedb.js:300-310`) and returns the *same Buffer object* on every call, so
+(`statedb.js`) and returns the *same Buffer object* on every call, so
 `analyseJumpdests` returns the same `Uint8Array` and a contract called 300,000 times is
 scanned once. Verified for a 24 KB contract.
 
 **`p2p` block handling.** The verification budget is correctly placed for `block` and
 `blocks`: `_acceptFrom` spends a token before `verifyPow` and refunds it only when the
-work turned out useful or cost no hashing. The reasoning in the `params.js:104-123`
+work turned out useful or cost no hashing. The reasoning in the `params.js`
 comment is right and the code matches it. `isBlock` bounds `txs.length`, the locator is
 bounded and validated, `getblocks` refuses to queue a second page while one is in
 flight, and `chain._validate` orders its checks so that everything expensive sits behind
@@ -584,7 +582,7 @@ the proof — including the `MAX_BLOCK_BYTES` serialization, which is deliberate
 that a *valid* block on a worthless branch is not metered at all.
 
 **`gas.js` itself.** Every constant checked against its EIP. The EIP-2200 truth table at
-`gas.js:301-328` is correct row by row, including the 4,800/19,900/2,800 refund figures
+`gas.js` is correct row by row, including the 4,800/19,900/2,800 refund figures
 and the `2100 + 2900 = 5000` cross-check. `callCost` applies all-but-one-64th after the
 access, value, new-account and memory charges, in that order. `memoryExpansionCost`
 takes the difference of two `C_mem` values rather than `C_mem` of the delta. Nothing to

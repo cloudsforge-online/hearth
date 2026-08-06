@@ -19,7 +19,7 @@
  *    swap as expired, and nothing anywhere reports an error. `decode` refuses a
  *    timestamp that looks like milliseconds (see MAX_TIMESTAMP) rather than trusting
  *    a producer to have divided. (The v1 header in ../block.js is, contrary to what
- *    docs/evm-spec.md §4 says, already in seconds — ../miner.js:88 divides. The rule
+ *    docs/evm-spec.md §4 says, already in seconds — ../miner.js divides. The rule
  *    still has to be enforced here, because nothing enforced it there.)
  *
  * 2. THE PROOF BINDS A secp256k1 KEY. Homefire itself is untouched — the same pad

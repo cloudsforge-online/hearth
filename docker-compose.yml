@@ -36,7 +36,7 @@ x-hearth-evm: &hearth-evm
 # so "keep everything for ever" is not a retention period anybody chose.
 #
 # 10m x 3 is a 30 MB ceiling per container. The estate's own gateway caps at
-# 10m x 5 (deploy/compose/docker-compose.gateway.yml:32-36) and this is
+# 10m x 5 (deploy/compose/docker-compose.gateway.yml) and this is
 # deliberately tighter, for a reason that is specific to this bundle: these nodes
 # are noisy — every block, every peer connect and disconnect — so the same five
 # files cover a much shorter span of wall-clock time here than they do there, and

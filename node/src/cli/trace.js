@@ -604,7 +604,7 @@ function traceStateVector(v, o = {}) {
   /* The nonce bump belongs to the CALL path only. `EVM.create` does its own,
    * and the address it derives is `keccak(rlp([sender, nonce_BEFORE_the_bump]))`
    * — so bumping here too traces a creation at the wrong address entirely, with
-   * the wrong pre-existing account under it. `chain/statetransition.js:303`
+   * the wrong pre-existing account under it. `chain/statetransition.js`
    * makes the same distinction, for the same reason. This is silent when it is
    * wrong: the trace still runs, still says OK, and simply describes a
    * transaction that never happened. */
