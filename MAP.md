@@ -19,6 +19,15 @@ also from a fresh clone with no corpus), every unit suite individually,
 `test/dex.js`, `test/fuzz/run.js`, the VMTests and GeneralStateTests conformance
 gates, the TransactionTests corpus group, and the `tools/` suites.
 
+**The live-network figures were re-measured on 2026-08-08 UTC** against
+`https://rpc.cloudsforge.online` from outside this network, by walking every
+block from 1 to the tip over JSON-RPC. That pass corrected §1, §2 and §10, all of
+which still described mainnet as hours old, under 200 blocks tall and empty —
+true when written on 2026-08-04, wrong within a day, and unnoticed for four
+because those three figures had been written down without the date they were
+taken. Every live-network figure below now carries one. If you are reading this
+well after 2026-08-08, assume the numbers have moved again and re-measure.
+
 ---
 
 ## 1. What this is, in one paragraph
@@ -37,13 +46,32 @@ vectors pass. §4 is the evidence.
 
 **The account model is now the published chain.** Mainnet — chain id 7411 — is
 reachable at `https://rpc.cloudsforge.online` and mining. Verified from outside
-this network on 2026-08-05: `eth_chainId` → `0x1cf3`, `web3_clientVersion` →
+this network on 2026-08-05, and `eth_chainId` and `web3_clientVersion` re-checked
+and unchanged on 2026-08-08: `eth_chainId` → `0x1cf3`, `web3_clientVersion` →
 `Hearth/v0.2.0/linux-x64/node22.23.1`, genesis `extraData` → `0x6865617274682f37343131`
-(`"hearth/7411"`, the format `node/src/chain/genesis.js` describes). Block 1
-was mined 2026-08-04 19:12 UTC, so the chain is hours old and under 200 blocks
-tall, it is still at the `GENESIS_TARGET` difficulty floor (`difficulty: 0x100`,
-`node/src/params.js`), and it runs on one home server behind one Cloudflare
-Tunnel. **The public testnet is also live** — chain id 7412 at
+(`"hearth/7411"`, the format `node/src/chain/genesis.js` describes). Block 1 was
+mined 2026-08-04 19:12:21 UTC and the chain has not stopped since. Re-measured
+from outside this network on 2026-08-08 UTC: `eth_blockNumber` → `0x1ad8`
+(**6,872 blocks**), and the latest block's timestamp `0x6a77a04a` =
+2026-08-08 21:31:54 UTC, which makes mainnet **four days and two hours old** —
+not the "hours old and under 200 blocks tall" this paragraph claimed for its
+first four days. It is still at the `GENESIS_TARGET` difficulty floor
+(`difficulty: 0x100` on that same latest block, `node/src/params.js`), and it
+runs on one home server behind one Cloudflare Tunnel.
+
+**Those two figures do not divide into the 15-second block time, and the gap is
+the interesting part.** Four days at 15 s would be roughly 23,600 blocks, not
+6,872. Walking every block from 1 to 6,872 on 2026-08-08 UTC, the mean interval
+is **51.5 s** and the median **34 s**, a little over three times target, and the
+last 500 blocks average **45.5 s**. One miner sitting at the `GENESIS_TARGET`
+floor is the entire explanation: the floor sets the work, a single machine
+supplies whatever hash rate it has, and nothing retargets because there is no
+competition to retarget against. Any reader dividing the height by the age and
+concluding the block time is broken should read this paragraph instead — the
+15-second figure at the top of this section is the **design target**, and no live
+block has ever been produced under the parameters that would deliver it.
+
+**The public testnet is also live** — chain id 7412 at
 `https://rpc-testnet.cloudsforge.online`, verified from outside on 2026-08-05
 (`eth_chainId` → `0x1cf4`), on the same single home server and the same tunnel.
 
@@ -72,7 +100,7 @@ here first.
 | Contract verification (`forge verify-contract`-compatible) | `tools/verify/` | ✅ **merged**, 116 checks |
 | Property fuzzing | `node/test/fuzz/` | ✅ **merged**, 82,481 checks; two open findings — §4.7, §11 |
 | **Consensus on the account model** | `node/src/chain/`, `node/src/evmnode.js` | ✅ **merged.** Blocks are produced, validated and reorged — `evmchain` 191 checks, `evm-p2p-fork` 51 across two real nodes; three run under `docker-compose.testnet.yml` |
-| **Public mainnet** | — | ✅ **published 2026-08-04.** Chain id 7411 at `https://rpc.cloudsforge.online`, mining, publicly trusted TLS. At the difficulty floor, on one home server behind one tunnel — reachable, not established |
+| **Public mainnet** | — | ✅ **published 2026-08-04.** Chain id 7411 at `https://rpc.cloudsforge.online`, mining, publicly trusted TLS. Measured from outside on **2026-08-08**: **6,872 blocks**, **four days and two hours** old, **21 transactions**, mean block interval 51.5 s — §1. Still at the difficulty floor, on one home server behind one tunnel — running, not established |
 | **Public testnet** | — | ✅ **published.** Chain id 7412 at `https://rpc-testnet.cloudsforge.online` — verified from outside on 2026-08-05, `eth_chainId` → `0x1cf4`. Explorer at `explorer-testnet.cloudsforge.online`, faucet at `network-testnet.cloudsforge.online/faucet`, P2P at `wss://p2p-testnet.cloudsforge.online/p2p` (**only the `/p2p` path is routed**). Hostnames are single-label `<surface>-testnet.` — the `*.testnet.cloudsforge.online` form fails TLS, because Cloudflare Universal SSL's `*.cloudsforge.online` covers one label |
 | Any deployed contract of record | — | ⬜ **still none.** Off mainnet, no genesis outlives a `docker compose down -v`, so testnet state is disposable |
 | The UTXO chain (ledger, P2P, REST, reorg) | `node/src/chain.js`, `tx.js`, `p2p.js`, `rpc.js` | ✅ runs, and **is being retired** |
@@ -89,7 +117,11 @@ production PoW parameters** — the live chain is pinned at the `GENESIS_TARGET`
 floor — and those parameters have now been measured and found unreachable
 ([`docs/pow-parameters.md`](docs/pow-parameters.md)). Under that sits a
 deployment fact worth stating plainly: one home server, one tunnel, no
-redundancy, and no backup that has ever been restored.
+redundancy, and no backup that has ever been restored. That is no longer only a
+worry — walking every block on 2026-08-08 UTC found exactly one stall, **2 h
+3 min with no block at all** between blocks 1962 and 1963 (2026-08-05 19:08:14 →
+21:11:30 UTC), which is 2.1% of the chain's life to date. One server, one
+outage, and nothing anywhere else that could have produced a block meanwhile.
 
 **A "merged" row is still not a "ready" row**, but the thing that made it so is
 fixed: `StateDB` used to re-root both tries on every mutation, at **443 MB and
@@ -1070,10 +1102,42 @@ only externally reachable caller is the unauthenticated `/mining/template`.
 - ~~**Nothing produces an account-model block.**~~ Closed, and then published.
   `node/src/evmnode.js` constructs and mounts `node/src/jsonrpc/server.js`
   over a real account-model chain, and mainnet — chain id 7411 — serves it at
-  `https://rpc.cloudsforge.online`. What is still true of §4 is narrower: its
-  vectors and fixtures are the evidence, and the public chain has not yet added
-  much to them — it is hours old, holds **zero transactions**, and has never run
-  at production proof-of-work parameters.
+  `https://rpc.cloudsforge.online`. What is still true of §4 is narrower, and
+  narrower than it was: its vectors and fixtures remain the bulk of the evidence,
+  but the public chain is no longer contributing nothing to them. Measured by
+  walking every block from 1 to 6,872 on 2026-08-08 UTC, mainnet is **four days
+  and two hours old** and holds **21 transactions** — not the **zero
+  transactions** this bullet claimed for its first four days — of which **nine
+  are successful contract creations** (receipt `status: 0x1`, about 1,358,000 gas
+  each, 6,007 bytes of runtime code apiece) and twelve are plain value transfers.
+  What survives without qualification is the last clause: **no block has ever
+  been produced at production proof-of-work parameters.** The latest block still
+  reports `difficulty: 0x100`, the `GENESIS_TARGET` floor, and §1 records what
+  that does to the block interval.
+- **§2's "Any deployed contract of record — still none" row and the chain now
+  disagree, and the row is deliberately left standing.** Deciding what "of
+  record" is meant to cover is not a measurement, so it is not made here; the
+  measurement that forces the decision is, because a fact that lives only in an
+  agent's scrollback is a fact this file has already lost once. The nine
+  creations above are nine **`ForesightMarket`** instances —
+  `foresight/src/contracts/ForesightMarket.sol`, a different repository in this
+  estate — mined into blocks 238 to 251 between 22:22 and 22:33 UTC on
+  2026-08-04, and live at `0x49408b99…`, `0xf8202a8f…`, `0x541c29de…`,
+  `0xbff77573…`, `0xae5d2dd3…`, `0x4177304b…`, `0x2acc6fd3…`, `0x3bb8e307…` and
+  `0xe1b7955a…`. They are identified rather than guessed: every one answers
+  `treasury()` → `0x76C853d699B17106E5e15d7D40A38F2238cb246c`, the live mainnet
+  value `deploy/docs/house-seed.md` documents, `oracle()` →
+  `0x2c71eb5753e7d08929d2ec14b303a5f5b3b0b9ca` and `feeBps()` → 200, and each
+  carries a **distinct** `questionHash()` and `closeTime()` — so this is nine
+  real markets, not one deployment probe run nine times. All nine read `state()`
+  → `0` (`Open`) over an empty pool, so they are deployed and reachable and
+  nothing has ever been staked into one. **The failure mode worth naming: no file
+  in any repository in this estate records these addresses.** Grepping the whole
+  estate for them returns nothing; the only place they are written down is the
+  `markets.contract_address` column created by `foresight/src/migrations.ts`,
+  which exists solely in the running service's database on the deployment host.
+  Nine contracts are live on a public chain and the source tree cannot name one
+  of them.
 - ~~**The browser miner and the node disagree about the coinbase key.**~~ Closed,
   and both bullets here were reading the wrong chain. `node/src/rpc.js`
   and `node/src/block.js` are the **UTXO** REST server and the **UTXO** block
