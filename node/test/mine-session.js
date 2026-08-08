@@ -431,7 +431,25 @@ function fakeFetch(handler) {
     const reach = Math.max(4, Math.floor((winner - START) / 3));
     const windowMs = Math.round(perMs * reach) + 5000;   // + EXPIRY_MARGIN_MS
 
-    let fetches = 0, submittedNonce = null, submits = 0;
+    /* EVERY submitted nonce, not just the last, and not just a count.
+     *
+     * This used to keep `submittedNonce` alone and require `found === 1`, and
+     * that made a deterministic check fail at random: the harness below notices
+     * the win by POLLING every 50 ms, so the session keeps grinding for up to one
+     * poll — plus however long `stop()` takes to land — AFTER the block it was
+     * waiting for. At this difficulty one nonce in `HDR.difficulty(work.target)`
+     * wins, so a second winner inside that tail is ordinary luck, and the run
+     * that hit it reported "2 found" and a last nonce one past the computed
+     * winner. That is not the defect this group exists to catch; the defect is
+     * the miner never ARRIVING at the winner, and arriving twice is arriving.
+     *
+     * So the list is kept and the claims are made about its shape: the FIRST
+     * submission is the computed winner, nothing is submitted twice, and every
+     * nonce in it genuinely meets the target — which is strictly stronger than
+     * the count ever was, since a count cannot tell a real second win from a
+     * spurious resubmission of the first. */
+    let fetches = 0, submits = 0;
+    const submitted = [];
     const backwards = [];
     const f = fakeFetch(async (url, init) => {
       if (url.includes('/mining/template')) {
@@ -440,7 +458,7 @@ function fakeFetch(handler) {
         return { status: 200, body: { ...work, templateId: 'id' + fetches, expiresAt: Date.now() + windowMs } };
       }
       submits++;
-      submittedNonce = JSON.parse(init.body).nonce;
+      submitted.push(JSON.parse(init.body).nonce);
       return { status: 200, body: { ok: true, height: work.height, id: 'a1b2c3d4e5f6' } };
     });
 
@@ -460,10 +478,14 @@ function fakeFetch(handler) {
     await running;
 
     assert(fetches >= 3, `the template expired and was re-fetched ${fetches} times, unchanged each time`);
-    assert(sess.found === 1, `IT STILL FOUND THE BLOCK — ${sess.found} found across ${fetches} identical templates`);
-    assert(submits === 1 && submittedNonce === winner,
-      `at nonce ${submittedNonce}, which is the winner computed before the run (${winner}) — `
+    assert(sess.found >= 1, `IT STILL FOUND THE BLOCK — ${sess.found} found across ${fetches} identical templates`);
+    assert(submitted[0] === winner,
+      `arriving at nonce ${submitted[0]}, which is the winner computed before the run (${winner}) — `
       + `${winner - START} evaluations past a window that only reaches ${reach}`);
+    assert(sess.found === submits && new Set(submitted).size === submitted.length,
+      `and every one of the ${submits} submissions was a distinct find, none resent`);
+    assert(submitted.every(wins),
+      'and every nonce it submitted really does meet the target — no win it did not have');
     assert(backwards.length === 0,
       `and the search never went backwards over unchanged work (${backwards.length} restarts observed)`);
   }
