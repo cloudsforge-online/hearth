@@ -149,6 +149,9 @@ class RPC {
           if (r.ok) this.node.log('block from a remote miner', { height: r.height, id: r.id });
           // Stale work is 409, not 400: the miner did nothing wrong and should
           // pull a fresh template rather than treat this as a bug in itself.
+          // Every way work goes stale — TTL, MAX_TEMPLATES eviction, a moved tip
+          // — sets `stale` (src/retiredtemplates.js). What is left on the 400
+          // side is a malformed field, or an id this node never issued.
           return json(res, r.ok ? 200 : r.stale ? 409 : 400, r);
         }
         return json(res, 200, this._rpc(body));

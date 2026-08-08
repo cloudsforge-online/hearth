@@ -817,7 +817,7 @@ Block frames are deliberately **unnamed** so `EventSource.onmessage` receives th
 | Route | Behaviour |
 | --- | --- |
 | `/tx` | Accepts `{tx}` or a bare tx. Validates into the mempool and gossips it |
-| `/mining/submit` | `{templateId, nonce, powDigest, powSig}`. 200 accepted, **409** when the tip moved (stale — the miner did nothing wrong), 400 for a bad proof |
+| `/mining/submit` | `{templateId, nonce, powDigest, powSig}`. 200 accepted; **409** for every way work goes stale — expired, evicted, or the tip moved — because the miner did nothing wrong and should refetch; 400 only for a malformed field or an id this node never issued (`retiredtemplates.js`) |
 | `/rpc` | A **legacy** `{method, params}` shape: `getinfo`, `getbalance`, `getblockcount`, `sendtx` (`rpc.js`). Anything else returns `{err:'unknown method'}` at HTTP 200 |
 
 That last row is why the Ethereum RPC does not mount here: a JSON-RPC 2.0 client
@@ -995,7 +995,8 @@ which is the limit of what a constant naming a format can do.
 `node/test/browser-pow.js`, `node/test/browser-proof.js` and `node/test/mining-api.js`
 imported `web/assets/mining/` and were removed in the same commit. The node's `/mining/*`
 path is still covered, by suites that test the node rather than a browser port of it:
-`evmchain`, `mine-session`, `miner-cli` and `mining-budget` (`node/package.json`).
+`evmchain`, `mine-session`, `miner-cli`, `mining-budget` and `mining-stale`
+(`node/package.json`).
 The surviving signing path is `HDR.signProof`, used by `node/src/chain/miner.js` and
 `node/src/mine/session.js`.
 
@@ -1008,8 +1009,22 @@ above talk to the **account model**'s REST server (`node/src/evmnode.js`), which
 `/mining/submit` **does not trust the submission**: only `nonce`, `powDigest` and
 `powSig` are taken from it; the header core and the transactions come from the
 stored template, staleness is checked against the current tip, and the chain
-revalidates everything anyway. Templates expire after 120s and are capped at 256
-with oldest-first eviction.
+revalidates everything anyway. A template lives `TEMPLATE_TTL_MS` (120 s) and the
+map is capped at `MAX_TEMPLATES` (256) with oldest-first eviction.
+
+**A template that is gone still answers for itself, and that is a status code, not
+a nicety.** Expiry, eviction and a moved tip all answer **409** with
+`{ stale: true, reason }`; a malformed field or an id this node never issued
+answers **400**. The two mean opposite things to a miner — 409 is "refetch and
+carry on", 400 is "you have a bug, stop" — and `node/src/mine/session.js` and the
+network site's browser miner both act on exactly that difference. Until
+2026-08-09 a template that had LEFT the map could not reach the stale branch at
+all, so expiry and eviction answered 400 (`micro-org#237`, four of them measured
+in a browser against the public testnet). `node/src/retiredtemplates.js` keeps a
+bounded ring of retired ids to close it, is shared by both `Templates` classes so
+they cannot drift, and names what it cannot do: an id retired long enough ago is
+forgotten and reads as never-issued again. `node/test/mining-stale.js` asserts
+the four answers over real HTTP against both nodes.
 
 **Politeness is real, and honestly scoped.** The effort slider is a duty cycle the
 workers actually sleep through; a background tab drops to ≤15%; and where the

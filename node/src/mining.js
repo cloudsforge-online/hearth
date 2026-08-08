@@ -26,6 +26,7 @@ const crypto = require('crypto');
 const P = require('./params');
 const C = require('./crypto');
 const BLOCK = require('./block');
+const { RetiredTemplates } = require('./retiredtemplates');
 
 /** Enough for a browser to keep working across a couple of blocks. */
 const TTL_MS = 120_000;
@@ -36,6 +37,11 @@ class Templates {
   constructor(node) {
     this.node = node;
     this.byId = new Map(); // id -> { header, txs, createdAt, prevHash }
+    /* Ids only, for the templates this map no longer holds, so that a miner whose
+     * work merely aged out or was pushed out is told to refetch (409) rather than
+     * told its proof is malformed (400). retiredtemplates.js has the whole
+     * argument, including what it deliberately cannot tell apart. */
+    this.retired = new RetiredTemplates({ ttlMs: TTL_MS, maxTemplates: MAX_TEMPLATES });
   }
 
   /** Build a candidate whose coinbase pays `pubHex`, and remember its txs. */
@@ -73,14 +79,21 @@ class Templates {
     };
   }
 
+  /** Drop a template from the live map and remember the id, and why it went. */
+  _retire(id, reason, now = Date.now()) {
+    this.byId.delete(id);
+    return this.retired.retire(id, reason, now);
+  }
+
   _evict() {
     const now = Date.now();
     for (const [id, t] of this.byId) {
-      if (now - t.createdAt > TTL_MS) this.byId.delete(id);
+      if (now - t.createdAt > TTL_MS) this._retire(id, 'expired', now);
     }
     while (this.byId.size >= MAX_TEMPLATES) {
-      this.byId.delete(this.byId.keys().next().value); // oldest first: Map keeps insertion order
+      this._retire(this.byId.keys().next().value, 'evicted', now); // oldest first: Map keeps insertion order
     }
+    this.retired.sweep(now);
   }
 
   /**
@@ -94,17 +107,38 @@ class Templates {
    * chain then revalidates all of it anyway.
    */
   submit({ templateId, nonce, powDigest, powSig }) {
+    const now = Date.now();
     const t = this.byId.get(templateId);
-    if (!t) return { ok: false, err: 'unknown or expired template' };
+    /* An id this map does not hold is NOT automatically a bad request. It is one
+     * of three different facts, and `retired` is what keeps them apart: expired,
+     * evicted, or genuinely never issued. The first two are 409 and mean "refetch";
+     * only the third is 400. See retiredtemplates.js. */
+    if (!t) return this.retired.answerFor(templateId, now);
+
+    /* TTL is enforced HERE as well as in `_evict`, which only runs when somebody
+     * asks for new work. Without this, a node nobody is asking for templates from
+     * accepts a template long past the `expiresAt` it published with it — the
+     * endpoint contradicting its own advertised lifetime — and, worse for the bug
+     * this file is fixing, whether a late submission answers 409 or 200 depends on
+     * whether an unrelated third party happened to call `/mining/template` in the
+     * meantime. Expiry has to be a property of the template, not of the traffic. */
+    if (now - t.createdAt > TTL_MS) return this._retire(templateId, 'expired', now);
+
     if (!Number.isInteger(nonce) || nonce < 0) return { ok: false, err: 'bad nonce' };
     if (typeof powDigest !== 'string' || !/^[0-9a-f]{64}$/.test(powDigest)) return { ok: false, err: 'bad digest' };
     if (typeof powSig !== 'string' || !/^[0-9a-f]+$/.test(powSig)) return { ok: false, err: 'bad signature' };
 
     // Stale work: the tip moved on. Say so precisely — a miner needs to tell
     // "you were too slow" apart from "your proof is wrong".
+    //
+    // Retired rather than merely deleted. This branch used to `delete` the id and
+    // return the 409 inline, which was right exactly once: a miner that retried
+    // the same template — and mine/session.js and the browser miner both refresh
+    // and can resubmit — fell through to the unknown-id path on the second
+    // attempt and got 400 for the same template that had just correctly been
+    // called stale.
     if (t.prevHash !== BLOCK.blockId(this.node.chain.tip)) {
-      this.byId.delete(templateId);
-      return { ok: false, err: 'stale template — the tip moved', stale: true };
+      return this._retire(templateId, 'superseded', now);
     }
 
     const header = { ...t.header, nonce, powDigest, powSig };
@@ -115,7 +149,11 @@ class Templates {
 
     const r = this.node.chain.addBlock(block);
     if (!r.ok) return r;
-    this.byId.delete(templateId);
+    /* Retired, not just deleted, for the same reason as the branch above: a miner
+     * that resends a winning proof — a retry over a connection that dropped after
+     * the node had already accepted it — must be told the tip moved, which it did,
+     * and by this very block. It used to be told its proof was malformed. */
+    this._retire(templateId, 'superseded', now);
     this.node.mempool.removeIncluded(block.txs.slice(1));
     if (this.node.p2p) this.node.p2p.broadcast({ t: 'block', block });
     return { ok: true, id: r.id, height: header.height, reward: t.txs[0].outputs[0].amount };

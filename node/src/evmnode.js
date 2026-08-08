@@ -473,7 +473,11 @@ class EvmNode {
         });
         if (over) return send(429, { err: 'too many proofs to verify — slow down', retryAfterMs: 1000 });
         if (r.ok) this.log('block from a remote miner', { height: r.height, id: r.id });
-        // Stale is 409: the miner did nothing wrong and should pull fresh work.
+        /* Stale is 409: the miner did nothing wrong and should pull fresh work.
+         * That now covers every way work goes stale — TTL, MAX_TEMPLATES
+         * eviction and a moved tip all set `stale` (src/retiredtemplates.js).
+         * Only two things are left on the 400 side, and both are true faults in
+         * the submission: a malformed field, and an id this node never issued. */
         return send(r.ok ? 200 : r.stale ? 409 : 400, r);
       }
       /* A developer who points a wallet at the REST port gets a pointer rather than
