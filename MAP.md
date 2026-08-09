@@ -19,6 +19,15 @@ also from a fresh clone with no corpus), every unit suite individually,
 `test/dex.js`, `test/fuzz/run.js`, the VMTests and GeneralStateTests conformance
 gates, the TransactionTests corpus group, and the `tools/` suites.
 
+**The live-network figures were re-measured on 2026-08-08 UTC** against
+`https://rpc.cloudsforge.online` from outside this network, by walking every
+block from 1 to the tip over JSON-RPC. That pass corrected §1, §2 and §10, all of
+which still described mainnet as hours old, under 200 blocks tall and empty —
+true when written on 2026-08-04, wrong within a day, and unnoticed for four
+because those three figures had been written down without the date they were
+taken. Every live-network figure below now carries one. If you are reading this
+well after 2026-08-08, assume the numbers have moved again and re-measure.
+
 ---
 
 ## 1. What this is, in one paragraph
@@ -37,13 +46,32 @@ vectors pass. §4 is the evidence.
 
 **The account model is now the published chain.** Mainnet — chain id 7411 — is
 reachable at `https://rpc.cloudsforge.online` and mining. Verified from outside
-this network on 2026-08-05: `eth_chainId` → `0x1cf3`, `web3_clientVersion` →
+this network on 2026-08-05, and `eth_chainId` and `web3_clientVersion` re-checked
+and unchanged on 2026-08-08: `eth_chainId` → `0x1cf3`, `web3_clientVersion` →
 `Hearth/v0.2.0/linux-x64/node22.23.1`, genesis `extraData` → `0x6865617274682f37343131`
-(`"hearth/7411"`, the format `node/src/chain/genesis.js` describes). Block 1
-was mined 2026-08-04 19:12 UTC, so the chain is hours old and under 200 blocks
-tall, it is still at the `GENESIS_TARGET` difficulty floor (`difficulty: 0x100`,
-`node/src/params.js`), and it runs on one home server behind one Cloudflare
-Tunnel. **The public testnet is also live** — chain id 7412 at
+(`"hearth/7411"`, the format `node/src/chain/genesis.js` describes). Block 1 was
+mined 2026-08-04 19:12:21 UTC and the chain has not stopped since. Re-measured
+from outside this network on 2026-08-08 UTC: `eth_blockNumber` → `0x1ad8`
+(**6,872 blocks**), and the latest block's timestamp `0x6a77a04a` =
+2026-08-08 21:31:54 UTC, which makes mainnet **four days and two hours old** —
+not the "hours old and under 200 blocks tall" this paragraph claimed for its
+first four days. It is still at the `GENESIS_TARGET` difficulty floor
+(`difficulty: 0x100` on that same latest block, `node/src/params.js`), and it
+runs on one home server behind one Cloudflare Tunnel.
+
+**Those two figures do not divide into the 15-second block time, and the gap is
+the interesting part.** Four days at 15 s would be roughly 23,600 blocks, not
+6,872. Walking every block from 1 to 6,872 on 2026-08-08 UTC, the mean interval
+is **51.5 s** and the median **34 s**, a little over three times target, and the
+last 500 blocks average **45.5 s**. One miner sitting at the `GENESIS_TARGET`
+floor is the entire explanation: the floor sets the work, a single machine
+supplies whatever hash rate it has, and nothing retargets because there is no
+competition to retarget against. Any reader dividing the height by the age and
+concluding the block time is broken should read this paragraph instead — the
+15-second figure at the top of this section is the **design target**, and no live
+block has ever been produced under the parameters that would deliver it.
+
+**The public testnet is also live** — chain id 7412 at
 `https://rpc-testnet.cloudsforge.online`, verified from outside on 2026-08-05
 (`eth_chainId` → `0x1cf4`), on the same single home server and the same tunnel.
 
@@ -72,7 +100,7 @@ here first.
 | Contract verification (`forge verify-contract`-compatible) | `tools/verify/` | ✅ **merged**, 116 checks |
 | Property fuzzing | `node/test/fuzz/` | ✅ **merged**, 82,481 checks; two open findings — §4.7, §11 |
 | **Consensus on the account model** | `node/src/chain/`, `node/src/evmnode.js` | ✅ **merged.** Blocks are produced, validated and reorged — `evmchain` 191 checks, `evm-p2p-fork` 51 across two real nodes; three run under `docker-compose.testnet.yml` |
-| **Public mainnet** | — | ✅ **published 2026-08-04.** Chain id 7411 at `https://rpc.cloudsforge.online`, mining, publicly trusted TLS. At the difficulty floor, on one home server behind one tunnel — reachable, not established |
+| **Public mainnet** | — | ✅ **published 2026-08-04.** Chain id 7411 at `https://rpc.cloudsforge.online`, mining, publicly trusted TLS. Measured from outside on **2026-08-08**: **6,872 blocks**, **four days and two hours** old, **21 transactions**, mean block interval 51.5 s — §1. Still at the difficulty floor, on one home server behind one tunnel — running, not established |
 | **Public testnet** | — | ✅ **published.** Chain id 7412 at `https://rpc-testnet.cloudsforge.online` — verified from outside on 2026-08-05, `eth_chainId` → `0x1cf4`. Explorer at `explorer-testnet.cloudsforge.online`, faucet at `network-testnet.cloudsforge.online/faucet`, P2P at `wss://p2p-testnet.cloudsforge.online/p2p` (**only the `/p2p` path is routed**). Hostnames are single-label `<surface>-testnet.` — the `*.testnet.cloudsforge.online` form fails TLS, because Cloudflare Universal SSL's `*.cloudsforge.online` covers one label |
 | Any deployed contract of record | — | ⬜ **still none.** Off mainnet, no genesis outlives a `docker compose down -v`, so testnet state is disposable |
 | The UTXO chain (ledger, P2P, REST, reorg) | `node/src/chain.js`, `tx.js`, `p2p.js`, `rpc.js` | ✅ runs, and **is being retired** |
@@ -89,7 +117,11 @@ production PoW parameters** — the live chain is pinned at the `GENESIS_TARGET`
 floor — and those parameters have now been measured and found unreachable
 ([`docs/pow-parameters.md`](docs/pow-parameters.md)). Under that sits a
 deployment fact worth stating plainly: one home server, one tunnel, no
-redundancy, and no backup that has ever been restored.
+redundancy, and no backup that has ever been restored. That is no longer only a
+worry — walking every block on 2026-08-08 UTC found exactly one stall, **2 h
+3 min with no block at all** between blocks 1962 and 1963 (2026-08-05 19:08:14 →
+21:11:30 UTC), which is 2.1% of the chain's life to date. One server, one
+outage, and nothing anywhere else that could have produced a block meanwhile.
 
 **A "merged" row is still not a "ready" row**, but the thing that made it so is
 fixed: `StateDB` used to re-root both tries on every mutation, at **443 MB and
@@ -481,8 +513,12 @@ fake (`docs/evm-spec.md` §0).
 
 ### 4.2 The unit suites — run, and their exact counts
 
-Every one of these was executed while writing this file
-(`cd node && node test/<name>.js`):
+**Re-derived 2026-08-09** from one `npm test` in `node/`, run to completion, exit 0,
+**without** the optional reference corpus in `test/conformance/vectors`. This is every
+suite `node/package.json` runs, in that order — not a selection — because the previous
+version of this table was a hand-kept subset and had silently fallen ten suites behind
+it. [`docs/testing.md`](docs/testing.md) §1 carries the same figures with a line on
+what each one establishes.
 
 | Suite | Result |
 | --- | --- |
@@ -492,35 +528,49 @@ Every one of these was executed while writing this file
 | `secp256k1` | 179/179 |
 | `opcodes` | 81/81 |
 | `gas` | 205/205 |
-| `precompiles` | 119/119 |
-| `bn128` | 81/81 (1 skipped without the corpus) |
-| `blake2f` | 43/43 offline; **46/46 with the corpus fetched** — see §12 |
-| `trie` | 302/302 |
+| `precompiles` | 126/126 |
+| `bn128` | 81/81 offline (1 case skipped); **86/86** with the corpus fetched |
+| `blake2f` | 50/50 offline; **53/53** with the corpus fetched — see §12 |
+| `trie` | 315/315 |
 | `statedb` | 166/166 |
-| `transaction` | 167/167 |
+| `transaction` | 165/165 |
 | `receipt` | 62/62 |
 | `bloom` | 61/61 |
-| `interpreter` | 182/182 |
+| `interpreter` | 194/194 |
 | `statetransition` | 133/133 |
 | `cli` | 310/310 |
 | `jsonrpc` | **422/422** |
+| `evmchain` | **191/191** |
+| `chain-replay` | 27/27 |
+| `evm-rpc` | 170/170 |
 | `conformance --selftest` | 85/85 |
 | `fuzz --cases=2000` | **82,481/82,481**, with 3 standing observations — §4.7 |
-| `unit` / `e2e` / `records` | 32/32 · 24/24 · 49/49 |
-| `p2p-fork` | 25/25 |
+| `unit` / `e2e` / `records` | 40/40 · 24/24 · 49/49 |
+| `mining-budget` / `mining-stale` | 14/14 · 50/50 |
+| `miner-loop` / `mine-keystore` | 4/4 · 52/52 |
+| `mine-session` / `miner-cli` | 82/82 · 31/31 |
+| `netprefix` / `ws` | 34/34 · 62/62 |
+| `p2p-fork` / `evm-p2p-fork` / `p2p-ws` | 34/34 · 51/51 · 45/45 |
+| `pow-params` | 7/7 |
+| `bench/block-execution` | 5/5 |
+| **Total** | **39 suites, 86,451 checks** |
 
-> **This row used to also name `browser-pow`, `keystore` and `mining-api`, and none of
-> the three has existed since 2026-08-04** (`48bc28a`) — a table headed "only things
+> **This table used to also name `browser-pow`, `keystore` and `mining-api`, and none
+> of the three had existed since 2026-08-04** (`48bc28a`) — a table headed "only things
 > that were run" was reporting counts for files that were not there. `browser-pow` is
-> restored (§9.2) but is **not** in `npm test`, so it does not belong in this table;
-> `mining-api` and the Ed25519 `keystore` suite have no successor.
+> restored (§9.2) but is **not** in `npm test`, because it needs a second repository
+> checked out; it has its own CI job and is listed in `docs/testing.md` §1 under
+> "outside the gate, on purpose". `mining-api` and the Ed25519 `keystore` suite have no
+> successor.
 >
-> **Re-derived 2026-08-09** by running `npm test` in `node/` to completion, exit 0,
-> without the optional reference corpus: **38 suites, 86,399 checks.** Several rows
-> above have drifted since they were taken (`precompiles` is 126, `trie` 315,
-> `interpreter` 194, `transaction` 165, `unit` 40) and the table is missing the ten
-> suites added since. `node/package.json` is the source of truth for what runs;
-> [`docs/testing.md`](docs/testing.md) §1 is the table that is meant to enumerate it.
+> Seven per-suite counts here were also stale when this was re-derived (`precompiles`
+> was written as 119, `trie` 302, `interpreter` 182, `transaction` 167, `unit` 32,
+> `p2p-fork` 25, `blake2f` 43 offline). A table transcribed by hand from `node/package.json` drifts the moment
+> that file changes; the total row above exists so the next drift is one subtraction
+> away from being visible. The two with-corpus figures are the only numbers here not
+> taken from that run: the corpus branch of `test/bn128.js` contains 5 checks and that
+> of `test/blake2f.js` contains 3, all unconditional once the branch is entered, so 86
+> and 53 follow from the offline totals by counting rather than by memory.
 
 ### 4.3 The reference corpus
 
@@ -533,7 +583,7 @@ runs offline.
 | **VMTests** | **609/609 vectors, 2121/2121 checks** — verified | `node test/conformance/runner.js --impl=test/interpreter.js --dir=test/conformance/vectors/VMTests --no-gas` |
 | **GeneralStateTests** | **20,077 / 20,077**, 60,231 checks — verified, re-run for this pass (2,002 s) | `node test/conformance/runner.js --impl=test/statetransition.js --suite=GeneralStateTests --dir=test/conformance/vectors` |
 | **TransactionTests** | **188/188** — verified. `188/188 corpus cases, 22 typed (EIP-2718) skipped, 2 with no Shanghai result` | `node test/transaction.js`, group *TransactionTests — full corpus* |
-| RLPTests / TrieTests | pass, inside `test/rlp.js` and `test/trie.js` — 55 and 25 vectors respectively, by the loader's count. Neither suite reports a separate vector total on stdout, so quote the suite's own check count (149/149, 302/302) rather than a vector count | |
+| RLPTests / TrieTests | pass, inside `test/rlp.js` and `test/trie.js` — 55 and 25 vectors respectively, by the loader's count. Neither suite reports a separate vector total on stdout, so quote the suite's own check count (149/149, 315/315 — measured 2026-08-09) rather than a vector count | |
 
 **The ten GeneralStateTests failures are fixed.** Earlier revisions of this file
 named them individually, because they sat in four different directories and a
@@ -830,7 +880,7 @@ Block frames are deliberately **unnamed** so `EventSource.onmessage` receives th
 | Route | Behaviour |
 | --- | --- |
 | `/tx` | Accepts `{tx}` or a bare tx. Validates into the mempool and gossips it |
-| `/mining/submit` | `{templateId, nonce, powDigest, powSig}`. 200 accepted, **409** when the tip moved (stale — the miner did nothing wrong), 400 for a bad proof |
+| `/mining/submit` | `{templateId, nonce, powDigest, powSig}`. 200 accepted; **409** for every way work goes stale — expired, evicted, or the tip moved — because the miner did nothing wrong and should refetch; 400 only for a malformed field or an id this node never issued (`retiredtemplates.js`) |
 | `/rpc` | A **legacy** `{method, params}` shape: `getinfo`, `getbalance`, `getblockcount`, `sendtx` (`rpc.js`). Anything else returns `{err:'unknown method'}` at HTTP 200 |
 
 That last row is why the Ethereum RPC does not mount here: a JSON-RPC 2.0 client
@@ -908,8 +958,8 @@ token. `P2P_BLOCK_VERIFY_BURST` = 200 refilling at 25/s, and
 
 **Tested over real sockets.** `node/test/p2p-fork.js` stands up two real `Node`
 instances with real TCP and RPC servers, partitions them, mines competing branches,
-reconnects, and requires the lighter node to reorg onto the heavier tip. 25/25, in
-CI.
+reconnects, and requires the lighter node to reorg onto the heavier tip. 34/34
+(measured 2026-08-09), in CI.
 
 ---
 
@@ -1022,7 +1072,8 @@ which is the limit of what a constant naming a format can do.
   12/12.
 - `mining-api.js` is **not restored and has no successor**. The node's `/mining/*` path
   is covered by suites that test the node rather than a browser port of it: `evmchain`,
-  `mine-session`, `miner-cli` and `mining-budget` (`node/package.json`).
+  `mine-session`, `miner-cli`, `mining-budget` and `mining-stale`
+  (`node/package.json`).
 
 **Between 2026-08-06 and 2026-08-09 there was a live browser miner and no
 cross-check at all**, while this section, SECURITY.md, `rust/README.md`,
@@ -1041,8 +1092,22 @@ above talk to the **account model**'s REST server (`node/src/evmnode.js`), which
 `/mining/submit` **does not trust the submission**: only `nonce`, `powDigest` and
 `powSig` are taken from it; the header core and the transactions come from the
 stored template, staleness is checked against the current tip, and the chain
-revalidates everything anyway. Templates expire after 120s and are capped at 256
-with oldest-first eviction.
+revalidates everything anyway. A template lives `TEMPLATE_TTL_MS` (120 s) and the
+map is capped at `MAX_TEMPLATES` (256) with oldest-first eviction.
+
+**A template that is gone still answers for itself, and that is a status code, not
+a nicety.** Expiry, eviction and a moved tip all answer **409** with
+`{ stale: true, reason }`; a malformed field or an id this node never issued
+answers **400**. The two mean opposite things to a miner — 409 is "refetch and
+carry on", 400 is "you have a bug, stop" — and `node/src/mine/session.js` and the
+network site's browser miner both act on exactly that difference. Until
+2026-08-09 a template that had LEFT the map could not reach the stale branch at
+all, so expiry and eviction answered 400 (`micro-org#237`, four of them measured
+in a browser against the public testnet). `node/src/retiredtemplates.js` keeps a
+bounded ring of retired ids to close it, is shared by both `Templates` classes so
+they cannot drift, and names what it cannot do: an id retired long enough ago is
+forgotten and reads as never-issued again. `node/test/mining-stale.js` asserts
+the four answers over real HTTP against both nodes.
 
 **Politeness is real, and honestly scoped.** The effort slider is a duty cycle the
 workers actually sleep through; a background tab drops to ≤15%; and where the
@@ -1103,10 +1168,42 @@ only externally reachable caller is the unauthenticated `/mining/template`.
 - ~~**Nothing produces an account-model block.**~~ Closed, and then published.
   `node/src/evmnode.js` constructs and mounts `node/src/jsonrpc/server.js`
   over a real account-model chain, and mainnet — chain id 7411 — serves it at
-  `https://rpc.cloudsforge.online`. What is still true of §4 is narrower: its
-  vectors and fixtures are the evidence, and the public chain has not yet added
-  much to them — it is hours old, holds **zero transactions**, and has never run
-  at production proof-of-work parameters.
+  `https://rpc.cloudsforge.online`. What is still true of §4 is narrower, and
+  narrower than it was: its vectors and fixtures remain the bulk of the evidence,
+  but the public chain is no longer contributing nothing to them. Measured by
+  walking every block from 1 to 6,872 on 2026-08-08 UTC, mainnet is **four days
+  and two hours old** and holds **21 transactions** — not the **zero
+  transactions** this bullet claimed for its first four days — of which **nine
+  are successful contract creations** (receipt `status: 0x1`, about 1,358,000 gas
+  each, 6,007 bytes of runtime code apiece) and twelve are plain value transfers.
+  What survives without qualification is the last clause: **no block has ever
+  been produced at production proof-of-work parameters.** The latest block still
+  reports `difficulty: 0x100`, the `GENESIS_TARGET` floor, and §1 records what
+  that does to the block interval.
+- **§2's "Any deployed contract of record — still none" row and the chain now
+  disagree, and the row is deliberately left standing.** Deciding what "of
+  record" is meant to cover is not a measurement, so it is not made here; the
+  measurement that forces the decision is, because a fact that lives only in an
+  agent's scrollback is a fact this file has already lost once. The nine
+  creations above are nine **`ForesightMarket`** instances —
+  `foresight/src/contracts/ForesightMarket.sol`, a different repository in this
+  estate — mined into blocks 238 to 251 between 22:22 and 22:33 UTC on
+  2026-08-04, and live at `0x49408b99…`, `0xf8202a8f…`, `0x541c29de…`,
+  `0xbff77573…`, `0xae5d2dd3…`, `0x4177304b…`, `0x2acc6fd3…`, `0x3bb8e307…` and
+  `0xe1b7955a…`. They are identified rather than guessed: every one answers
+  `treasury()` → `0x76C853d699B17106E5e15d7D40A38F2238cb246c`, the live mainnet
+  value `deploy/docs/house-seed.md` documents, `oracle()` →
+  `0x2c71eb5753e7d08929d2ec14b303a5f5b3b0b9ca` and `feeBps()` → 200, and each
+  carries a **distinct** `questionHash()` and `closeTime()` — so this is nine
+  real markets, not one deployment probe run nine times. All nine read `state()`
+  → `0` (`Open`) over an empty pool, so they are deployed and reachable and
+  nothing has ever been staked into one. **The failure mode worth naming: no file
+  in any repository in this estate records these addresses.** Grepping the whole
+  estate for them returns nothing; the only place they are written down is the
+  `markets.contract_address` column created by `foresight/src/migrations.ts`,
+  which exists solely in the running service's database on the deployment host.
+  Nine contracts are live on a public chain and the source tree cannot name one
+  of them.
 - ~~**The browser miner and the node disagree about the coinbase key.**~~ Closed,
   and both bullets here were reading the wrong chain. `node/src/rpc.js`
   and `node/src/block.js` are the **UTXO** REST server and the **UTXO** block
@@ -1157,9 +1254,10 @@ state of every clean checkout including CI's. That killed the run at suite 9 wit
 `ReferenceError: skipped is not defined` and hid the results of ten suites.
 Fixed in `521ecd5` by deleting the counter rather than declaring it — a skipped
 optional corpus is not a check that passed. **Re-verified for this file** by
-cloning the repository into an empty directory and running `npm test`: all 27
-suites pass, exit 0, with no corpus and no install. `blake2f` reports 43/43
-offline and 46/46 once the corpus is fetched.
+cloning the repository into an empty directory and running `npm test`. **Re-run
+2026-08-09** on the merge of this branch with `main`, still with no corpus, no
+`node_modules` and no network: all **39** suites pass, exit 0. `blake2f` reports
+50/50 offline and 53/53 once the corpus is fetched — §4.2 for the whole table.
 
 **The defect that used to block wiring the EVM to a block is fixed and gated.**
 [`docs/robustness-review.md`](docs/robustness-review.md) §1 measured `StateDB`
@@ -1281,15 +1379,16 @@ node test/conformance/runner.js --impl=test/statetransition.js \
      --suite=GeneralStateTests --dir=test/conformance/vectors
 ```
 
-Fetching it also takes `blake2f` from 43/43 to 46/46 and runs `bn128`'s one
-skipped case (§11).
+Fetching it also takes `blake2f` from 50/50 to 53/53 and `bn128` from 81/81 to
+86/86, running its one skipped case (§11).
 
-**CI** (`.github/workflows/ci.yml`), six jobs:
+**CI** (`.github/workflows/ci.yml`), seven jobs:
 
 | Job | What it runs |
 | --- | --- |
 | Node reference client | `npm test` — **one command, not a list**, so a new suite is covered the moment it is added to `package.json` (`ci.yml`). Plus the coinnomics model sanity check |
 | Rust production core | `cargo fmt --check`, `clippy -D warnings`, build, test |
+| Browser miner vs this node | **Added 2026-08-09.** Checks out [`micro-network-site`](https://github.com/cloudsforge-online/micro-network-site) and runs `npm run test:browser` against it — `browser-pow` (11) and `browser-proof` (12). They **fail rather than skip** when that checkout is missing, which is the whole point: for three days there was a browser miner on the public `/mine` page and nothing comparing it to this node, while six documents said otherwise — §9.2 |
 | Web assets | ⚠️ **Runs nothing.** The syntax check, explorer self-test and wallet self-test that stood here all read `web/assets`, and went with it in `48bc28a` (`ci.yml`). The job still checks out the repo, reports green, and gates nothing. Its remaining body is a comment recording where the wallet gate went — §9.1. **A green job that executes no assertion is worth deleting rather than reading as a pass** |
 | Secret hygiene | `.env` untracked; no API tokens; a private-key matcher that requires a PEM header **followed by real base64** rather than the header alone, so a bare PEM literal in source cannot force the check to be muted (`ci.yml`) |
 | DeFi contracts | `pnpm compile` (which refuses on an init-code-hash mismatch) and the build tests |

@@ -177,6 +177,27 @@ than authenticated — see `MINING_VERIFY_BURST` in `node/src/params.js` for why
 permissionless chain should not put a credential on `submit`, and what it puts
 there instead.
 
+**What `submit` answers, and why your miner must branch on it.** The status code
+is an instruction, and 400 and 409 are opposite ones:
+
+| Code | Means | What a miner must do |
+|---|---|---|
+| 200 | accepted, and the block is on the chain | count it and fetch fresh work |
+| 409 | **stale** — `{ stale: true, reason }` where `reason` is `expired`, `evicted` or `superseded` | fetch fresh work. This is **not** a fault and must not count toward any give-up threshold |
+| 400 | your submission is wrong — a malformed field, or `reason: 'unknown'` for an id this node never issued | stop and fix the client |
+| 429 | the node is over its verification budget, not a judgement on your proof | wait `retryAfterMs` and retry |
+
+All three ways work goes stale answer alike: it aged past `TEMPLATE_TTL_MS`, it
+was pushed out when `MAX_TEMPLATES` overflowed, or the tip moved under it. A
+miner cannot see which and must not have to. Until 2026-08-09 the first two
+answered **400** instead, because a template that had left the map could not
+reach the stale branch at all — so a miner whose work merely aged out was told
+its proof was malformed, which is the one thing that makes an honest miner stop
+(`micro-org#237`). `node/src/retiredtemplates.js` carries the reasoning,
+including the one thing it deliberately cannot tell apart: an id retired long
+enough ago to be forgotten is indistinguishable from one that was never issued,
+and its message says so rather than guessing.
+
 The node cannot mine on your behalf and cannot take work built for your key.
 That is a real guarantee about *this* endpoint; it is not a guarantee that no
 pool can exist (§2).

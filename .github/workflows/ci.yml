@@ -43,6 +43,16 @@ jobs:
       # covered by suites that test the node rather than a browser port of it:
       #   mine-session / miner-cli /          the light-miner path: templates,
       #   mining-budget / evmchain            submission, staleness, refusals
+      #   mining-stale                        and what a miner is TOLD when its
+      #                                       template is gone, over real HTTP
+      #                                       against both node implementations.
+      #                                       400 and 409 are opposite
+      #                                       instructions — "you have a bug,
+      #                                       stop" against "you were late,
+      #                                       refetch" — and expiry and eviction
+      #                                       answered the first for the whole
+      #                                       of the public testnet's life
+      #                                       (micro-org#237)
       # `browser-pow` and `browser-proof` DO exist again — see the `browser` job
       # below. They stay out of `npm test` because they need a second repository
       # checked out, and this command must pass on a bare checkout of this one.

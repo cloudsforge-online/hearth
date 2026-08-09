@@ -171,10 +171,11 @@ Everything below **runs**, and every number was produced by running it:
 > *mockup* that used to sit in `web/pay-demo.html` — it simulated settlement on a
 > timer — went with that directory; there is still no payment SDK.
 
-**`npm test` passes from a clean clone** — 27 suites, no install, no corpus and no
-network. Verified by cloning this repository into an empty directory and running
-it. Fetching the reference corpus completes two of them: `blake2f` goes 43/43 →
-46/46 and `bn128`'s one skipped case runs.
+**`npm test` passes from a clean clone** — **39 suites, 86,451 checks**, no install,
+no corpus and no network. Re-measured 2026-08-09 by cloning this repository into an
+empty directory and running it; [`docs/testing.md`](docs/testing.md) §1 lists every
+suite. Fetching the reference corpus completes two of them: `blake2f` goes 50/50 →
+53/53 and `bn128` 81/81 → 86/86, running its one skipped case.
 
 **The caveat that used to matter most is closed.**
 [`docs/robustness-review.md`](docs/robustness-review.md) measured `StateDB`
