@@ -95,9 +95,14 @@ the JS `Number` precision limit (see [security-review.md](security-review.md), H
 - **CI** builds and tests both on every push — but note what that does and does
   not prove. `cargo test` checks the Rust crate against itself. There is no
   cross-implementation conformance test for PoW or difficulty, which is exactly
-  why the two drifted without anything going red. The browser miner has one
-  (`node/test/browser-pow.js`), and that is the model to copy when the Rust core
-  is brought back onto consensus.
+  why the two drifted without anything going red. The browser miner has one again
+  (`node/test/browser-pow.js`, in its own CI job), and that is the model to copy
+  when the Rust core is brought back onto consensus — but copy the *job*, not the
+  sentence. **This bullet claimed that gate existed while it did not.**
+  `browser-pow.js` was deleted with `web/` in `48bc28a` on 2026-08-04; the browser
+  miner was restored in `micro-network-site` on 2026-08-06 and the suite was not,
+  so between those dates every cross-implementation check named in this document
+  was absent and this file was the reason nobody looked. Restored 2026-08-09.
 - Divergences are tracked as findings (e.g. the difficulty algorithm, M5 in the
   [security review](security-review.md)) and must be reconciled before either is
   consensus-active on mainnet.

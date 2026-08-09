@@ -127,13 +127,33 @@ A message confirms when its block does — around 15s, not instantly.
 ## Tests
 
 ```bash
+npm test              # the gate: every suite in package.json, on a bare checkout
 node test/unit.js     # primitives: crypto, tx, pow, emission, difficulty
 node test/e2e.js      # mine, pay, verify ledger/burn/persistence end to end
 node test/records.js  # record consensus rules, sealed boxes, a whole conversation
-node test/browser-pow.js # the browser miner's hashing vs the node's, digest for digest
-node test/mining-api.js  # mine a block over HTTP the way a browser tab does
 node test/p2p-fork.js # partition two nodes and prove the reorg
 ```
+
+`node test/mining-api.js` used to be listed here and **does not exist**: it was
+deleted with `web/` in `48bc28a` and has no successor. The node's `/mining/*` path
+is covered instead by `evmchain`, `mine-session`, `miner-cli` and `mining-budget`,
+which test the node rather than a browser port of it.
+
+### The two suites that need a second repository
+
+```bash
+npm run test:browser   # both of the below
+```
+
+`test/browser-pow.js` and `test/browser-proof.js` compare the **browser** miner
+against this node — the hash loop digest for digest, and the proof signature through
+the real template flow. The browser half lives in
+[`micro-network-site`](https://github.com/cloudsforge-online/micro-network-site)
+`src/mining/`, so they are deliberately outside `npm test`: that command must pass on
+a checkout of this repository alone. Clone it beside this one, or point
+`HEARTH_BROWSER_MINING_SRC` at the directory. They **fail rather than skip** when it
+is missing — a skip line scrolls past exactly like a pass, which is how these two
+came to be cited here for five days while not existing at all.
 
 ## Docker
 See [`../docker-compose.yml`](../docker-compose.yml) and

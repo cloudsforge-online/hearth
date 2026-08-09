@@ -234,7 +234,12 @@ wallet and the browser miner lived in `web/` and were deleted on 2026-08-04 (`48
 reads `micro-indexer`, not `eth_*`, and is a replacement rather than a port — and the
 wallet is [`micro-hearth-wallet-core`](https://github.com/cloudsforge-online/micro-hearth-wallet-core)
 plus [`micro-wallet-extension`](https://github.com/cloudsforge-online/micro-wallet-extension).
-The browser miner has no successor at all. See [`MAP.md`](../MAP.md) §3.4 and §9.2.
+The browser miner's successor is
+[`micro-network-site`](https://github.com/cloudsforge-online/micro-network-site)
+`src/mining/` — **this line read "no successor at all" until 2026-08-09**, and was
+wrong from 2026-08-06, when the miner was restored there. `node/test/browser-pow.js`
+and `node/test/browser-proof.js` hold it to this node. See [`MAP.md`](../MAP.md) §3.4
+and §9.2.
 
 **The tracer is not an afterthought.** `node/src/cli/trace.js` was written *during*
 the interpreter work, for a selfish reason: when a GeneralStateTests vector fails,

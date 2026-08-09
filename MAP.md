@@ -310,7 +310,7 @@ answer rather than a gap.
 | --- | --- |
 | `web/index.html` + `web/assets/explorer/` — block explorer | ➡️ [`micro-explorer-web`](https://github.com/cloudsforge-online/micro-explorer-web), **but see the warning below — it is a different program, not a port** |
 | `web/wallet.html` + `web/assets/wallet/` — secp256k1 wallet | ➡️ [`micro-hearth-wallet-core`](https://github.com/cloudsforge-online/micro-hearth-wallet-core) (the signing library) and [`micro-wallet-extension`](https://github.com/cloudsforge-online/micro-wallet-extension) (the MV3 browser surface). §9.1 |
-| `web/mine.html` + `web/assets/mining/` — browser miner | ❌ **Gone, not moved.** `node/bin/hearth-mine.js` and `app-desktop/` cover mining. §9.2 |
+| `web/mine.html` + `web/assets/mining/` — browser miner | ➡️ [`micro-network-site`](https://github.com/cloudsforge-online/micro-network-site) `src/mining/` + its `/mine` page. **This row read "Gone, not moved" until 2026-08-09; it was restored on 2026-08-06.** From here, mining is `node/bin/hearth-mine.js` and `app-desktop/`. §9.2 |
 | `web/pay-demo.html` — merchant-button mockup | ❌ **Gone, and nothing replaces it.** It simulated settlement on a 1,200 ms timer. There is still no payment SDK — §10 |
 | `web/explorer.html` — 0-second redirect | ❌ Gone with the page it redirected to |
 | `web/nginx.conf`, `web/Dockerfile` | ❌ Gone. Each successor serves itself |
@@ -507,7 +507,20 @@ Every one of these was executed while writing this file
 | `conformance --selftest` | 85/85 |
 | `fuzz --cases=2000` | **82,481/82,481**, with 3 standing observations — §4.7 |
 | `unit` / `e2e` / `records` | 32/32 · 24/24 · 49/49 |
-| `browser-pow` / `keystore` / `mining-api` / `p2p-fork` | 10/10 · 19/19 · 24/24 · 25/25 |
+| `p2p-fork` | 25/25 |
+
+> **This row used to also name `browser-pow`, `keystore` and `mining-api`, and none of
+> the three has existed since 2026-08-04** (`48bc28a`) — a table headed "only things
+> that were run" was reporting counts for files that were not there. `browser-pow` is
+> restored (§9.2) but is **not** in `npm test`, so it does not belong in this table;
+> `mining-api` and the Ed25519 `keystore` suite have no successor.
+>
+> **Re-derived 2026-08-09** by running `npm test` in `node/` to completion, exit 0,
+> without the optional reference corpus: **38 suites, 86,399 checks.** Several rows
+> above have drifted since they were taken (`precompiles` is 126, `trie` 315,
+> `interpreter` 194, `transaction` 165, `unit` 40) and the table is missing the ten
+> suites added since. `node/package.json` is the source of truth for what runs;
+> [`docs/testing.md`](docs/testing.md) §1 is the table that is meant to enumerate it.
 
 ### 4.3 The reference corpus
 
@@ -960,12 +973,16 @@ secp256k1, `0x…` and 18 decimals. There is no migration path and deliberately 
 machinery for one, because an Ed25519 key names no account on an EVM chain and nobody
 holds EMBER.
 
-### 9.2 The browser miner — deleted, and not replaced in kind
+### 9.2 The browser miner — deleted here, restored elsewhere two days later
 
-**`web/mine.html` and `web/assets/mining/` were deleted on 2026-08-04 (`48bc28a`).
-Nothing in this estate mines in a browser tab any more, and that is deliberate.**
+**`web/mine.html` and `web/assets/mining/` were deleted on 2026-08-04 (`48bc28a`), and
+this section said "nothing in this estate mines in a browser tab any more, and that is
+deliberate" until 2026-08-09.** It was wrong from 2026-08-06, when
+[`micro-network-site`](https://github.com/cloudsforge-online/micro-network-site)
+restored the miner as `src/mining/{sha256,homefire,miner,worker}.js` — the same code
+rather than a rewrite — and served it from its public `/mine` page.
 
-Mining you can actually run is elsewhere in this repository:
+Mining you can run from **this** repository:
 
 | How to mine | Where |
 | --- | --- |
@@ -991,13 +1008,29 @@ which is the limit of what a constant naming a format can do.
 > "the miner was broken"; it is that a front end nobody runs will absorb real fixes and
 > return nothing for them.
 
-**The conformance gates that stood here are gone with the code they tested.**
-`node/test/browser-pow.js`, `node/test/browser-proof.js` and `node/test/mining-api.js`
-imported `web/assets/mining/` and were removed in the same commit. The node's `/mining/*`
-path is still covered, by suites that test the node rather than a browser port of it:
-`evmchain`, `mine-session`, `miner-cli` and `mining-budget` (`node/package.json`).
-The surviving signing path is `HDR.signProof`, used by `node/src/chain/miner.js` and
-`node/src/mine/session.js`.
+**The conformance gates: two restored, one not.** `node/test/browser-pow.js`,
+`node/test/browser-proof.js` and `node/test/mining-api.js` all imported
+`web/assets/mining/` and were removed in `48bc28a`.
+
+- `browser-pow.js` and `browser-proof.js` are **back as of 2026-08-09**, pointed at
+  `micro-network-site/src/mining/` instead. The first compares the hash loop digest for
+  digest; the second drives that repository's own `proofSignature` through this node's
+  template flow and requires a block. They are not in `npm test` — that has to pass on
+  a bare checkout of this repository — so they run in the `browser` CI job, which
+  checks the other repository out first, and they fail rather than skip when it is
+  absent. Measured 2026-08-09 against `micro-network-site` at `489903f`: 11/11 and
+  12/12.
+- `mining-api.js` is **not restored and has no successor**. The node's `/mining/*` path
+  is covered by suites that test the node rather than a browser port of it: `evmchain`,
+  `mine-session`, `miner-cli` and `mining-budget` (`node/package.json`).
+
+**Between 2026-08-06 and 2026-08-09 there was a live browser miner and no
+cross-check at all**, while this section, SECURITY.md, `rust/README.md`,
+`docs/why-two-implementations.md`, `node/README.md`, `docs/listing-checklist.md` M16
+and two source comments all cited the deleted suites in the present tense. The signing
+path **inside this repository** is `HDR.signProof`, used by `node/src/chain/miner.js`
+and `node/src/mine/session.js`; the browser's is its own, which is precisely why the
+comparison has to exist.
 
 **Which endpoint, because there are two chains here.** `GET /mining/template?pub=` on the
 **UTXO** REST server still requires an 88-hex SPKI DER Ed25519 key

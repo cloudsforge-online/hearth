@@ -158,7 +158,10 @@ Everything below **runs**, and every number was produced by running it:
   app** (`app-desktop/`, Tauri) for macOS, Windows and Linux, both over
   `/mining/template` and `/mining/submit`. The browser miner that stood here was
   removed with `web/`: it signed 64-byte signatures where the node requires 65,
-  so **every block it ever found was refused**
+  so **every block it ever found was refused**. It lives in
+  [`micro-network-site`](https://github.com/cloudsforge-online/micro-network-site)
+  now, carrying the fix, and `node/test/browser-pow.js` and
+  `node/test/browser-proof.js` compare it against this node
 - 🟡 a **Rust crate** (`rust/hearthd`) — a self-check and a PoW benchmark.
   **Not a node and not consensus-compatible**, and it has no EVM at all — see
   [docs/why-two-implementations.md](docs/why-two-implementations.md)

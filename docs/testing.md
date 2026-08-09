@@ -10,10 +10,13 @@ is the full conformance corpus and takes about thirty-five.
 
 ---
 
-## 1. The gate — `npm test`, 31 suites, 86,094 checks
+## 1. The gate — `npm test`, 38 suites, 86,399 checks
 
-Re-derived by running it: `pnpm test` in `node/`, exit 0, with the optional
-reference corpus present in `test/conformance/vectors`.
+Re-derived 2026-08-09 by running it: `npm test` in `node/`, exit 0, **without** the
+optional reference corpus in `test/conformance/vectors` (with it, `bn128` and
+`blake2f` are larger — a skipped optional corpus is deliberately not counted as a
+check that passed). The per-suite table below is older than that total; see the note
+under it.
 
 | # | Suite | Checks | What it establishes |
 | --- | --- | --- | --- |
@@ -42,15 +45,42 @@ reference corpus present in `test/conformance/vectors`.
 | 23 | `evm-p2p-fork` | 51 | **two real nodes over real sockets** — partition, divergent mining, reorg onto the heavier branch, byte-identical state roots, disk replay to the same tip, and an open `eth_newFilter` that must deliver the winning branch's logs afterwards |
 | 24 | `pow-params` | 7 | **what the PoW parameters cost.** The production sizes had never been evaluated by anything; this fits the cost model and refuses a pad that cannot be verified inside a block interval ([`pow-parameters.md`](pow-parameters.md)) |
 | 25 | `bench/block-execution` | 5 | **what a crafted block costs.** One transaction spending the whole 30M gas limit on SSTOREs, against a calibration block of ordinary traffic |
-| 26–31 | `unit`, `e2e`, `records`, `browser-pow`, `mining-api`, `p2p-fork` | 181 | the UTXO-era chain, still green |
+| 26–29 | `unit`, `e2e`, `records`, `p2p-fork` | 147 | the UTXO-era chain, still green |
+
+> **This row named `browser-pow` and `mining-api` until 2026-08-09, and neither file
+> existed after 2026-08-04** — they were deleted with `web/` in `48bc28a`, so the 181
+> included 34 checks that nothing ran. `browser-pow` is restored (against
+> `micro-network-site`, where the browser miner moved) but is deliberately **outside**
+> `npm test` and therefore outside this table; `mining-api` has no successor.
+>
+> **Re-derived 2026-08-09**, `npm test` in `node/` to completion, exit 0, without the
+> optional corpus: **38 suites, 86,399 checks** — ten more suites than this table
+> enumerates. Individual rows above have also drifted (`precompiles` 126, `trie` 315,
+> `interpreter` 194, `transaction` 165, `blake2f` 50 offline, `unit` 40). Re-deriving
+> the whole table is its own change; `node/package.json` is the source of truth in the
+> meantime.
+
+### Outside the gate, on purpose
+
+| Suite | Checks | Why it is not in `npm test` |
+| --- | --- | --- |
+| `browser-pow` | 11 | Needs [`micro-network-site`](https://github.com/cloudsforge-online/micro-network-site) checked out: it compares that repository's browser Homefire against `node/src/pow.js` digest for digest. `npm test` has to pass on a bare checkout of this one |
+| `browser-proof` | 12 | Same, for the proof signature — it drives the browser's own `proofSignature` through the node's template flow and requires a block |
+
+Both **fail rather than skip** when the browser sources are absent, and run in their
+own CI job, which checks that repository out first. Measured 2026-08-09 against
+`micro-network-site` at `489903f`. Falsifiability was checked rather than assumed:
+flipping one term in the browser's scratchpad index derivation fails 4 of `browser-pow`'s
+11, and dropping the recovery byte from `proofSignature` fails 5 of `browser-proof`'s 12.
 
 `node test/dex.js` (167 checks) is separate because it needs `contracts/out`; it
 runs in the `contracts` CI job. `tools/` has its own job — faucet 66,
 explorer-api 177 plus 27 against a real chain, verify 116.
 
-**86,094 is the total with the reference corpus fetched.** `npm test` passes
-without it and two suites are then smaller, because a skipped optional corpus is
-deliberately not counted as a check that passed.
+**86,399 is the total measured 2026-08-09 without the reference corpus.** It is
+larger than the 86,094 this line used to claim "with the corpus fetched", because ten
+suites have been added since that figure was taken — which is the same staleness the
+note above the table describes, and the reason the header now carries a date.
 
 ---
 

@@ -37,12 +37,15 @@ jobs:
       #   conformance --selftest              proves the harness can still FAIL;
       #                                       a harness that cannot is worse than none
       #   unit / e2e / records                the UTXO-era chain rules
-      # `browser-pow` and `mining-api` are NOT in this list any more. They tested
+      # `browser-pow` and `mining-api` are NOT in this list. They tested
       # web/assets/mining — the browser miner — and were deleted with it on
-      # 2026-08-04. The node's own /mining/* path is still covered, by suites that
-      # test the node rather than a browser port of it:
+      # 2026-08-04. `mining-api` has no successor; the node's own /mining/* path is
+      # covered by suites that test the node rather than a browser port of it:
       #   mine-session / miner-cli /          the light-miner path: templates,
       #   mining-budget / evmchain            submission, staleness, refusals
+      # `browser-pow` and `browser-proof` DO exist again — see the `browser` job
+      # below. They stay out of `npm test` because they need a second repository
+      # checked out, and this command must pass on a bare checkout of this one.
       # The browser wallet's key sealing is not here either. It was `keystore`,
       # against the Ed25519 keystore the account-model rebuild superseded; that
       # module is gone and the suite with it. The current keystore is covered
@@ -86,6 +89,60 @@ jobs:
         run: cargo build --release
       - name: Test
         run: cargo test
+
+  browser:
+    name: Browser miner vs this node (cross-implementation)
+    runs-on: ubuntu-latest
+    steps:
+      # THIS JOB EXISTS BECAUSE ITS ABSENCE WAS INVISIBLE. The browser miner was
+      # deleted from this repository with web/ on 2026-08-04 (48bc28a) and restored
+      # in micro-network-site on 2026-08-06 — but node/test/browser-pow.js and
+      # node/test/browser-proof.js were not restored with it. For three days there
+      # was a live browser miner grinding Homefire against this chain and nothing
+      # comparing the two, while SECURITY.md, node/README.md, rust/README.md,
+      # docs/why-two-implementations.md, docs/listing-checklist.md M16 and two
+      # source comments all cited those files in the present tense. A document that
+      # asserts a gate is not a gate.
+      #
+      # What the two suites establish, and why each is worth a checkout:
+      #   browser-pow    the HASH loop, digest for digest — SHA-256 padding edges,
+      #                  powSeed (hex hashed as TEXT, the nonce as decimal), Homefire
+      #                  at the live params AND at retuned ones, and meetsTarget
+      #                  including the equality case the node accepts. A digest that
+      #                  differs in one bit is a block the network refuses while the
+      #                  tab looks busy at full fan speed and pays nothing.
+      #   browser-proof  the SIGNATURE, which is the other half of a submission and
+      #                  where the one real node/browser disagreement ever was: the
+      #                  browser sent 64 bytes for months against the node's 65
+      #                  (r || s || recoveryId), so every block it found was answered
+      #                  `bad signature` after the work. It imports the browser's own
+      #                  proofSignature and requires the node's template flow to
+      #                  produce a block, rather than describing the format.
+      #
+      # No token: cloudsforge-online/micro-network-site is public, as this repository
+      # is to its CI, which already checks this one out for the same reason.
+      # actions/checkout cannot write above the workspace, so it lands nested and
+      # HEARTH_BROWSER_MINING_SRC names the directory explicitly — the resolver
+      # refuses to fall back from an explicit path, because a typo that quietly
+      # resolved to some other tree would report a pass about code nobody meant to
+      # test.
+      #
+      # The suites FAIL rather than skip when the browser sources are missing. A
+      # "skipped" line scrolls past exactly like a pass, and that is close enough to
+      # what went wrong here to be worth refusing.
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/checkout@v4
+        with:
+          repository: cloudsforge-online/micro-network-site
+          path: micro-network-site
+      - name: The browser miner agrees with this node, digest for digest
+        env:
+          HEARTH_BROWSER_MINING_SRC: ${{ github.workspace }}/micro-network-site/src/mining
+        working-directory: node
+        run: npm run test:browser
 
   web:
     name: Web assets (lint)
