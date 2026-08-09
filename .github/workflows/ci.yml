@@ -43,6 +43,16 @@ jobs:
       # test the node rather than a browser port of it:
       #   mine-session / miner-cli /          the light-miner path: templates,
       #   mining-budget / evmchain            submission, staleness, refusals
+      #   mining-stale                        and what a miner is TOLD when its
+      #                                       template is gone, over real HTTP
+      #                                       against both node implementations.
+      #                                       400 and 409 are opposite
+      #                                       instructions — "you have a bug,
+      #                                       stop" against "you were late,
+      #                                       refetch" — and expiry and eviction
+      #                                       answered the first for the whole
+      #                                       of the public testnet's life
+      #                                       (micro-org#237)
       # The browser wallet's key sealing is not here either. It was `keystore`,
       # against the Ed25519 keystore the account-model rebuild superseded; that
       # module is gone and the suite with it. The current keystore is covered
