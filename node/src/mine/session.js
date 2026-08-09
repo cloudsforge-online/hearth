@@ -282,8 +282,11 @@ class MineSession {
     /* The one and only use of the private key in this file. `signProof` returns
      * r||s||recoveryId — 65 bytes, 130 hex — because src/chain/header.js
      * `verifyPow` recovers the coinbase from it and refuses anything shorter.
-     * The browser miner sent 64 for months and had every block refused; the
-     * shape is checked by test/browser-proof.js now rather than described. */
+     * The browser miner sent 64 for months and had every block refused. Its
+     * successor in micro-network-site sends 65, and test/browser-proof.js is what
+     * CHECKS that rather than describing it — restored 2026-08-09 after being
+     * deleted with web/ in 48bc28a, three days after the browser miner itself came
+     * back. This comment named it for the whole of that gap. */
     const powSig = HDR.signProof(digest, this.key.privateKey);
     let r;
     try {

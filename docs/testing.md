@@ -10,10 +10,14 @@ is the full conformance corpus and takes about thirty-five.
 
 ---
 
-## 1. The gate — `npm test`, 31 suites, 86,094 checks
+## 1. The gate — `npm test`, 39 suites, 86,451 checks
 
-Re-derived by running it: `pnpm test` in `node/`, exit 0, with the optional
-reference corpus present in `test/conformance/vectors`.
+**Re-derived 2026-08-09** by running it to completion: `npm test` in `node/`, exit 0,
+**without** the optional reference corpus in `test/conformance/vectors`. Every row
+below is that run, in the order `node/package.json` runs them — which is the source of
+truth, so a suite added there appears here or this table is wrong. Two rows are smaller
+offline than they would be with the corpus fetched (`bn128`, `blake2f`); a skipped
+optional corpus is deliberately not counted as a check that passed.
 
 | # | Suite | Checks | What it establishes |
 | --- | --- | --- | --- |
@@ -24,11 +28,11 @@ reference corpus present in `test/conformance/vectors`.
 | 5 | `opcodes` | 81 | all 256 bytes; 112 explicitly invalid |
 | 6 | `gas` | 205 | the Shanghai schedule — consensus, so a wrong constant is a split |
 | 7 | `precompiles` | 126 | `0x01`–`0x09`, incl. ecrecover **not** enforcing low-s |
-| 8 | `bn128` | 86 | ecAdd/ecMul/pairing against go-ethereum's vectors, gas included |
-| 9 | `blake2f` | 53 | EIP-152, four of which assert failure |
+| 8 | `bn128` | 81 | ecAdd/ecMul/pairing against go-ethereum's vectors, gas included. One case is skipped offline; the corpus branch adds **5**, so 86 with it fetched |
+| 9 | `blake2f` | 50 | EIP-152, four of which assert failure. The corpus branch adds **3**, so 53 with it fetched |
 | 10 | `trie` | 315 | all 25 TrieTests vectors (26 published cases across 6 files), anyorder files run at *every* permutation — which is what takes most of them — plus the speculative overlay store |
 | 11 | `statedb` | 166 | 8 published state roots, journal and revert |
-| 12 | `transaction` | 167 | 188 TransactionTests; mainnet block 4,400,116 end to end |
+| 12 | `transaction` | 165 | 188 TransactionTests; mainnet block 4,400,116 end to end |
 | 13 | `receipt` | 62 | encoding and the receipts trie |
 | 14 | `bloom` | 61 | the 2048-bit filter — wrong is *silent*, logs just never match |
 | 15 | `interpreter` | 194 | execution, frames, EIP-150, collisions, and the RPC-only deadline |
@@ -36,21 +40,60 @@ reference corpus present in `test/conformance/vectors`.
 | 17 | `cli` | 310 | the tracer, ABI codec, wallet, keystore |
 | 18 | `jsonrpc` | 422 | the `eth_*` surface, its hex codec, the filter registry and what one request may cost |
 | 19 | `evmchain` | 191 | **the account-model chain**: block production, validation, retarget, reorg |
-| 20 | `evm-rpc` | 170 | the same surface over real HTTP against a real node |
-| 21 | `conformance --selftest` | 85 | **that the harness can still fail** |
-| 22 | `fuzz` | 82,481 | property tests over five surfaces |
-| 23 | `evm-p2p-fork` | 51 | **two real nodes over real sockets** — partition, divergent mining, reorg onto the heavier branch, byte-identical state roots, disk replay to the same tip, and an open `eth_newFilter` that must deliver the winning branch's logs afterwards |
-| 24 | `pow-params` | 7 | **what the PoW parameters cost.** The production sizes had never been evaluated by anything; this fits the cost model and refuses a pad that cannot be verified inside a block interval ([`pow-parameters.md`](pow-parameters.md)) |
-| 25 | `bench/block-execution` | 5 | **what a crafted block costs.** One transaction spending the whole 30M gas limit on SSTOREs, against a calibration block of ordinary traffic |
-| 26–31 | `unit`, `e2e`, `records`, `browser-pow`, `mining-api`, `p2p-fork` | 181 | the UTXO-era chain, still green |
+| 20 | `chain-replay` | 27 | a chain reloaded from disk reaches the same tip — including one too large to hold in a single JavaScript string |
+| 21 | `evm-rpc` | 170 | the same `eth_*` surface over real HTTP against a real node |
+| 22 | `conformance --selftest` | 85 | **that the harness can still fail** |
+| 23 | `fuzz` | 82,481 | property tests over five surfaces |
+| 24 | `unit` | 40 | the UTXO-era primitives |
+| 25 | `e2e` | 24 | the UTXO chain in-process: mine, pay, emission, commons split, fee burn, maturity, reorg |
+| 26 | `records` | 49 | the consensus rules for application data, and one conversation carried by them |
+| 27 | `mining-budget` | 14 | what an **unauthenticated** caller may make `/mining/*` do — the verification budget and its 429 |
+| 28 | `mining-stale` | 50 | what a miner is **told** when its template is gone: 409 for expired, evicted or superseded, 400 only for malformed or never-issued, over real HTTP against both node implementations |
+| 29 | `miner-loop` | 4 | the loop's duty cycle — CPU-bound mining must not starve gossip, RPC or the WebSocket keepalive |
+| 30 | `mine-keystore` | 52 | the desktop mining key's sealing, adversarially: every failure a keystore can have is otherwise silent |
+| 31 | `mine-session` | 82 | the light-mining loop driven directly — templates, submission, staleness, refusals |
+| 32 | `miner-cli` | 31 | `hearth-mine` driven as a user drives it, as a process |
+| 33 | `netprefix` | 34 | no whole peer IP address ever reaches a log line (`micro-org#163`) |
+| 34 | `ws` | 62 | hand-written RFC 6455 framing: masking, all three length forms, continuation, interleaved control frames |
+| 35 | `p2p-fork` | 34 | **two real UTXO nodes over real TCP** — partition, compete, reconnect, reorg, and the UTXO set follows |
+| 36 | `evm-p2p-fork` | 51 | **two real account-model nodes over real sockets** — partition, divergent mining, reorg onto the heavier branch, byte-identical state roots, disk replay to the same tip, and an open `eth_newFilter` that must deliver the winning branch's logs afterwards |
+| 37 | `p2p-ws` | 45 | the same P2P over a `wss`-shaped link, because a home server behind a tunnel has no other inbound path |
+| 38 | `pow-params` | 7 | **what the PoW parameters cost.** The production sizes had never been evaluated by anything; this fits the cost model and refuses a pad that cannot be verified inside a block interval ([`pow-parameters.md`](pow-parameters.md)) |
+| 39 | `bench/block-execution` | 5 | **what a crafted block costs.** One transaction spending the whole 30M gas limit on SSTOREs, against a calibration block of ordinary traffic |
+
+> **Why this table is now derived rather than maintained.** Until 2026-08-09 it
+> enumerated 25 rows plus a `26–31` catch-all, and had drifted in three ways at once.
+> **Ten suites were missing entirely** — `chain-replay`, `mining-budget`,
+> `mining-stale`, `miner-loop`, `mine-keystore`, `mine-session`, `miner-cli`,
+> `netprefix`, `ws` and `p2p-ws`, every one of them in `npm test`. **`transaction` was
+> written as 167 and is 165**, and the `bn128` and `blake2f` rows quoted with-corpus
+> figures in a table whose total was measured without it. And **the catch-all named
+> `browser-pow` and `mining-api`, two files that had not existed since 2026-08-04** —
+> 34 of its 181 checks were run by nothing at all. A table transcribed by hand from
+> `node/package.json` drifts the moment that file changes; the only defence is to
+> re-derive it from a run and date it, which is what the header above now does.
+
+### Outside the gate, on purpose
+
+| Suite | Checks | Why it is not in `npm test` |
+| --- | --- | --- |
+| `browser-pow` | 11 | Needs [`micro-network-site`](https://github.com/cloudsforge-online/micro-network-site) checked out: it compares that repository's browser Homefire against `node/src/pow.js` digest for digest. `npm test` has to pass on a bare checkout of this one |
+| `browser-proof` | 12 | Same, for the proof signature — it drives the browser's own `proofSignature` through the node's template flow and requires a block |
+
+Both **fail rather than skip** when the browser sources are absent, and run in their
+own CI job, which checks that repository out first. Measured 2026-08-09 against
+`micro-network-site` at `489903f`. Falsifiability was checked rather than assumed:
+flipping one term in the browser's scratchpad index derivation fails 4 of `browser-pow`'s
+11, and dropping the recovery byte from `proofSignature` fails 5 of `browser-proof`'s 12.
 
 `node test/dex.js` (167 checks) is separate because it needs `contracts/out`; it
 runs in the `contracts` CI job. `tools/` has its own job — faucet 66,
 explorer-api 177 plus 27 against a real chain, verify 116.
 
-**86,094 is the total with the reference corpus fetched.** `npm test` passes
-without it and two suites are then smaller, because a skipped optional corpus is
-deliberately not counted as a check that passed.
+**86,451 is the total measured 2026-08-09 without the reference corpus.** It is larger
+than the 86,094 this line used to claim "with the corpus fetched", because suites kept
+being added to `node/package.json` and none of them were added here — which is the
+drift the note above describes, and the reason the header now carries a date.
 
 ---
 

@@ -287,11 +287,22 @@ not described by a constant. The fix at the time was to export `proofSignature` 
 browser miner so `node/test/browser-proof.js` could call the browser's own code, sign a
 real winning digest and require the node's template flow to accept the block.
 
-**That machinery is gone, and so is the failure mode.** The browser miner and both
-suites were deleted in `48bc28a`. There is now exactly one implementation of the proof
-signature — `HDR.signProof` — and every miner calls it (`node/src/chain/miner.js`,
-`node/src/mine/session.js`). Two implementations cannot drift when there is one.
-The principle still applies to the next port anyone writes.
+**This paragraph used to say "that machinery is gone, and so is the failure mode", and
+it was wrong within two days.** The browser miner and both suites were deleted in
+`48bc28a` on 2026-08-04. On 2026-08-06 `micro-network-site` restored the miner —
+`src/mining/`, the same code, carrying the corrected 65-byte form — and served it from
+a public `/mine` page. So the second implementation of the proof signature came back,
+and the suite that had executed the format did not, for three days, while this
+paragraph explained that it could not matter.
+
+The rule the entry was trying to state survives intact and is now enforced again:
+`node/test/browser-proof.js` (restored 2026-08-09) imports the browser's own
+`proofSignature` and requires this node's template flow to accept a block signed by it.
+Every miner **in this repository** does call one implementation, `HDR.signProof`
+(`node/src/chain/miner.js`, `node/src/mine/session.js`) — but "there is only one
+implementation" is a claim about an estate, not about a directory, and it has to be
+re-checked rather than inherited. The principle also applies to the next port anyone
+writes.
 
 ### 2.6 `SPARKS_PER_EMBER` is still 1e8
 

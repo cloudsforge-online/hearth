@@ -342,7 +342,7 @@ answer rather than a gap.
 | --- | --- |
 | `web/index.html` + `web/assets/explorer/` — block explorer | ➡️ [`micro-explorer-web`](https://github.com/cloudsforge-online/micro-explorer-web), **but see the warning below — it is a different program, not a port** |
 | `web/wallet.html` + `web/assets/wallet/` — secp256k1 wallet | ➡️ [`micro-hearth-wallet-core`](https://github.com/cloudsforge-online/micro-hearth-wallet-core) (the signing library) and [`micro-wallet-extension`](https://github.com/cloudsforge-online/micro-wallet-extension) (the MV3 browser surface). §9.1 |
-| `web/mine.html` + `web/assets/mining/` — browser miner | ❌ **Gone, not moved.** `node/bin/hearth-mine.js` and `app-desktop/` cover mining. §9.2 |
+| `web/mine.html` + `web/assets/mining/` — browser miner | ➡️ [`micro-network-site`](https://github.com/cloudsforge-online/micro-network-site) `src/mining/` + its `/mine` page. **This row read "Gone, not moved" until 2026-08-09; it was restored on 2026-08-06.** From here, mining is `node/bin/hearth-mine.js` and `app-desktop/`. §9.2 |
 | `web/pay-demo.html` — merchant-button mockup | ❌ **Gone, and nothing replaces it.** It simulated settlement on a 1,200 ms timer. There is still no payment SDK — §10 |
 | `web/explorer.html` — 0-second redirect | ❌ Gone with the page it redirected to |
 | `web/nginx.conf`, `web/Dockerfile` | ❌ Gone. Each successor serves itself |
@@ -513,8 +513,12 @@ fake (`docs/evm-spec.md` §0).
 
 ### 4.2 The unit suites — run, and their exact counts
 
-Every one of these was executed while writing this file
-(`cd node && node test/<name>.js`):
+**Re-derived 2026-08-09** from one `npm test` in `node/`, run to completion, exit 0,
+**without** the optional reference corpus in `test/conformance/vectors`. This is every
+suite `node/package.json` runs, in that order — not a selection — because the previous
+version of this table was a hand-kept subset and had silently fallen ten suites behind
+it. [`docs/testing.md`](docs/testing.md) §1 carries the same figures with a line on
+what each one establishes.
 
 | Suite | Result |
 | --- | --- |
@@ -524,22 +528,49 @@ Every one of these was executed while writing this file
 | `secp256k1` | 179/179 |
 | `opcodes` | 81/81 |
 | `gas` | 205/205 |
-| `precompiles` | 119/119 |
-| `bn128` | 81/81 (1 skipped without the corpus) |
-| `blake2f` | 43/43 offline; **46/46 with the corpus fetched** — see §12 |
-| `trie` | 302/302 |
+| `precompiles` | 126/126 |
+| `bn128` | 81/81 offline (1 case skipped); **86/86** with the corpus fetched |
+| `blake2f` | 50/50 offline; **53/53** with the corpus fetched — see §12 |
+| `trie` | 315/315 |
 | `statedb` | 166/166 |
-| `transaction` | 167/167 |
+| `transaction` | 165/165 |
 | `receipt` | 62/62 |
 | `bloom` | 61/61 |
-| `interpreter` | 182/182 |
+| `interpreter` | 194/194 |
 | `statetransition` | 133/133 |
 | `cli` | 310/310 |
 | `jsonrpc` | **422/422** |
+| `evmchain` | **191/191** |
+| `chain-replay` | 27/27 |
+| `evm-rpc` | 170/170 |
 | `conformance --selftest` | 85/85 |
 | `fuzz --cases=2000` | **82,481/82,481**, with 3 standing observations — §4.7 |
-| `unit` / `e2e` / `records` | 32/32 · 24/24 · 49/49 |
-| `browser-pow` / `keystore` / `mining-api` / `p2p-fork` | 10/10 · 19/19 · 24/24 · 25/25 |
+| `unit` / `e2e` / `records` | 40/40 · 24/24 · 49/49 |
+| `mining-budget` / `mining-stale` | 14/14 · 50/50 |
+| `miner-loop` / `mine-keystore` | 4/4 · 52/52 |
+| `mine-session` / `miner-cli` | 82/82 · 31/31 |
+| `netprefix` / `ws` | 34/34 · 62/62 |
+| `p2p-fork` / `evm-p2p-fork` / `p2p-ws` | 34/34 · 51/51 · 45/45 |
+| `pow-params` | 7/7 |
+| `bench/block-execution` | 5/5 |
+| **Total** | **39 suites, 86,451 checks** |
+
+> **This table used to also name `browser-pow`, `keystore` and `mining-api`, and none
+> of the three had existed since 2026-08-04** (`48bc28a`) — a table headed "only things
+> that were run" was reporting counts for files that were not there. `browser-pow` is
+> restored (§9.2) but is **not** in `npm test`, because it needs a second repository
+> checked out; it has its own CI job and is listed in `docs/testing.md` §1 under
+> "outside the gate, on purpose". `mining-api` and the Ed25519 `keystore` suite have no
+> successor.
+>
+> Seven per-suite counts here were also stale when this was re-derived (`precompiles`
+> was written as 119, `trie` 302, `interpreter` 182, `transaction` 167, `unit` 32,
+> `p2p-fork` 25, `blake2f` 43 offline). A table transcribed by hand from `node/package.json` drifts the moment
+> that file changes; the total row above exists so the next drift is one subtraction
+> away from being visible. The two with-corpus figures are the only numbers here not
+> taken from that run: the corpus branch of `test/bn128.js` contains 5 checks and that
+> of `test/blake2f.js` contains 3, all unconditional once the branch is entered, so 86
+> and 53 follow from the offline totals by counting rather than by memory.
 
 ### 4.3 The reference corpus
 
@@ -552,7 +583,7 @@ runs offline.
 | **VMTests** | **609/609 vectors, 2121/2121 checks** — verified | `node test/conformance/runner.js --impl=test/interpreter.js --dir=test/conformance/vectors/VMTests --no-gas` |
 | **GeneralStateTests** | **20,077 / 20,077**, 60,231 checks — verified, re-run for this pass (2,002 s) | `node test/conformance/runner.js --impl=test/statetransition.js --suite=GeneralStateTests --dir=test/conformance/vectors` |
 | **TransactionTests** | **188/188** — verified. `188/188 corpus cases, 22 typed (EIP-2718) skipped, 2 with no Shanghai result` | `node test/transaction.js`, group *TransactionTests — full corpus* |
-| RLPTests / TrieTests | pass, inside `test/rlp.js` and `test/trie.js` — 55 and 25 vectors respectively, by the loader's count. Neither suite reports a separate vector total on stdout, so quote the suite's own check count (149/149, 302/302) rather than a vector count | |
+| RLPTests / TrieTests | pass, inside `test/rlp.js` and `test/trie.js` — 55 and 25 vectors respectively, by the loader's count. Neither suite reports a separate vector total on stdout, so quote the suite's own check count (149/149, 315/315 — measured 2026-08-09) rather than a vector count | |
 
 **The ten GeneralStateTests failures are fixed.** Earlier revisions of this file
 named them individually, because they sat in four different directories and a
@@ -927,8 +958,8 @@ token. `P2P_BLOCK_VERIFY_BURST` = 200 refilling at 25/s, and
 
 **Tested over real sockets.** `node/test/p2p-fork.js` stands up two real `Node`
 instances with real TCP and RPC servers, partitions them, mines competing branches,
-reconnects, and requires the lighter node to reorg onto the heavier tip. 25/25, in
-CI.
+reconnects, and requires the lighter node to reorg onto the heavier tip. 34/34
+(measured 2026-08-09), in CI.
 
 ---
 
@@ -992,12 +1023,16 @@ secp256k1, `0x…` and 18 decimals. There is no migration path and deliberately 
 machinery for one, because an Ed25519 key names no account on an EVM chain and nobody
 holds EMBER.
 
-### 9.2 The browser miner — deleted, and not replaced in kind
+### 9.2 The browser miner — deleted here, restored elsewhere two days later
 
-**`web/mine.html` and `web/assets/mining/` were deleted on 2026-08-04 (`48bc28a`).
-Nothing in this estate mines in a browser tab any more, and that is deliberate.**
+**`web/mine.html` and `web/assets/mining/` were deleted on 2026-08-04 (`48bc28a`), and
+this section said "nothing in this estate mines in a browser tab any more, and that is
+deliberate" until 2026-08-09.** It was wrong from 2026-08-06, when
+[`micro-network-site`](https://github.com/cloudsforge-online/micro-network-site)
+restored the miner as `src/mining/{sha256,homefire,miner,worker}.js` — the same code
+rather than a rewrite — and served it from its public `/mine` page.
 
-Mining you can actually run is elsewhere in this repository:
+Mining you can run from **this** repository:
 
 | How to mine | Where |
 | --- | --- |
@@ -1023,14 +1058,30 @@ which is the limit of what a constant naming a format can do.
 > "the miner was broken"; it is that a front end nobody runs will absorb real fixes and
 > return nothing for them.
 
-**The conformance gates that stood here are gone with the code they tested.**
-`node/test/browser-pow.js`, `node/test/browser-proof.js` and `node/test/mining-api.js`
-imported `web/assets/mining/` and were removed in the same commit. The node's `/mining/*`
-path is still covered, by suites that test the node rather than a browser port of it:
-`evmchain`, `mine-session`, `miner-cli`, `mining-budget` and `mining-stale`
-(`node/package.json`).
-The surviving signing path is `HDR.signProof`, used by `node/src/chain/miner.js` and
-`node/src/mine/session.js`.
+**The conformance gates: two restored, one not.** `node/test/browser-pow.js`,
+`node/test/browser-proof.js` and `node/test/mining-api.js` all imported
+`web/assets/mining/` and were removed in `48bc28a`.
+
+- `browser-pow.js` and `browser-proof.js` are **back as of 2026-08-09**, pointed at
+  `micro-network-site/src/mining/` instead. The first compares the hash loop digest for
+  digest; the second drives that repository's own `proofSignature` through this node's
+  template flow and requires a block. They are not in `npm test` — that has to pass on
+  a bare checkout of this repository — so they run in the `browser` CI job, which
+  checks the other repository out first, and they fail rather than skip when it is
+  absent. Measured 2026-08-09 against `micro-network-site` at `489903f`: 11/11 and
+  12/12.
+- `mining-api.js` is **not restored and has no successor**. The node's `/mining/*` path
+  is covered by suites that test the node rather than a browser port of it: `evmchain`,
+  `mine-session`, `miner-cli`, `mining-budget` and `mining-stale`
+  (`node/package.json`).
+
+**Between 2026-08-06 and 2026-08-09 there was a live browser miner and no
+cross-check at all**, while this section, SECURITY.md, `rust/README.md`,
+`docs/why-two-implementations.md`, `node/README.md`, `docs/listing-checklist.md` M16
+and two source comments all cited the deleted suites in the present tense. The signing
+path **inside this repository** is `HDR.signProof`, used by `node/src/chain/miner.js`
+and `node/src/mine/session.js`; the browser's is its own, which is precisely why the
+comparison has to exist.
 
 **Which endpoint, because there are two chains here.** `GET /mining/template?pub=` on the
 **UTXO** REST server still requires an 88-hex SPKI DER Ed25519 key
@@ -1203,9 +1254,10 @@ state of every clean checkout including CI's. That killed the run at suite 9 wit
 `ReferenceError: skipped is not defined` and hid the results of ten suites.
 Fixed in `521ecd5` by deleting the counter rather than declaring it — a skipped
 optional corpus is not a check that passed. **Re-verified for this file** by
-cloning the repository into an empty directory and running `npm test`: all 27
-suites pass, exit 0, with no corpus and no install. `blake2f` reports 43/43
-offline and 46/46 once the corpus is fetched.
+cloning the repository into an empty directory and running `npm test`. **Re-run
+2026-08-09** on the merge of this branch with `main`, still with no corpus, no
+`node_modules` and no network: all **39** suites pass, exit 0. `blake2f` reports
+50/50 offline and 53/53 once the corpus is fetched — §4.2 for the whole table.
 
 **The defect that used to block wiring the EVM to a block is fixed and gated.**
 [`docs/robustness-review.md`](docs/robustness-review.md) §1 measured `StateDB`
@@ -1327,15 +1379,16 @@ node test/conformance/runner.js --impl=test/statetransition.js \
      --suite=GeneralStateTests --dir=test/conformance/vectors
 ```
 
-Fetching it also takes `blake2f` from 43/43 to 46/46 and runs `bn128`'s one
-skipped case (§11).
+Fetching it also takes `blake2f` from 50/50 to 53/53 and `bn128` from 81/81 to
+86/86, running its one skipped case (§11).
 
-**CI** (`.github/workflows/ci.yml`), six jobs:
+**CI** (`.github/workflows/ci.yml`), seven jobs:
 
 | Job | What it runs |
 | --- | --- |
 | Node reference client | `npm test` — **one command, not a list**, so a new suite is covered the moment it is added to `package.json` (`ci.yml`). Plus the coinnomics model sanity check |
 | Rust production core | `cargo fmt --check`, `clippy -D warnings`, build, test |
+| Browser miner vs this node | **Added 2026-08-09.** Checks out [`micro-network-site`](https://github.com/cloudsforge-online/micro-network-site) and runs `npm run test:browser` against it — `browser-pow` (11) and `browser-proof` (12). They **fail rather than skip** when that checkout is missing, which is the whole point: for three days there was a browser miner on the public `/mine` page and nothing comparing it to this node, while six documents said otherwise — §9.2 |
 | Web assets | ⚠️ **Runs nothing.** The syntax check, explorer self-test and wallet self-test that stood here all read `web/assets`, and went with it in `48bc28a` (`ci.yml`). The job still checks out the repo, reports green, and gates nothing. Its remaining body is a comment recording where the wallet gate went — §9.1. **A green job that executes no assertion is worth deleting rather than reading as a pass** |
 | Secret hygiene | `.env` untracked; no API tokens; a private-key matcher that requires a PEM header **followed by real base64** rather than the header alone, so a bare PEM literal in source cannot force the check to be muted (`ci.yml`) |
 | DeFi contracts | `pnpm compile` (which refuses on an init-code-hash mismatch) and the build tests |

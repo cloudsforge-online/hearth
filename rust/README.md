@@ -53,7 +53,19 @@ cargo test                       # sha256 vectors + Homefire determinism + minin
 ## Roadmap for this crate
 First reconcile the two ❌ rows above against `node/src/`, with a
 cross-implementation conformance test in CI — the model is
-`node/test/browser-pow.js`, which is why the browser miner never drifted and this
-crate did. Then grow the missing layers: block → chain → fork choice → storage →
+`node/test/browser-pow.js`, which compares the browser miner's Homefire against
+`node/src/pow.js` digest for digest.
+
+That sentence is worth reading twice, because it was false for five days and said
+so with a straight face. `browser-pow.js` was deleted with `web/` in `48bc28a`
+(2026-08-04) and this paragraph went on citing it as the reason "the browser miner
+never drifted and this crate did" — while the browser miner drifted with nothing
+watching it either. It was restored on 2026-08-09, now against
+[`micro-network-site`](https://github.com/cloudsforge-online/micro-network-site)
+`src/mining/`, in its own CI job that checks that repository out. **The lesson for
+this crate is the whole point:** a cross-implementation gate has to be a job that can
+go red, and a citation of one is not one.
+
+Then grow the missing layers: block → chain → fork choice → storage →
 P2P → RPC. Mainnet is intended to run on this core; today it cannot run anything.
 See [../docs/roadmap.md](../docs/roadmap.md).

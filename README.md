@@ -158,7 +158,10 @@ Everything below **runs**, and every number was produced by running it:
   app** (`app-desktop/`, Tauri) for macOS, Windows and Linux, both over
   `/mining/template` and `/mining/submit`. The browser miner that stood here was
   removed with `web/`: it signed 64-byte signatures where the node requires 65,
-  so **every block it ever found was refused**
+  so **every block it ever found was refused**. It lives in
+  [`micro-network-site`](https://github.com/cloudsforge-online/micro-network-site)
+  now, carrying the fix, and `node/test/browser-pow.js` and
+  `node/test/browser-proof.js` compare it against this node
 - 🟡 a **Rust crate** (`rust/hearthd`) — a self-check and a PoW benchmark.
   **Not a node and not consensus-compatible**, and it has no EVM at all — see
   [docs/why-two-implementations.md](docs/why-two-implementations.md)
@@ -168,10 +171,11 @@ Everything below **runs**, and every number was produced by running it:
 > *mockup* that used to sit in `web/pay-demo.html` — it simulated settlement on a
 > timer — went with that directory; there is still no payment SDK.
 
-**`npm test` passes from a clean clone** — 27 suites, no install, no corpus and no
-network. Verified by cloning this repository into an empty directory and running
-it. Fetching the reference corpus completes two of them: `blake2f` goes 43/43 →
-46/46 and `bn128`'s one skipped case runs.
+**`npm test` passes from a clean clone** — **39 suites, 86,451 checks**, no install,
+no corpus and no network. Re-measured 2026-08-09 by cloning this repository into an
+empty directory and running it; [`docs/testing.md`](docs/testing.md) §1 lists every
+suite. Fetching the reference corpus completes two of them: `blake2f` goes 50/50 →
+53/53 and `bn128` 81/81 → 86/86, running its one skipped case.
 
 **The caveat that used to matter most is closed.**
 [`docs/robustness-review.md`](docs/robustness-review.md) measured `StateDB`

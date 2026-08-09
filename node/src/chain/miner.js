@@ -19,8 +19,16 @@
  * the fees, so it must be an account this chain can credit. Homefire is untouched
  * — same seed, same pad, same walk — and a remote miner still grinds nonces over a
  * `coreHash` and never executes anything. The remote miners are bin/hearth-mine.js
- * and app-desktop/, both driving src/mine/session.js; the browser miner that also
- * used this endpoint was deleted in 48bc28a, along with test/browser-pow.js.
+ * and app-desktop/, both driving src/mine/session.js.
+ *
+ * A BROWSER IS ALSO A CALLER OF THIS ENDPOINT, and this comment said it was not.
+ * The browser miner was deleted in 48bc28a (2026-08-04) along with
+ * test/browser-pow.js, and restored on 2026-08-06 in micro-network-site
+ * (`src/mining/`), which is where the estate's /mine page grinds. That is a second
+ * implementation of the hash loop and of the proof signature, outside this
+ * repository, talking to `issue`/`submit` below. test/browser-pow.js and
+ * test/browser-proof.js compare it against this node; they are not in `npm test`
+ * because they need that repository checked out, so they have their own CI job.
  */
 
 const crypto = require('crypto');

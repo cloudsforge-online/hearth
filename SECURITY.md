@@ -81,7 +81,7 @@ sounds impressive.
 | --- | --- |
 | `web/assets/wallet/` — secp256k1, keystore sealing, signing path | [`micro-hearth-wallet-core`](https://github.com/cloudsforge-online/micro-hearth-wallet-core) (signing library) and [`micro-wallet-extension`](https://github.com/cloudsforge-online/micro-wallet-extension) (browser surface) |
 | `web/index.html` — the explorer | [`micro-explorer-web`](https://github.com/cloudsforge-online/micro-explorer-web) |
-| `web/assets/mining/` — the browser miner | **Nothing. It was deleted, not moved.** Mining is `node/bin/hearth-mine.js` and `app-desktop/`, both in scope above |
+| `web/assets/mining/` — the browser miner | [`micro-network-site`](https://github.com/cloudsforge-online/micro-network-site) `src/mining/`. **This row said "nothing, it was deleted, not moved" until 2026-08-09, and that stopped being true on 2026-08-06**, when the miner was restored there — the same code, not a rewrite — and put behind its `/mine` page. Mining from this repository is `node/bin/hearth-mine.js` and `app-desktop/`, both in scope above |
 
 **One class of report is still in scope here, and it is the important one.** A
 divergence between `micro-hearth-wallet-core` and its `node/src` originals —
@@ -203,8 +203,15 @@ without new impact will be closed with a pointer here.
   issuer (`node/src/chain/miner.js` `issue()`) requires a 65-byte uncompressed
   secp256k1 key and `node/src/chain/header.js` `verifyPow` recovers one from the
   proof signature, which is what the miner signs with. The one real disagreement
-  was the signature LENGTH — 64 bytes sent against 65 required — and it is fixed
-  and covered by `node/test/browser-proof.js`.
+  was the signature LENGTH — 64 bytes sent against 65 required — and it is fixed.
+  **The check that this entry cited was absent from 2026-08-04 to 2026-08-09 while
+  this line went on claiming it.** `node/test/browser-proof.js` was deleted with
+  `web/` in `48bc28a`; the browser miner came back on 2026-08-06 in
+  `micro-network-site` and the suite did not. It is restored: it imports that
+  repository's `proofSignature` and requires the node's own template flow to accept
+  the block. It is **not** in `npm test`, because that has to run on a bare checkout
+  of this repository — it runs in its own CI job, which checks the other repository
+  out first (`.github/workflows/ci.yml`, job `browser`).
 - **`/mining/template` and `/mining/submit` are unauthenticated on purpose.**
   This is a permissionless chain; anyone may submit a block and it still has to
   satisfy proof of work and full validation. The exposure is cost, not
