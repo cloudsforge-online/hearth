@@ -13,7 +13,10 @@ is the full conformance corpus and takes about thirty-five.
 ## 1. The gate — `npm test`, 39 suites, 86,451 checks
 
 **Re-derived 2026-08-09** by running it to completion: `npm test` in `node/`, exit 0,
-**without** the optional reference corpus in `test/conformance/vectors`. Every row
+**without** the optional reference corpus in `test/conformance/vectors`. The same 39
+and the same 86,451 came out of a fresh clone into an empty directory and out of CI
+([run 31306048763](https://github.com/cloudsforge-online/hearth/actions/runs/31306048763)),
+which is the only reason to believe them. Every row
 below is that run, in the order `node/package.json` runs them — which is the source of
 truth, so a suite added there appears here or this table is wrong. Two rows are smaller
 offline than they would be with the corpus fetched (`bn128`, `blake2f`); a skipped

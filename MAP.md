@@ -514,7 +514,9 @@ fake (`docs/evm-spec.md` §0).
 ### 4.2 The unit suites — run, and their exact counts
 
 **Re-derived 2026-08-09** from one `npm test` in `node/`, run to completion, exit 0,
-**without** the optional reference corpus in `test/conformance/vectors`. This is every
+**without** the optional reference corpus in `test/conformance/vectors` — and the same
+totals reproduced from a fresh clone and in CI ([run
+31306048763](https://github.com/cloudsforge-online/hearth/actions/runs/31306048763)). This is every
 suite `node/package.json` runs, in that order — not a selection — because the previous
 version of this table was a hand-kept subset and had silently fallen ten suites behind
 it. [`docs/testing.md`](docs/testing.md) §1 carries the same figures with a line on
