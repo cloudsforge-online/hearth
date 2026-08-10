@@ -28,6 +28,20 @@ because those three figures had been written down without the date they were
 taken. Every live-network figure below now carries one. If you are reading this
 well after 2026-08-08, assume the numbers have moved again and re-measure.
 
+**Re-measured again 2026-08-10 17:56 UTC**, from outside this network and with no
+credentials. Mainnet: `eth_chainId` → `0x1cf3`, `eth_blockNumber` → `0x2aeb`
+(**10,987 blocks**), tip timestamp 2026-08-10 17:56:10 UTC, `difficulty` still
+`0x100`, tip transaction count `0`. Block 1 to tip is a mean interval of
+**46.8 s**. Testnet: `eth_chainId` → `0x1cf4`, `eth_blockNumber` → `0x1e55`
+(**7,765 blocks**) — **unchanged across polls, with a tip timestamp of
+2026-08-08 18:00:11 UTC, so testnet is serving reads and producing nothing.**
+That is deliberate rather than a fault, and the reason is not in this repository:
+the host runs `bitcoind` and `dogecoind`, both still in initial block download,
+and testnet mining competes with them for the same disk and bandwidth
+(`micro-deploy`, `docs/releasing.md`). The §1 sentence below calling the testnet
+"live" was written on 2026-08-05 and is kept, corrected in place, rather than
+deleted — a status that changed is itself a fact about this repository.
+
 ---
 
 ## 1. What this is, in one paragraph
@@ -71,9 +85,15 @@ concluding the block time is broken should read this paragraph instead — the
 15-second figure at the top of this section is the **design target**, and no live
 block has ever been produced under the parameters that would deliver it.
 
-**The public testnet is also live** — chain id 7412 at
+**The public testnet is reachable but stopped** — chain id 7412 at
 `https://rpc-testnet.cloudsforge.online`, verified from outside on 2026-08-05
 (`eth_chainId` → `0x1cf4`), on the same single home server and the same tunnel.
+It answered the same chain id on 2026-08-10 and its height had not moved from
+`0x1e55` (7,765) since 2026-08-08 18:00:11 UTC. Mining there is stopped on
+purpose so the host's `bitcoind` and `dogecoind` can finish initial block
+download without competing for the same disk and bandwidth. **A reader deploying
+to testnet today will get a receipt from no block**: reads answer, writes never
+confirm.
 
 ---
 

@@ -13,10 +13,14 @@ node src/index.js                                # listens on 127.0.0.1:9648
 npm test        # 116 assertions; the first run downloads ~9 MB of solc
 ```
 
-> **Not deployed anywhere.** There is no account-model chain to verify contracts
-> on — phase 5 of [`../../docs/evm-spec.md`](../../docs/evm-spec.md) §8 has not
-> landed. The round trip is proven end to end against a real artifact from
-> `contracts/src`; `eth_getCode` comes from a stub. See
+> **Not deployed anywhere — and the reason is no longer "there is no chain".**
+> That sentence stood here until 2026-08-10 and it had stopped being true: mainnet
+> is live, chain id 7411 at `https://rpc.cloudsforge.online`, measured that day at
+> height 10,987 and climbing. What is missing is a host for *this service*, not a
+> chain for it to read. Two things follow. There is nothing on mainnet to verify
+> yet — every block measured carries zero transactions, so no contract of record
+> exists — and the round trip below is still proven end to end against a real
+> artifact from `contracts/src` with `eth_getCode` coming from a stub. See
 > [What is proven, and what is not](#what-is-proven-and-what-is-not).
 
 ---

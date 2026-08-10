@@ -199,8 +199,17 @@ curl -X POST -H 'content-type: application/json' \
   https://faucet.example.invalid/drip                   # ⬜ [WAITING] — not deployed
 ```
 
-The faucet **service** is built and tested — [`../tools/faucet`](../tools/faucet)
-— and you can run it locally today. It is not deployed anywhere public.
+The faucet **service** in this repository is built and tested —
+[`../tools/faucet`](../tools/faucet) — and you can run it locally today. It is
+not deployed anywhere public.
+
+The estate does serve a faucet, at
+[`network-testnet.cloudsforge.online/faucet`](https://network-testnet.cloudsforge.online/faucet),
+and it is a different service (`micro-faucet`). **It cannot pay you today**:
+it drips on testnet only, and testnet is stopped while the host's Bitcoin and
+Dogecoin nodes finish initial block download — measured 2026-08-10, chain 7412
+answers `eth_chainId` but its tip has not moved since 2026-08-08 18:00:11 UTC.
+There is deliberately no mainnet faucet at all.
 
 On your own chain you do not need it: **mine.** `hearthd --evm --mine` pays the
 subsidy to a key it generates on first start and keeps at
@@ -644,7 +653,7 @@ Do not plan around any of these:
 | | |
 | --- | --- |
 | A **published** RPC endpoint | ✅ `https://rpc.cloudsforge.online`, chain id 7411, POST only. What it does **not** have is age, transactions, a demonstrated hashrate, an audit or a second machine |
-| A **public** testnet | ✅ chain id **7412** at `https://rpc-testnet.cloudsforge.online`, explorer `https://explorer-testnet.cloudsforge.online`, faucet `https://network-testnet.cloudsforge.online/faucet`. Hostnames are single-label `<surface>-testnet.` — the two-label `*.testnet.cloudsforge.online` form fails the TLS handshake and is not used. Genesis hash in [`../TESTNET.md`](../TESTNET.md) |
+| A **public** testnet | 🟡 chain id **7412** at `https://rpc-testnet.cloudsforge.online`, explorer `https://explorer-testnet.cloudsforge.online`, faucet `https://network-testnet.cloudsforge.online/faucet` — all reachable, and **the chain is stopped**: measured 2026-08-10, height `0x1e55` (7,765) with a tip timestamp of 2026-08-08 18:00:11 UTC and no movement across polls. Deliberate, while the host's `bitcoind` and `dogecoind` finish initial block download on the same disk. Reads answer; a transaction sent there will not confirm. Hostnames are single-label `<surface>-testnet.` — the two-label `*.testnet.cloudsforge.online` form fails the TLS handshake and is not used. Genesis hash in [`../TESTNET.md`](../TESTNET.md) |
 | A **deployed** `0x`-native block explorer | 🟡 one is deployed at `https://explorer.cloudsforge.online`, but **not from this repository** — `web/` was deleted in `48bc28a`. The estate surface is [`micro-explorer-web`](https://github.com/cloudsforge-online/micro-explorer-web), which reads `micro-indexer` rather than talking `eth_*` to your node — so there is still **nothing here you can point at your own node** |
 | Contract source verification | 🟡 the services are written — [`../tools/verify`](../tools/verify) (116/116, and it speaks what `forge verify-contract` speaks) and [`../tools/explorer-api`](../tools/explorer-api) (the Etherscan-compatible `/api`, 177/177 plus 27/27 against a real chain). Neither is hosted |
 | A deployed faucet | ⬜ the service is written and tested; nowhere public to run it. Mine instead — §4 |

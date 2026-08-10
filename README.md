@@ -16,7 +16,7 @@
   <br/><br/>
   🌐 <b><a href="https://explorer.cloudsforge.online/">explorer.cloudsforge.online</a></b> · <code>https://rpc.cloudsforge.online</code> · chain id <code>7411</code>
   <br/>
-  🧪 testnet · <b><a href="https://explorer-testnet.cloudsforge.online/">explorer-testnet.cloudsforge.online</a></b> · <code>https://rpc-testnet.cloudsforge.online</code> · chain id <code>7412</code>
+  🧪 testnet <b>(paused — reads answer, no new blocks)</b> · <b><a href="https://explorer-testnet.cloudsforge.online/">explorer-testnet.cloudsforge.online</a></b> · <code>https://rpc-testnet.cloudsforge.online</code> · chain id <code>7412</code>
   <br/>
   <sub>Hearth is the <b>Mine</b> in <a href="https://cloudsforge.online/">CloudsForge</a>'s one crypto world — mine it, trade it, mint it, spend it, play in it.</sub>
   <br/><br/>
@@ -27,21 +27,58 @@
 
 ## Status, before anything else
 
-**Hearth is an account-model, EVM-executing proof-of-work chain. Mainnet is
-reachable and mining — chain id `7411` at `https://rpc.cloudsforge.online`. A
-public testnet is now reachable too — chain id `7412` at
-`https://rpc-testnet.cloudsforge.online`. There is no EMBER of any monetary
-value: no market, no listed price, no liquidity.**
+**Hearth is an account-model, EVM-executing proof-of-work chain, and mainnet is
+live. Chain id `7411`, Ethereum JSON-RPC at `https://rpc.cloudsforge.online`,
+height `10,987` and climbing.** Measured 2026-08-10 17:56 UTC from outside this
+network, with no credentials: `eth_chainId` → `0x1cf3`, `eth_blockNumber` →
+`0x2aeb`, `web3_clientVersion` → `Hearth/v0.2.0/linux-x64/node22.23.1`. A `GET`
+answers `405` with `allow: POST,OPTIONS`, because this is a JSON-RPC endpoint and
+not a page. Block 1 was mined **2026-08-04 19:12:21 UTC** and the chain has not
+stopped since — just under six days at that measurement.
 
-**"Live" means reachable, not established, and the difference matters here.**
-Block 1 was mined **2026-08-04 19:12 UTC**; the chain is hours old and under 200
-blocks tall. It sits at its launch difficulty — `eth_getBlockByNumber` returns
-`difficulty: 0x100`, which is exactly the `GENESIS_TARGET` floor in
-`node/src/params.js`, so no block has yet been produced at production
-proof-of-work parameters. The first 194 blocks averaged **~49 s apart**; 15 s is
-the protocol *target*, not an observed rate. And the whole thing runs on **one
-home server behind a single Cloudflare Tunnel** — no redundancy, no failover, and
-no backup that has ever been restored.
+**What is not there yet, said in the same breath, because a chain id without this
+paragraph reads as a promise.** There is no EMBER of any monetary value: no
+market, no listed price, no liquidity. **Not one transaction has ever been
+mined** — the tip carries zero and so does every block behind it — so there is no
+contract of record, no token, and nothing deployed on mainnet to point a wallet
+at. There is no payout path of any kind in this repository. And the public
+testnet is deliberately **stopped** (below).
+
+**"Live" means reachable and mining, not established, and each measurement below
+says something the height alone does not.**
+
+- **Difficulty on the tip is `0x100`** — exactly the `GENESIS_TARGET` floor in
+  `node/src/params.js`, so no block has yet been produced at production
+  proof-of-work parameters.
+- **The mean interval from block 1 to the tip is 46.8 s**, against a 15 s
+  protocol *target*. One miner sitting at the difficulty floor is the whole
+  explanation: the floor sets the work, a single machine supplies whatever hash
+  rate it has, and nothing retargets because there is no competition to retarget
+  against. Dividing height by age and concluding the block time is broken is the
+  wrong conclusion; 15 s is a design target, not an observed rate.
+- **It is one home server behind a single Cloudflare Tunnel** — no redundancy, no
+  failover, and no backup that has ever been restored.
+
+**The public testnet answers reads, and is not producing blocks.** Chain id
+`7412` at `https://rpc-testnet.cloudsforge.online` still serves: measured
+2026-08-10 17:56 UTC, `eth_chainId` → `0x1cf4` and `eth_blockNumber` → `0x1e55`
+(`7,765`). That height did not move across repeated polls, and the tip's
+timestamp is **2026-08-08 18:00:11 UTC** — about 48 hours before the
+measurement. **This is stopped on purpose, not broken.** The same home server
+runs `bitcoind` and `dogecoind`, both still in initial block download, and
+testnet mining competes with them for the same disk and bandwidth; the estate
+records that decision in `micro-deploy`'s `docs/releasing.md`. Treat testnet as
+paused: reads work, nothing new confirms, and no genesis off mainnet outlives a
+`docker compose down -v`.
+
+The public surfaces around it all answered `200` in the same measurement:
+[`cloudsforge.online`](https://cloudsforge.online),
+[`network.cloudsforge.online`](https://network.cloudsforge.online),
+[`explorer.cloudsforge.online`](https://explorer.cloudsforge.online),
+[`explorer-testnet.cloudsforge.online`](https://explorer-testnet.cloudsforge.online)
+and [`network-testnet.cloudsforge.online/faucet`](https://network-testnet.cloudsforge.online/faucet).
+A faucet page that renders is not a faucet that can pay: it drips from the
+testnet chain, and that chain is paused.
 
 The EVM is built and gated on Ethereum's published reference vectors, and
 consensus on the account model now runs in public rather than only on loopback.
@@ -52,9 +89,9 @@ The original UTXO ledger is being retired.
 | **Built and vector-gated** | keccak/RLP/uint256/secp256k1 · Merkle Patricia Trie + StateDB · the interpreter (**609/609 VMTests**) · transactions, receipts, bloom (**188/188 TransactionTests**) · the state transition (**20,077/20,077 GeneralStateTests**) · all nine precompiles including bn128 and blake2f · the `eth_*` JSON-RPC surface · an EVM-aware explorer · the `hearth` CLI with an opcode tracer · a browser wallet on secp256k1 |
 | **Proved end to end** | **Uniswap V2 runs on our own EVM** — `node/test/dex.js`, 167/167, a real swap at **112,456 gas** |
 | **Built and running locally** | Consensus on the account model. `hearthd --evm --mine` produces and validates blocks and serves `eth_*` on 8545; two real nodes partition and reorg in `node/test/evm-p2p-fork.js`; `docker-compose.testnet.yml` runs three on chain id 7412 |
-| **Published** | **Mainnet, chain id 7411**, at `https://rpc.cloudsforge.online` — publicly trusted TLS, JSON-RPC over POST (a GET answers 405), plus an explorer at [`explorer.cloudsforge.online`](https://explorer.cloudsforge.online). The node ports still bind `127.0.0.1`; a Cloudflare Tunnel on one home server is the only thing routing them, so this is one machine with no failover |
-| **Published** | **Testnet, chain id 7412**, at `https://rpc-testnet.cloudsforge.online` — same POST-only surface, same publicly trusted TLS, with an explorer at [`explorer-testnet.cloudsforge.online`](https://explorer-testnet.cloudsforge.online) and a faucet at [`network-testnet.cloudsforge.online/faucet`](https://network-testnet.cloudsforge.online/faucet). P2P is a WebSocket at `wss://p2p-testnet.cloudsforge.online/p2p` — **only the `/p2p` path is routed**, the host root answers 404 |
-| **Still not published** | Any deployed contract of record. Off mainnet no genesis outlives a `docker compose down -v`, so testnet state is not durable and should be treated as disposable |
+| **Published, and mining** | **Mainnet, chain id 7411**, at `https://rpc.cloudsforge.online` — publicly trusted TLS, JSON-RPC over POST (a GET answers 405), plus an explorer at [`explorer.cloudsforge.online`](https://explorer.cloudsforge.online). Height `10,987` and climbing, measured 2026-08-10 17:56 UTC. The node ports still bind `127.0.0.1`; a Cloudflare Tunnel on one home server is the only thing routing them, so this is one machine with no failover |
+| **Published, and paused** | **Testnet, chain id 7412**, at `https://rpc-testnet.cloudsforge.online` — same POST-only surface, same publicly trusted TLS, with an explorer at [`explorer-testnet.cloudsforge.online`](https://explorer-testnet.cloudsforge.online) and a faucet at [`network-testnet.cloudsforge.online/faucet`](https://network-testnet.cloudsforge.online/faucet). **It answers reads and produces no blocks**: height `7,765`, tip timestamp 2026-08-08 18:00:11 UTC, unchanged across polls on 2026-08-10 — stopped on purpose while the host's `bitcoind` and `dogecoind` finish initial block download. P2P is a WebSocket at `wss://p2p-testnet.cloudsforge.online/p2p` — **only the `/p2p` path is routed**, the host root answers 404 |
+| **Still not published** | Any deployed contract of record, and **any transaction at all** — every mainnet block measured on 2026-08-10 carries zero. Off mainnet no genesis outlives a `docker compose down -v`, so testnet state is not durable and should be treated as disposable |
 | **Measured, and open** | The proof of work is 64 KiB and cannot be raised: a 2 GiB pad measures **185.7 s per evaluation** and a validator pays one per block received ([`docs/pow-parameters.md`](docs/pow-parameters.md)). Making it meaningfully memory-hard needs an amortised dataset, not a constant |
 
 [`MAP.md`](MAP.md) is the verified inventory — every claim in it cites `path:line`
@@ -148,7 +185,9 @@ Everything below **runs**, and every number was produced by running it:
   `forge verify-contract` speaks — and 🟡 an **Etherscan-compatible `/api`**
   (`tools/explorer-api/`: `account`, `contract`, `stats`, `transaction`, `logs`,
   `proxy` over a real address index) whose **test suite currently fails**. Zero
-  dependencies; no chain to serve either of them yet
+  dependencies. There is now a chain for both to serve — mainnet 7411 — and
+  neither is hosted against it; that is a deployment that has not happened, not a
+  chain that does not exist
 - ✅ **property fuzzing** (`node/test/fuzz/`) — random bytes into `uint256`, the
   trie, RLP, transactions and the interpreter. It found two real defects in merged
   code and **reports rather than patches**; both are listed in [SECURITY.md](SECURITY.md)
@@ -166,10 +205,12 @@ Everything below **runs**, and every number was produced by running it:
   **Not a node and not consensus-compatible**, and it has no EVM at all — see
   [docs/why-two-implementations.md](docs/why-two-implementations.md)
 
-> **Two honest caveats about that list.** None of it has been driven by a block —
-> consensus on the account model is the missing phase. The merchant-button
-> *mockup* that used to sit in `web/pay-demo.html` — it simulated settlement on a
-> timer — went with that directory; there is still no payment SDK.
+> **Two honest caveats about that list.** It *is* driven by blocks now — mainnet
+> has produced `10,987` of them as of 2026-08-10 — but never by a block carrying
+> a transaction, so every path through the EVM above the empty-block case is still
+> proven by tests rather than by traffic. And the merchant-button *mockup* that
+> used to sit in `web/pay-demo.html` — it simulated settlement on a timer — went
+> with that directory; there is still no payment SDK and no payout path.
 
 **`npm test` passes from a clean clone** — **39 suites, 86,451 checks**, no install,
 no corpus and no network. Re-measured 2026-08-09 by cloning this repository into an
@@ -228,13 +269,19 @@ cast chain-id     --rpc-url https://rpc.cloudsforge.online      # 7411
 cast block-number --rpc-url https://rpc.cloudsforge.online      # climbing
 ```
 
-**Or at the public testnet**, which is where you should be if you are deploying
-anything you have not deployed before:
+**The public testnet is where you should be if you are deploying anything you
+have not deployed before — but it is paused right now**, so a transaction sent to
+it will sit in the pool and never confirm:
 
 ```bash
 cast chain-id     --rpc-url https://rpc-testnet.cloudsforge.online   # 7412
-cast block-number --rpc-url https://rpc-testnet.cloudsforge.online   # climbing
+cast block-number --rpc-url https://rpc-testnet.cloudsforge.online   # 7765, and static
 ```
+
+Reads answer; mining is stopped while the host's Bitcoin and Dogecoin nodes
+finish initial block download on the same disk. Until it resumes, run a chain of
+your own — `hearthd --evm --mine`, or the three-node `docker-compose.testnet.yml`
+— which is faster to iterate against anyway.
 
 Or serve the real RPC layer locally over a fake chain, to check your wiring and
 your encodings without mining anything:
@@ -247,7 +294,8 @@ cast chain-id --rpc-url http://127.0.0.1:8745                   # 7411
 Full walkthrough, with every step marked **[RUN]**, **[PROBE]** or **[WAITING]**:
 **[docs/quickstart.md](docs/quickstart.md)**.
 
-**5 — Boot the UTXO network** (the chain that actually produces blocks today):
+**5 — Boot the UTXO network** (the ledger being retired; mainnet 7411 is the
+chain producing blocks today, and it is account-model):
 
 ```bash
 docker compose up --build      # seed + 2 miners + web on :8080
@@ -288,8 +336,9 @@ areas right now: **an amortised proof of work** so the memory-hardness argument 
 more than a construction ([docs/pow-parameters.md](docs/pow-parameters.md)), and
 closing the items in **[docs/listing-checklist.md](docs/listing-checklist.md)**
 §7. Contract verification is **already built** (`tools/verify/`, 116/116) and the
-Etherscan-compatible `/api` shim is built and green
-(`tools/explorer-api/`) — both are waiting on a chain to serve.
+Etherscan-compatible `/api` shim is built and green (`tools/explorer-api/`) —
+both are waiting on a *deployment*, not on a chain. Mainnet 7411 has been
+answering since 2026-08-04; nobody has hosted either service against it.
 
 ## Security
 
