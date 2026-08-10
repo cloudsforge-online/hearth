@@ -13,10 +13,18 @@ node src/index.js
 npm test        # 66 assertions over real HTTP against a stub node
 ```
 
-> **Not deployed anywhere public.** It runs against a local chain today —
-> `hearthd --evm --mine`, or the three-node `docker-compose.testnet.yml` — and
-> the service is finished and tested. What it is waiting for is a published
-> network, not a chain. See [`../../docs/network-config.md`](../../docs/network-config.md).
+> **Not deployed anywhere public, and it is not the faucet the estate serves.**
+> This banner used to say it was "waiting for a published network"; that stopped
+> being true on 2026-08-04, when mainnet 7411 went public. The estate's faucet is
+> a separate service, `micro-faucet`, behind
+> [`network-testnet.cloudsforge.online/faucet`](https://network-testnet.cloudsforge.online/faucet)
+> — testnet only, by four independent locks, and **it cannot pay out right now
+> either**, because testnet is stopped while the host's Bitcoin and Dogecoin nodes
+> finish initial block download (measured 2026-08-10: chain 7412 answers reads,
+> tip unchanged since 2026-08-08 18:00:11 UTC). There is deliberately **no mainnet
+> faucet**. This one runs against a local chain — `hearthd --evm --mine`, or the
+> three-node `docker-compose.testnet.yml` — and the service is finished and
+> tested. See [`../../docs/network-config.md`](../../docs/network-config.md).
 
 ---
 

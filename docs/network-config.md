@@ -25,10 +25,19 @@ guess and nobody has to ask.
 > work.
 >
 > **And "live" means reachable, not established.** Block 1 was mined
-> 2026-08-04 19:12 UTC. The chain is hours old, is at the `GENESIS_TARGET`
-> difficulty floor, carries zero transactions so far, and runs on **one home
+> 2026-08-04 19:12:21 UTC. Measured 2026-08-10 17:56 UTC, mainnet is **10,987
+> blocks and just under six days old**, carries **62 transactions across 52 of
+> those blocks and not one of them from a third party**, and runs on **one home
 > server behind one Cloudflare Tunnel** — no redundancy, no failover, no backup
-> ever restored. Precisely:
+> ever restored. **Every block it has ever had was mined by this project**, and
+> on 2026-08-10 a single browser tab moved its difficulty by a factor of 32 and
+> then, on closing, left it with no new block for 1,154 s — so do not configure a
+> client against an assumed block interval, and do not treat any difficulty
+> reading as a standing property
+> ([`../MAP.md` §1](../MAP.md#1-what-this-is-in-one-paragraph) states it once).
+> The public testnet on 7412 is reachable but **stopped**: its height
+> has not moved from 7,765 since 2026-08-08 18:00:11 UTC, while the host's
+> `bitcoind` and `dogecoind` finish initial block download. Precisely:
 >
 > - **The chain runs.** `node/src/evmnode.js` builds the blockchain, the miner
 >   and the JSON-RPC server and mounts it on 8545 (`evmnode.js`).

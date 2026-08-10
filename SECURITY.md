@@ -243,11 +243,30 @@ validated and reorged, two real nodes partition and converge in
 `node/test/evm-p2p-fork.js`, and three run under `docker-compose.testnet.yml`.
 None of that shortens this list:
 
-- The chain is **hours old and under 250 blocks tall**, and it runs at the
-  `GENESIS_TARGET` difficulty floor. **No block has ever been produced at
-  production proof-of-work parameters**
-  ([`docs/pow-parameters.md`](docs/pow-parameters.md)), and nothing here has ever
-  run under adversarial load.
+- The chain is **just under six days old and 10,987 blocks tall** (measured
+  2026-08-10 17:56 UTC), and walking every one of those blocks finds **62
+  transactions in 52 of them** — nine successful contract creations on
+  2026-08-04, three strays, and a 41-transaction automated sweep between two
+  addresses on 2026-08-10. **No third party has ever transacted here**, so the
+  state machine has been exercised by tests far more than by use. **No block has
+  ever been produced at production proof-of-work parameters**
+  ([`docs/pow-parameters.md`](docs/pow-parameters.md)) — every block ever mined
+  used a 64 KiB scratchpad and a 256-step walk against a stated intent of 2 GiB
+  and 2,048 steps, and that is unchanged. And nothing here has ever run under
+  adversarial load.
+- **Every block this chain has ever had was mined by this project**, and **one
+  browser tab is enough to move its difficulty by a factor of 32 and then stall
+  it for twenty minutes.** Both were demonstrated on 2026-08-10: difficulty sat
+  at the `GENESIS_TARGET` floor for every block to height 10,842, reached 8,146
+  by height 11,242 once a browser miner joined, and the tip then did not advance
+  for 1,154 s after that miner left, because the retarget cannot shed work faster
+  than the remaining ~8 H/s can produce blocks to retarget on. Treat the security
+  of this chain accordingly: its hash rate has never had to be bought, and the
+  cost of stalling it is one closed tab. The measurements and the cause are in
+  [`MAP.md` §1](MAP.md#1-what-this-is-in-one-paragraph); the retarget behaviour
+  is tracked as `micro-org#363` and is a consensus change, not a documentation
+  one. Any statement of the form "the chain sits at the difficulty floor" is a
+  reading with an expiry date, and this file no longer makes one.
 - The class of bug that only appears when state is carried across blocks,
   reorged or persisted has had a few thousand blocks to show itself, not a few
   million.
