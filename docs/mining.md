@@ -166,6 +166,17 @@ the coinbase pays, so the miner has to hold its own key. The node hands out a ca
 built for *your* public key and keeps the transactions; you return a nonce, a digest and
 a signature. Your private key never leaves the machine.
 
+**And that is also the mining key's whole security problem**, so it is worth stating
+next to the property rather than somewhere else: the key that proves the work is by
+construction the key that can SPEND what the work earned, because `verifyPow` recovers
+the coinbase from the proof signature. A miner therefore holds, in memory, a key that
+can move its own balance, and no amount of encryption at rest changes that. What can
+be changed is where the key comes from and how much sits behind it —
+[`mining-key-custody.md`](mining-key-custody.md) is the four sources
+`node/src/coinbase.js` now accepts, the two refusals worth configuring, and the
+ordering that gets a funded coinbase off a plaintext file without losing the balance
+(micro-org#206).
+
   GET  /mining/template?pub=<65-byte uncompressed secp256k1, hex>
                                             → header core, target, PoW params,
                                               and the rest of the core header so

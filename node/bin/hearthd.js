@@ -75,9 +75,11 @@ const opts = parse(process.argv);
 if (opts.evm && opts.minerAddress) {
   console.error(
     'hearthd: --miner-address is not supported with --evm.\n'
-    + '  The coinbase must SIGN the block, so the node mines to the key it holds in\n'
-    + '  <data>/coinbase-key.json and mining to a bare address is not possible.\n'
-    + '  To mine to a specific account, put its key there before starting.');
+    + '  The coinbase must SIGN the block, so the node mines to the key it HOLDS and\n'
+    + '  mining to a bare address is not possible. To mine to a specific account,\n'
+    + '  give this process its key: HEARTH_COINBASE_KEY, HEARTH_COINBASE_KEY_FILE,\n'
+    + '  <data>/coinbase-keystore.json (encrypted) or <data>/coinbase-key.json.\n'
+    + '  `hearth minerkey status` says which of those is in play.');
   process.exit(2);
 }
 /* A data directory whose genesis.json belongs to another network is refused by
@@ -94,7 +96,12 @@ try {
   // Only the account-model chain has a genesis.json, and by here its module is
   // already loaded — so this require is a cache hit, not a second chance to fail.
   const { GENESIS_NETWORK_MISMATCH } = opts.evm ? require('../src/chain/blockchain') : {};
-  if (e && e.code && e.code === GENESIS_NETWORK_MISMATCH) {
+  /* The coinbase key's refusals belong in the same place and for the same
+   * reason. "the key from <data>/coinbase-keystore.json derives 0xA but
+   * HEARTH_COINBASE_ADDRESS pins 0xB" is the entire message an operator needs,
+   * and it is the message a stack trace hides. micro-org#206. */
+  const { COINBASE_KEY_REFUSED } = require('../src/coinbase');
+  if (e && e.code && (e.code === GENESIS_NETWORK_MISMATCH || e.code === COINBASE_KEY_REFUSED)) {
     console.error('hearthd: ' + e.message);
     process.exit(2);
   }

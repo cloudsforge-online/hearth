@@ -93,6 +93,30 @@ node bin/hearth-cli.js send <toAddress> 5      # send 5 EMBER
 node bin/hearth-cli.js blocks 10
 ```
 
+## Mining key custody
+
+The key a miner is paid to is the key that can spend what it earned — `verifyPow`
+recovers the coinbase from the proof signature, so the two cannot be separated. It
+therefore does not have to be a plaintext file, and on anything holding real money it
+should not be:
+
+```bash
+node bin/hearth.js minerkey status --data <dir>            # what is where, what it pays
+node bin/hearth.js minerkey seal   --data <dir>            # plaintext -> encrypted, same address
+node bin/hearth.js minerkey new    --data <dir>            # a key that never exists in the clear
+node bin/hearth.js minerkey verify --data <dir> --address 0x…   # exit 0/1, prints no key
+```
+
+`src/coinbase.js` `resolveCoinbaseKey` takes the key from `HEARTH_COINBASE_KEY`,
+`HEARTH_COINBASE_KEY_FILE`, `<data>/coinbase-keystore.json` (with
+`HEARTH_COINBASE_PASSPHRASE_FILE`) or `<data>/coinbase-key.json`, in that order.
+`HEARTH_COINBASE_ADDRESS` pins the address the key must derive — a mount that did not
+come up then stops the miner instead of mining to a fresh key nobody holds — and
+`HEARTH_COINBASE_SOURCE` narrows it to one source with creation off.
+
+[`../docs/mining-key-custody.md`](../docs/mining-key-custody.md) is the migration for a
+coinbase that already holds a balance, and what only a person can do.
+
 ## Chat CLI
 
 Messaging carried by [records](../docs/records.md). Announce once, then send.

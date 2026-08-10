@@ -180,6 +180,21 @@ work for your *public* key and you sign the winning digest yourself
 (`node/src/chain/header.js` `signProof`), which is what makes work issued to you
 redeemable only by you.
 
+If the address is going to hold anything you would miss, do not leave the key in
+the clear:
+
+```bash
+node bin/hearth.js minerkey seal --data <dir>   # encrypt it, same address, key never printed
+node bin/hearth.js minerkey status --data <dir> # what is where, and what it pays
+```
+
+then start the miner with `HEARTH_COINBASE_SOURCE=keystore`,
+`HEARTH_COINBASE_PASSPHRASE_FILE=<a path>` and `HEARTH_COINBASE_ADDRESS=<your
+address>` — the last of which makes the miner refuse to start rather than mine to
+an address you did not ask for. [`docs/mining-key-custody.md`](docs/mining-key-custody.md)
+is the whole procedure, including what to do about a key that already holds a
+balance.
+
 `--url` points at the **REST** API — the port serving `/info` and `/mining/*`,
 container `8645` — not the Ethereum JSON-RPC one.
 

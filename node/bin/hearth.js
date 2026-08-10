@@ -5,6 +5,7 @@
  *   hearth trace   replay an execution opcode by opcode   <- the reason this exists
  *   hearth watch   a live view of a node
  *   hearth wallet  secp256k1 keys, encrypted at rest
+ *   hearth minerkey the mining key's custody — status, seal, rotate, verify
  *   hearth call    read a contract
  *   hearth send    write to a contract
  *   hearth deploy  put a contract on chain
@@ -26,6 +27,7 @@ const COMMANDS = {
   trace: () => require('../src/cli/trace').main,
   watch: () => require('../src/cli/watch').main,
   wallet: () => require('../src/cli/wallet').main,
+  minerkey: () => require('../src/cli/minerkey').main,
   call: () => (argv) => require('../src/cli/contract').main('call', argv),
   send: () => (argv) => require('../src/cli/contract').main('send', argv),
   deploy: () => (argv) => require('../src/cli/contract').main('deploy', argv),
@@ -38,6 +40,9 @@ const USAGE = `hearth — the terminal tool for the Ember EVM chain
   hearth trace --vector <file>     replay a conformance vector
   hearth watch                     a live view of a node
   hearth wallet <new|list|send|…>  secp256k1 keys, encrypted at rest
+  hearth minerkey <status|seal|…>  the MINING key's custody — a different key,
+                                   a different directory, deliberately not the
+                                   wallet's (micro-org#206)
   hearth call   --to … --fn …      read a contract
   hearth send   --to … --fn …      write to a contract
   hearth deploy --bin …            put a contract on chain

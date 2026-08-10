@@ -462,9 +462,20 @@ gives the reason, which is the 64-byte browser-miner proof.
 
 **The key is encrypted at rest** — scrypt N=2¹⁸ over a passphrase, AES-256-GCM
 over the key, address in the clear and bound in as GCM additional data
-(`node/src/mine/keystore.js`). That is the one thing `hearth-mine` and `hearthd`
-do *not* do: `node/src/coinbase.js` writes the key in the clear at mode 600,
-which is right for an unattended server and wrong for a laptop.
+(`node/src/mine/keystore.js`).
+
+This used to be the one thing `hearth-mine` and `hearthd` did *not* do. Since
+micro-org#206 they do: `node/src/coinbase.js` `resolveCoinbaseKey` takes the key
+from `HEARTH_COINBASE_KEY`, from `HEARTH_COINBASE_KEY_FILE`, from that same
+keystore under `HEARTH_COINBASE_PASSPHRASE_FILE`, or — still, so nothing that
+worked stops — from the plaintext `coinbase-key.json` at mode 600. The verbs are
+`hearth minerkey status|seal|new|verify` (`node/src/cli/minerkey.js`), the suite
+is `node/test/coinbase-source.js`, and the runbook, including what only a person
+can do, is [`docs/mining-key-custody.md`](docs/mining-key-custody.md).
+
+The reason it changed is a number: on 2026-08-09 the mainnet coinbase held
+47,421.445463215 EMBER and was accruing ~400 EMBER an hour behind a 240-byte
+plaintext file that was bind-mounted read-**write** into the miner container.
 
 **What replaced what.** The previous contents were scaffolding that documented its
 own brokenness: three registered commands with zero callers, a `frontendDist` of
