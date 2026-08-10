@@ -109,6 +109,15 @@ class JsonRpcServer {
     this.maxBodyBytes = options.maxBodyBytes || MAX_BODY_BYTES;
     this.maxBatchSize = options.maxBatchSize || MAX_BATCH_SIZE;
     this.maxInFlightPerIp = options.maxInFlightPerIp || MAX_IN_FLIGHT_PER_IP;
+    /* Whether the chain behind this server may be believed yet. A node binds
+     * this port before it has replayed its data directory (src/evmnode.js), so
+     * for the first minutes of a cold boot every method here would answer out of
+     * a chain that is still loading: a block number short by thousands, a
+     * balance at a state root the chain has left behind. Asked per request
+     * rather than read once, because it changes exactly once and this is the
+     * cheapest way to see it change. Default true — an embedder that hands over
+     * a loaded chain owes nothing. */
+    this.ready = options.ready || (() => true);
     /* remoteAddress -> open request count. Entries are deleted at zero, so this
      * cannot grow with the number of addresses ever seen; the alternative is a
      * map an attacker fills by reconnecting from a /64. */
@@ -277,6 +286,21 @@ class JsonRpcServer {
     if (req.method !== 'POST') {
       res.writeHead(405, { 'content-type': 'application/json', allow: 'POST,OPTIONS', ...cors });
       return res.end(JSON.stringify(errorResponse(null, CODES.INVALID_REQUEST, 'JSON-RPC requires POST')));
+    }
+    /* REFUSED BEFORE THE BODY IS READ, and before a slot is claimed: there is
+     * nothing in it this server is willing to act on yet. 503 and not the
+     * 200-with-an-error-body the transport contract insists on, for the same
+     * reason as the 429 below — this is the transport declining to take the
+     * request rather than the RPC layer answering it — and because every
+     * mainstream client turns a 5xx into a thrown transport error the caller can
+     * retry, while a 200 whose body is an error is reported to the user as a
+     * failed call. `id` is null because the body has not been read; the spec
+     * requires exactly that when the id cannot be determined. */
+    if (!this.ready()) {
+      req.resume();                               // discard the body we will not read
+      res.writeHead(503, { 'content-type': 'application/json', 'retry-after': '2', ...cors });
+      return res.end(JSON.stringify(errorResponse(null, CODES.SERVER_ERROR,
+        'this node is starting: replaying its chain from disk')));
     }
     /* Claimed before the body is read, because reading is itself the queue an
      * attacker fills. An HTTP 429 rather than the 200-with-an-error-body the

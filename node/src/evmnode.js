@@ -55,7 +55,21 @@ class EvmNode {
     this.dataDir = opts.dataDir || null;
     this.extraData = opts.extraData || '';
 
-    this.chain = new Blockchain({ dataDir: this.dataDir, config: opts.genesis || null }).load();
+    /* CONSTRUCTED, NOT LOADED. The on-disk chain is replayed by `open()`, which
+     * `start()` awaits — see the note there. Measured 2026-08-11 at mainnet
+     * height 11,247, replaying it here took 90.8 s on a laptop and 539 s on the
+     * live seed, with the event loop blocked and nothing logged for the whole of
+     * it (micro-org#349). Until that replay finishes this object is a
+     * GENESIS-ONLY CHAIN, which is why `ready` below exists and why both HTTP
+     * surfaces refuse while it is false. */
+    this.chain = new Blockchain({ dataDir: this.dataDir, config: opts.genesis || null });
+    /* Attached HERE, before a block is read, and that is the whole point: this
+     * listener was unreachable while the replay ran inside this constructor —
+     * the event fired before any caller could hold the object to listen for it.
+     * A data directory holding an invalid block loads a SHORTER CHAIN, and this
+     * is the only thing that says so. */
+    this.chain.on('replay-rejected', ({ rejected, total }) =>
+      this.error('blocks on disk failed to replay', { rejected, total }));
     this.mempool = new Mempool({
       state: () => this.chain.stateAtTip(),
       gasLimit: () => this.chain.gasLimit,
@@ -119,6 +133,11 @@ class EvmNode {
        * a legacy-only chain the honest answer to eth_feeHistory is worse for
        * every measured client than -32601 is. */
       feeHistory: opts.feeHistory === undefined ? P.EVM_RPC_FEE_HISTORY : opts.feeHistory,
+      /* Asked per request, not read once: this node binds :8545 BEFORE it has
+       * replayed its chain (see `start()`), and a wallet that gets a confident
+       * `eth_blockNumber` out of a chain that is still loading is worse off than
+       * one that got a connection refused. */
+      ready: () => this.ready,
     });
 
     this.sseClients = new Set();
@@ -133,7 +152,15 @@ class EvmNode {
       template: { tokens: P.MINING_TEMPLATE_BURST, at: Date.now() },
     };
 
+    /* REPLAY IS HISTORY, NOT NEWS, and these two both treat their argument as
+     * news. Before micro-org#349 the replay ran to completion inside this
+     * constructor, so it could not reach a listener attached below it; now that
+     * it happens afterwards, the guard is what keeps that true. Without it a
+     * cold boot would revalidate the mempool once per block on disk and push
+     * every historical block at anything on /events — which is also 11,247
+     * needless passes over a pool that is empty at boot by construction. */
     this.chain.on('block', (block, entry) => {
+      if (this.chain.replayPending) return;
       this.mempool.removeIncluded(entry.block.txs.map(t => keccak256(hexBuf(t)).toString('hex')));
       this.mempool.revalidate();
       this._emitBlock(entry);
@@ -142,13 +169,45 @@ class EvmNode {
      * wallet that sent one stopped watching the moment it saw a receipt, and
      * without this it is simply gone. */
     this.chain.on('reorg', ({ from, to, tip, unwound }) => {
+      if (this.chain.replayPending) return;          // a branch on disk we never served
       let restored = 0;
       for (const raw of unwound) if (this.mempool.add(hexBuf(raw)).ok) restored++;
       this.mempool.revalidate();
       this.warn(`reorg ${from} → ${to}`, { from, to, tip, unwound: unwound.length, restored });
     });
-    this.chain.on('replay-rejected', ({ rejected, total }) =>
-      this.error('blocks on disk failed to replay', { rejected, total }));
+  }
+
+  /**
+   * TRUE WHEN THIS NODE MAY BE BELIEVED — when the chain it holds is the chain
+   * in its data directory, rather than the prefix of one it is still reading.
+   *
+   * Both HTTP surfaces refuse everything while this is false, and they refuse
+   * rather than answer because every answer available from a half-replayed
+   * chain is WRONG in the most expensive way available: `eth_blockNumber` short
+   * by thousands, `eth_getBalance` at a state root the chain left behind hours
+   * ago, `/mining/template` on a stale tip. A wallet that is told a balance is
+   * zero does not ask again.
+   *
+   * Derived from the chain rather than stored, so there is exactly one fact
+   * here: a node that is handed a chain somebody else has already loaded (a
+   * suite, an embedder) is ready, and one whose replay was aborted mid-way
+   * never becomes so.
+   */
+  get ready() { return !this.chain.replayPending; }
+
+  /** What both surfaces answer with while `ready` is false. */
+  _startingBody() {
+    const p = this._replay || {};
+    return {
+      err: 'this node is starting: replaying its chain from disk',
+      status: 'starting',
+      /* Named `replayed` and not `height`: an operator reading this must not be
+       * able to mistake it for the height of the chain. */
+      replayed: p.blocks || 0,
+      bytes: p.bytes || 0,
+      totalBytes: p.totalBytes || 0,
+      elapsedMs: p.elapsedMs || 0,
+    };
   }
 
   now() { return Date.now(); }
@@ -174,16 +233,90 @@ class EvmNode {
 
   // ---- lifecycle -----------------------------------------------------------
 
-  /* A PORT OF 0 MEANS "DO NOT LISTEN", on all four servers, and not "pick an
+  /**
+   * Replay the data directory. Idempotent, and the only way this node's chain
+   * catches up with its disk.
+   *
+   * Separate from `start()` because they answer different questions — "is this
+   * chain the one on disk" and "is this process serving" — and a caller that
+   * wants the first without the second (a tool, a suite, an embedder reading a
+   * data directory) should not have to bind ports to get it.
+   */
+  async open() {
+    if (!this.chain.replayPending) return this;      // nothing on disk to catch up with
+    const t0 = Date.now();
+    this.log('replaying the chain from disk — this node refuses RPC until it has finished', {
+      dataDir: this.dataDir,
+    });
+    /* The two cadences default in params.js and are overridable per node, which
+     * is how test/boot.js interrogates a node that is genuinely mid-replay: pin
+     * them to 0 and a 24-block directory yields and reports after every block,
+     * instead of the assertion depending on whether that directory happens to
+     * take longer than REPLAY_YIELD_MS to read on the machine running it. */
+    await this.chain.open({
+      onProgress: s => this._onReplayProgress(s),
+      yieldEveryMs: this.opts.replayYieldMs,
+      progressEveryMs: this.opts.replayProgressMs,
+    });
+    if (this.chain.replayPending) return this;       // aborted by close(); say nothing
+    this.log(`replayed ${this.chain.height} blocks in ${((Date.now() - t0) / 1000).toFixed(1)}s`, {
+      height: this.chain.height, ms: Date.now() - t0,
+    });
+    return this;
+  }
+
+  /**
+   * Where the replay has got to: kept for `_startingBody`, logged as it moves.
+   *
+   * A LINE PER FIVE SECONDS AND NOT A TICKER. The cadence comes from the replay
+   * loop itself (`REPLAY_PROGRESS_MS` in chain/blockchain.js), which is the only
+   * thing that knows whether progress is being made — a timer would keep
+   * printing a reassuring line long after the loop it claims to describe had
+   * stopped, and estate Rule 8 forbids `setInterval` for the same family of
+   * reasons. Awaited by the replay, so an embedder may do something
+   * asynchronous with it.
+   */
+  async _onReplayProgress(s) {
+    this._replay = s;
+    if (!s.done) {
+      const pct = s.totalBytes ? Math.min(100, Math.floor((s.bytes / s.totalBytes) * 100)) : 0;
+      this.log(`replaying · ${s.blocks} blocks · height ${s.height} · ${pct}% · ${(s.elapsedMs / 1000).toFixed(0)}s`, {
+        blocks: s.blocks, height: s.height, percent: pct, elapsedMs: s.elapsedMs,
+      });
+    }
+    if (this.opts.onReplayProgress) await this.opts.onReplayProgress(s, this);
+  }
+
+  /**
+   * A PORT OF 0 MEANS "DO NOT LISTEN", on all four servers, and not "pick an
    * ephemeral one". The distinction exists because of `bin/hearth-mine.js`: a
    * miner on somebody's laptop dials out and serves nothing, and a listener on a
    * port nobody can be told about is not a feature — it is an open port on a
    * personal machine with no purpose. A suite that wants an ephemeral port calls
    * `listenRest(0)` / `listenJsonRpc(0)` / `p2p.listen(0)` directly, which is
-   * what every one of them already does; only this function reads the option. */
-  start() {
+   * what every one of them already does; only this function reads the option.
+   *
+   * THE ORDER HERE IS THE FIX FOR micro-org#349 AND IS NOT ARBITRARY.
+   *
+   *   listen first   so that a cold boot is a node that ANSWERS "starting, 40%"
+   *                  rather than a socket that refuses to connect for nine
+   *                  minutes. Everything it answers while replaying is a
+   *                  refusal; see `ready`.
+   *   replay next    awaited, and yielding as it goes, so the process stays
+   *                  answerable throughout.
+   *   gossip and     LAST, and this one is consensus, not comfort. A peer's
+   *   mining         block applied to a half-replayed chain is an 'unknown
+   *                  parent' at best; a MINER on a half-replayed tip builds on
+   *                  a block thousands deep, signs it, and gossips a fork of the
+   *                  live chain. Neither may start before the replay is done,
+   *                  and if the replay did not finish (close() during boot)
+   *                  neither starts at all.
+   */
+  async start() {
     if (this.opts.rpcPort !== 0) this.listenRest(this.opts.rpcPort === undefined ? P.DEFAULT_RPC_PORT : this.opts.rpcPort);
     if (this.opts.jsonRpcPort !== 0) this.listenJsonRpc(this.opts.jsonRpcPort === undefined ? P.DEFAULT_JSONRPC_PORT : this.opts.jsonRpcPort);
+    await this.open();
+    if (!this.ready) return this;                    // an aborted replay is not a chain
     /* `--p2p 0` means DO NOT LISTEN, not "pick a port". A miner dialling out to a
      * seed through a tunnel has nothing to serve and no reason to open a port on
      * a laptop; an ephemeral listener nobody can be told about is strictly worse
@@ -201,9 +334,15 @@ class EvmNode {
     this.log(`ready · height ${this.chain.height} · chain ${this.chain.chainId} · ${P.COIN}`, {
       height: this.chain.height, chainId: this.chain.chainId, genesis: this.chain.genesisId,
     });
+    return this;
   }
 
   close() {
+    /* A replay in flight holds the loop open with a `setImmediate` per turn, so
+     * a process that is shutting down mid-boot would otherwise finish reading a
+     * chain nobody is waiting for. The chain stays `replayPending` after this,
+     * so nothing that survives the close can mistake the prefix for the chain. */
+    this.chain.abortReplay();
     this.miner.stop();
     this.p2p.close();
     if (this.restServer) this.restServer.close();
@@ -431,6 +570,14 @@ class EvmNode {
       res.end(JSON.stringify(body));
     };
     if (req.method === 'OPTIONS') return send(204, {});
+    /* EVERY ROUTE, INCLUDING /info. A node whose chain is still loading has a
+     * height, a tip, a supply and a difficulty target, and every one of them is
+     * a lie of a very specific kind: internally consistent, plausible, and hours
+     * stale. 503 is what a caller can retry on and what a health check reads as
+     * "not yet" rather than "answering". The body says how far along it is, so
+     * `docker inspect` on a failing health check shows progress rather than a
+     * bare status code. */
+    if (!this.ready) return send(503, this._startingBody());
     try {
       if (p === '/info') return send(200, this.info());
       if (p === '/supply') return send(200, this.supply());

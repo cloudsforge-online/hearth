@@ -193,6 +193,14 @@ assert(node.chain.supply() + node.chain.burned === issued, 'supply + burned == t
 
 // 10. persistence: reload replays (and re-validates) from disk to the same tip
 const node2 = new Node({ dataDir: tmp, quiet: true });
+/* The replay is no longer part of construction (micro-org#349), so a restart is
+ * `new` and then a replay the caller waits for. This suite is synchronous, so it
+ * takes the synchronous one; a node's `start()` awaits `open()`, which
+ * test/chain-replay.js requires to reach the identical tip and state root. */
+assert(!node2.ready && node2.chain.height === 0,
+  'a node that has not replayed holds only genesis, and says it is not ready');
+node2.chain.load();
+assert(node2.ready, 'and is ready once its chain is the one on disk');
 assert(node2.chain.height === node.chain.height, 'chain reloads from disk at same height');
 assert(node2.chain.tipId === node.chain.tipId, 'reloaded chain converges on the same tip');
 

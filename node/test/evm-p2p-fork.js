@@ -246,6 +246,11 @@ function mine(node, key, transactions = []) {
   const tipBefore = A.chain.tipId, rootBefore = A.chain.stateAtTip().rootHex();
   A.close();
   const A2 = new EvmNode({ dataDir: dirA, quiet: true, coinbaseKey: minerA });
+  // The replay is no longer part of construction (micro-org#349): a restart is
+  // `new` and then an awaited `open()`, which is what a node's `start()` does.
+  assert(A2.chain.height === 0 && !A2.ready,
+    'a node that has not replayed yet holds only genesis, and refuses to answer');
+  await A2.open();
   assert(A2.chain.tipId === tipBefore, 'a restarted node replays the reorged chain to the same tip');
   assert(A2.chain.stateAtTip().rootHex() === rootBefore, 'and to the same state root');
   A2.close();

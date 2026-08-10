@@ -53,7 +53,7 @@ const HDR = require('./header');
 const ST = require('./statetransition');
 const bloom = require('./bloom');
 const genesis = require('./genesis');
-const { readLines } = require('../lines');
+const { readLines, eachLine } = require('../lines');
 const { StateDB, MemoryDB, OverlayDB } = require('../state/statedb');
 const { keccak256 } = require('../crypto/keccak');
 
@@ -61,6 +61,11 @@ const BLOCKS_FILE = 'blocks.ndjson';
 
 /** BLOCKHASH sees this far back, per the yellow paper. */
 const BLOCKHASH_WINDOW = 256;
+
+/* How long `open()` may hold the event loop, and how often it says where it has
+ * got to — `REPLAY_YIELD_MS` and `REPLAY_PROGRESS_MS` in params.js, where the
+ * measurements they were chosen from are written down. Both chains read them
+ * from there: src/chain.js has the same replay and had the same defect. */
 
 const hexBuf = h => Buffer.from(h, 'hex');
 
@@ -166,18 +171,43 @@ class Blockchain extends EventEmitter {
     this._install(g.block, g.hash, 0n, g.block.header.stateRoot, [], 0n);
     this.tipId = g.hash;
     this.chainIndex = [g.hash];
+
+    /* TRUE WHILE THIS CHAIN IS SHORTER THAN THE ONE ON DISK, and the single fact
+     * a node's readiness is derived from (src/evmnode.js `ready`). It is set
+     * here, before a byte of history is read, because the answer has to exist
+     * from the first instant the object does: the replay is no longer part of
+     * construction, so between `new Blockchain(...)` and the end of `load()` or
+     * `open()` this object IS a genesis-only chain, and anything that answers a
+     * balance or a height from it in that window answers wrongly. Cleared by
+     * `_replayDone` and by nothing else.
+     *
+     * An in-memory chain (no dataDir) and an empty data directory have no
+     * history to read and are therefore complete on construction. */
+    this.replayPending = !!(this.file && fs.existsSync(this.file) && fs.statSync(this.file).size > 0);
+    this._abortReplay = false;
+    this._opening = null;
   }
 
   // ---- lifecycle -----------------------------------------------------------
 
-  /** Replay the on-disk chain, revalidating every block exactly as if it had
-   *  arrived from a peer. A block that no longer validates stops the replay for
-   *  that branch, which is deliberate — see the note in `load`. */
+  /**
+   * Replay the on-disk chain, revalidating every block exactly as if it had
+   * arrived from a peer. A block that no longer validates stops the replay for
+   * that branch, which is deliberate — see the note below.
+   *
+   * SYNCHRONOUS, AND THEREFORE NOT WHAT A NODE BOOTS WITH. `open()` is the same
+   * replay, byte for byte and block for block, with the loop handed back
+   * periodically; a node uses that. This one stays because a suite, a tool or an
+   * embedder that wants a loaded chain in one expression is entitled to it and
+   * cannot be observed half-loaded — nothing else can run while it runs. What it
+   * must never be is the boot path of a process that is also expected to answer
+   * for itself, which is what micro-org#349 was about.
+   */
   load() {
-    if (!this.file) return this;
+    if (!this.file) { this.replayPending = false; return this; }
     fs.mkdirSync(this.dataDir, { recursive: true });
-    if (!fs.existsSync(this.file)) return this;
-    let rejected = 0, total = 0;
+    if (!fs.existsSync(this.file)) { this.replayPending = false; return this; }
+    const c = { total: 0, rejected: 0 };
     /* STREAMED, one line at a time, and this is a correctness requirement rather
      * than a tidy-up. Reading the file into a single string — which is what this
      * did — throws ERR_STRING_TOO_LONG past V8's 536,870,888-byte limit, i.e.
@@ -185,24 +215,111 @@ class Blockchain extends EventEmitter {
      * node cannot start at all. See src/lines.js, and test/chain-replay.js,
      * which loads a chain past that ceiling and checks on the same file that the
      * old approach would still throw. */
-    readLines(this.file, line => {
-      if (!line) return;                             // blank: not a block, not damage
-      total++;
-      let b;
-      try { b = JSON.parse(line); } catch { rejected++; return; }
-      const r = this._ingest(b, false);
-      if (!r.ok && r.err !== 'known') rejected++;
-    }, {
+    readLines(this.file, line => this._replayLine(line, c), {
       // A line no block could ever be is damage, and is counted as such rather
       // than accumulated — otherwise one corrupt file reproduces the very
       // failure this rewrite exists to remove.
-      onOversized: () => { total++; rejected++; },
+      onOversized: () => { c.total++; c.rejected++; },
     });
+    this._replayDone(c);
+    return this;
+  }
+
+  /**
+   * The same replay as `load()`, yielding to the event loop as it goes.
+   *
+   * WHY A BOOT MUST NOT BE ONE UNBROKEN CALL. Measured 2026-08-11 at mainnet
+   * height 11,247: 90.8 s of replay on a laptop, 539 s on the live seed, with
+   * the loop blocked for the whole of it and not one line of output — a node
+   * that is starting is indistinguishable from a node that has hung, and the
+   * usual response to a hung node throws the work away and starts it again. The
+   * cost is linear in chain length and the chain grows ~5,760 blocks a day, so
+   * it has no ceiling. This does not make the replay shorter. It makes the
+   * process ANSWERABLE while it runs — a health check gets a refusal instead of
+   * a dropped connection, and `onProgress` can say how far along it is.
+   *
+   * THE RESULT IS IDENTICAL TO `load()`'s and that is a hard requirement, not a
+   * hope: the same lines in the same order through the same `_ingest`, with the
+   * awaits placed where no other code can touch this chain. What runs during a
+   * yield is a node that is refusing to answer (src/evmnode.js), not gossip and
+   * not the miner — both are started only after this resolves.
+   *
+   * @param {object} [o]
+   * @param {(status: object) => (void|Promise)} [o.onProgress] awaited, so a
+   *        caller may do something asynchronous with it. Called once before any
+   *        work, at most every `progressEveryMs` during, and once at the end.
+   * @returns {Promise<Blockchain>} this — replayed, or stopped by `abortReplay`,
+   *        which `replayPending` is how a caller tells apart.
+   */
+  open(o = {}) {
+    // One replay per chain, however many callers ask for it: two loops over the
+    // same file would both `_ingest` every block, and the second one's every
+    // result would be 'known'. Harmless and pure waste, on the slowest path
+    // this process has.
+    return (this._opening ||= this._replayAsync(o));
+  }
+
+  /**
+   * Stop a replay in flight. `replayPending` STAYS TRUE — the chain is now a
+   * prefix of the one on disk, and nothing may treat it as the chain.
+   */
+  abortReplay() { this._abortReplay = true; }
+
+  async _replayAsync({ onProgress = null, yieldEveryMs = P.REPLAY_YIELD_MS,
+    progressEveryMs = P.REPLAY_PROGRESS_MS } = {}) {
+    if (this.file) fs.mkdirSync(this.dataDir, { recursive: true });
+    if (!this.file || !fs.existsSync(this.file)) { this.replayPending = false; return this; }
+
+    const c = { total: 0, rejected: 0 };
+    const totalBytes = fs.statSync(this.file).size;
+    const startedAt = Date.now();
+    let bytes = 0;
+    const status = () => ({
+      height: this.height, blocks: c.total, rejected: c.rejected,
+      bytes, totalBytes, elapsedMs: Date.now() - startedAt,
+    });
+
+    let last = startedAt, lastProgress = startedAt;
+    if (onProgress) await onProgress(status());
+    for (const line of eachLine(this.file, { onOversized: n => { c.total++; c.rejected++; bytes += n + 1; } })) {
+      this._replayLine(line, c);
+      bytes += Buffer.byteLength(line) + 1;
+      const now = Date.now();
+      if (now - last < yieldEveryMs) continue;
+      last = now;
+      if (onProgress && now - lastProgress >= progressEveryMs) { lastProgress = now; await onProgress(status()); }
+      /* setImmediate, not a bare `await`: awaiting a non-promise only drains the
+       * microtask queue and lets no timer, socket or accept run — the loop would
+       * still be blocked and this would be theatre. The same argument, and the
+       * same call, as the batch loop in src/jsonrpc/server.js. */
+      await new Promise(r => setImmediate(r));
+      if (this._abortReplay) return this;             // …and `replayPending` stays true
+    }
+    this._replayDone(c);
+    if (onProgress) await onProgress({ ...status(), done: true });
+    return this;
+  }
+
+  /** One line of the on-disk chain, counted into `c`. Shared so that the sync
+   *  replay and the async one cannot come to different conclusions. */
+  _replayLine(line, c) {
+    if (!line) return;                               // blank: not a block, not damage
+    c.total++;
+    let b;
+    try { b = JSON.parse(line); } catch { c.rejected++; return; }
+    const r = this._ingest(b, false);
+    if (!r.ok && r.err !== 'known') c.rejected++;
+  }
+
+  _replayDone({ rejected, total }) {
+    this.replayPending = false;
     /* A data directory holding an invalid block loads a SHORTER CHAIN. Making
      * that an event is the difference between an operator finding out why their
-     * height went backwards and guessing. */
+     * height went backwards and guessing. It is emitted after the flag clears so
+     * that a listener acting on it sees a chain that is done loading, and it can
+     * finally be HEARD: until micro-org#349 the replay ran inside `EvmNode`'s
+     * constructor, so no caller held the object in time to listen for it. */
     if (rejected) this.emit('replay-rejected', { rejected, total });
-    return this;
   }
 
   _persist(block) {

@@ -19,7 +19,7 @@ const EventEmitter = require('events');
 const C = require('./crypto');
 const P = require('./params');
 const TX = require('./tx');
-const { readLines } = require('./lines');
+const { readLines, eachLine } = require('./lines');
 const BLOCK = require('./block');
 
 const TWO256 = 1n << 256n;
@@ -39,6 +39,21 @@ class Chain extends EventEmitter {
     // /tx/:txid route to write.
     this.txIndex = new Map();   // txid -> { height, blockId, index }
     this.recordIndex = new Map(); // "app" and "app:key" -> [{...record hit}]
+
+    /* GENESIS BELONGS TO CONSTRUCTION, not to `load()`. It is a constant — the
+     * function below builds it out of nothing — and while it was only installed
+     * by the replay, a Chain that had not been replayed had no tip at all, so
+     * `height` threw rather than answering 0. That was survivable while the
+     * replay ran inside the constructor of everything that owned one; it is not,
+     * now that the replay is an awaited step afterwards (micro-org#349). `load()`
+     * still rebuilds it, because it is also how a chain is re-read from scratch. */
+    this._addGenesis();
+
+    /* True while this chain is shorter than the one on disk. See the same field
+     * in chain/blockchain.js: it is what a node's readiness is derived from, and
+     * it must be answerable from the instant the object exists. */
+    this.replayPending = fs.existsSync(this.file) && fs.statSync(this.file).size > 0;
+    this._opening = null;
   }
 
   // ---- lifecycle ----------------------------------------------------------
@@ -61,36 +76,100 @@ class Chain extends EventEmitter {
    * here: a data directory holding an invalid block loads a SHORTER CHAIN, and
    * saying nothing about it leaves an operator to discover a height that went
    * backwards on their own.
+   *
+   * SYNCHRONOUS, and therefore not what a node boots with — `open()` below is
+   * the same replay with the event loop handed back as it goes, and src/node.js
+   * awaits that. This one stays for the suites and tools that want a loaded
+   * chain in one expression and cannot be observed half-loaded.
    */
   load() {
     fs.mkdirSync(this.dataDir, { recursive: true });
+    this._reset();
+    if (!fs.existsSync(this.file)) { this.replayPending = false; return this; }
+    const c = { total: 0, rejected: 0 };
+    readLines(this.file, line => this._replayLine(line, c), {
+      onOversized: () => { c.total++; c.rejected++; },
+    });
+    this._replayDone(c);
+    return this;
+  }
+
+  /**
+   * The same replay as `load()`, yielding to the event loop as it goes, so that
+   * a boot whose length is proportional to the chain is not also a stall of that
+   * length. See the long note on `open()` in chain/blockchain.js — the account
+   * model is where this was measured (90.8 s at height 11,247 on 2026-08-11) and
+   * where the argument is written out. This chain is the retired one and its
+   * blocks are far cheaper to revalidate, having no state transition in them,
+   * but the SHAPE of the defect was identical: an unbounded synchronous replay
+   * inside a constructor, and an operator with nothing to look at while it ran.
+   */
+  open(o = {}) { return (this._opening ||= this._replayAsync(o)); }
+
+  async _replayAsync({ onProgress = null, yieldEveryMs = P.REPLAY_YIELD_MS,
+    progressEveryMs = P.REPLAY_PROGRESS_MS } = {}) {
+    fs.mkdirSync(this.dataDir, { recursive: true });
+    this._reset();
+    if (!fs.existsSync(this.file)) { this.replayPending = false; return this; }
+
+    const c = { total: 0, rejected: 0 };
+    const totalBytes = fs.statSync(this.file).size;
+    const startedAt = Date.now();
+    let bytes = 0;
+    const status = () => ({
+      height: this.height, blocks: c.total, rejected: c.rejected,
+      bytes, totalBytes, elapsedMs: Date.now() - startedAt,
+    });
+
+    let last = startedAt, lastProgress = startedAt;
+    if (onProgress) await onProgress(status());
+    for (const line of eachLine(this.file, { onOversized: n => { c.total++; c.rejected++; bytes += n + 1; } })) {
+      this._replayLine(line, c);
+      bytes += Buffer.byteLength(line) + 1;
+      const now = Date.now();
+      if (now - last < yieldEveryMs) continue;
+      last = now;
+      if (onProgress && now - lastProgress >= progressEveryMs) { lastProgress = now; await onProgress(status()); }
+      // setImmediate, not a bare await: only this lets a timer or a socket run.
+      await new Promise(r => setImmediate(r));
+    }
+    this._replayDone(c);
+    if (onProgress) await onProgress({ ...status(), done: true });
+    return this;
+  }
+
+  /** Back to genesis and nothing else, so a replay always starts from the same
+   *  world however many times it is run. */
+  _reset() {
     this.store = new Map();
     this._addGenesis();
-    if (!fs.existsSync(this.file)) return this;
-    let rejected = 0, total = 0;
-    readLines(this.file, line => {
-      if (!line) return;                            // blank: not a block, not damage
-      total++;
-      /* Both the parse AND the ingest, because `_ingest` here THROWS on a
-       * malformed block rather than returning `{ ok: false }` the way the
-       * account model's does — `{"filler":1}` reaches `block.header.version` and
-       * dies on undefined. So a line that is valid JSON and is not a block took
-       * the node down at boot just as surely as a truncated one did.
-       *
-       * Caught at this boundary rather than by making `_ingest` defensive: it is
-       * also `addBlock`, which is the hot path for peer blocks, and those are
-       * already shape-checked by `UTXO_WIRE.isBlock` in src/p2p.js before they
-       * reach it. Replay is the caller with untrusted input and no gate. */
-      let b;
-      try { b = JSON.parse(line); } catch { rejected++; return; }
-      let r;
-      try { r = this._ingest(b, /* persist */ false); } catch { rejected++; return; }
-      if (r && !r.ok && r.err !== 'known') rejected++;
-    }, {
-      onOversized: () => { total++; rejected++; },
-    });
+  }
+
+  /** One line of the on-disk chain, counted into `c`. Shared by both replays so
+   *  that they cannot come to different conclusions about the same file. */
+  _replayLine(line, c) {
+    if (!line) return;                              // blank: not a block, not damage
+    c.total++;
+    /* Both the parse AND the ingest, because `_ingest` here THROWS on a
+     * malformed block rather than returning `{ ok: false }` the way the
+     * account model's does — `{"filler":1}` reaches `block.header.version` and
+     * dies on undefined. So a line that is valid JSON and is not a block took
+     * the node down at boot just as surely as a truncated one did.
+     *
+     * Caught at this boundary rather than by making `_ingest` defensive: it is
+     * also `addBlock`, which is the hot path for peer blocks, and those are
+     * already shape-checked by `UTXO_WIRE.isBlock` in src/p2p.js before they
+     * reach it. Replay is the caller with untrusted input and no gate. */
+    let b;
+    try { b = JSON.parse(line); } catch { c.rejected++; return; }
+    let r;
+    try { r = this._ingest(b, /* persist */ false); } catch { c.rejected++; return; }
+    if (r && !r.ok && r.err !== 'known') c.rejected++;
+  }
+
+  _replayDone({ rejected, total }) {
+    this.replayPending = false;
     if (rejected) this.emit('replay-rejected', { rejected, total });
-    return this;
   }
 
   genesis() {
