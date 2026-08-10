@@ -38,7 +38,7 @@ const USAGE = `hearth wallet — secp256k1 keys, encrypted at rest
   hearth wallet list                        addresses in the keystore
   hearth wallet address [--from <sel>]      one address
   hearth wallet balance [<address>]         balance via eth_getBalance
-  hearth wallet send --to <addr> --value <ember>
+  hearth wallet send --to <addr> --value <ember|max>
   hearth wallet export [--from <sel>] [--reveal-private-key]
 
 options
@@ -53,6 +53,11 @@ options
   --nonce <n>        override the nonce
   --yes              skip confirmations
   --json             machine-readable output
+
+\`--value max\` sends the balance MINUS the fee, leaving the account empty. It is
+the one arithmetic nobody should do by hand: one wei over and the transaction is
+refused after you have confirmed it, one wei under and the address you meant to
+empty still holds dust.
 
 The passphrase is read from the terminal with the echo off. \$HEARTH_PASSPHRASE
 overrides that for scripts; it is readable by anything that can read your
@@ -146,10 +151,40 @@ async function cmdBalance(flags, positional) {
   return 0;
 }
 
+/**
+ * `--value max`: everything the account holds, less the fee that moving it costs.
+ *
+ * WHY THIS IS A FUNCTION AND NOT A SUBTRACTION AT THE CALL SITE. It is the whole
+ * of a sweep, and both ways of getting it wrong are expensive and quiet.
+ * Overshoot by one wei and the transaction is refused for insufficient funds
+ * AFTER a human has confirmed it; undershoot and dust is left at an address the
+ * point of the exercise was to empty, so the exercise has to be repeated and the
+ * key produced again. Being off by exactly one fee is the specific mistake
+ * micro-org#206's scoping comment records as costing a permanent accounting
+ * freeze over 42 microEMBER, and the arithmetic is done here, in integer wei,
+ * where a test can hold it.
+ *
+ * `gasLimit * gasPrice` is the MAXIMUM fee, not the expected one. For a plain
+ * transfer at 21000 gas they are the same number — the transfer always uses its
+ * whole limit — and for anything with `--data` they are not, which is why the
+ * refusal below is worded as "less than the fee" rather than "less than the
+ * balance".
+ */
+function sweepValue(balanceWei, gasLimitWei, gasPriceWei) {
+  const fee = BigInt(gasLimitWei) * BigInt(gasPriceWei);
+  const value = BigInt(balanceWei) - fee;
+  if (value <= 0n) {
+    throw new Error(`this address holds ${ui.formatUnits(BigInt(balanceWei), 'ether')} EMBER, `
+      + `which does not cover the ${ui.formatUnits(fee, 'ether')} EMBER fee of moving it`);
+  }
+  return value;
+}
+
 async function cmdSend(flags) {
   const client = new Client(flags.rpc);
   const to = args.need(flags, 'to', 'the recipient');
-  const value = ui.parseUnits(args.need(flags, 'value', 'the amount in EMBER'), 'ether');
+  const rawValue = String(args.need(flags, 'value', 'the amount in EMBER, or "max"')).trim();
+  const sweeping = /^max$/i.test(rawValue);
   const data = flags.data ? ui.toBuf(flags.data) : Buffer.alloc(0);
 
   const { rec, priv } = await unlock(flags);
@@ -158,6 +193,9 @@ async function cmdSend(flags) {
     const nonce = flags.nonce !== undefined ? args.bigFlag(flags, 'nonce') : await client.getNonce(rec.address, 'pending');
     const gasPrice = flags['gas-price'] !== undefined ? args.bigFlag(flags, 'gas-price') : await client.gasPrice();
     const gasLimit = flags.gas !== undefined ? args.bigFlag(flags, 'gas') : 21000n;
+    const value = sweeping
+      ? sweepValue(BigInt(await client.getBalance(rec.address)), gasLimit, gasPrice)
+      : ui.parseUnits(rawValue, 'ether');
 
     const signed = TX.sign({ nonce, gasPrice, gasLimit, to, value, data }, priv, { chainId: Number(chainId) });
     const raw = TX.encode(signed);
@@ -168,6 +206,7 @@ async function cmdSend(flags) {
       console.log(`  to     ${ui.checksumAddress(to)}`);
       console.log(`  value  ${ui.formatUnits(value, 'ether')} EMBER`);
       console.log(`  fee    up to ${ui.formatUnits(gasLimit * gasPrice, 'ether')} EMBER (${gasLimit} gas @ ${gasPrice} wei)`);
+      if (sweeping) console.log(c.yellow('  this is a SWEEP — it leaves the account empty'));
       const yn = await ui.promptLine('send? [y/N] ');
       if (!/^y(es)?$/i.test(yn.trim())) { console.log('cancelled'); return 1; }
     }
@@ -227,4 +266,4 @@ async function main(argv) {
   }
 }
 
-module.exports = { main, USAGE, unlock, dirOf };
+module.exports = { main, USAGE, unlock, dirOf, sweepValue };

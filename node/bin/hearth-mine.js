@@ -49,8 +49,11 @@
  *
  * AND THE OLDEST FAILURE OF ALL: mining to a key you do not control, or cannot
  * find out. The address is printed before the first hash, `--address` will tell
- * you without mining, the key file and its mode are named so it can be backed
- * up — and the key is never printed.
+ * you without mining, where the key came from is named so it can be backed up —
+ * and the key is never printed. Since micro-org#206 the key need not be a
+ * plaintext file at all: see src/coinbase.js `resolveCoinbaseKey` for the four
+ * places it may come from, and set HEARTH_COINBASE_ADDRESS if you would rather
+ * this program refuse to start than mine to an address you did not ask for.
  *
  * WHERE THE LOOP LIVES. Not here any more. Everything above describes behaviour
  * that app-desktop needs too, and the only ways to give it that were to scrape
@@ -62,7 +65,6 @@
  * process, because a status line is a feature and only a user can be its test.
  */
 
-const fs = require('fs');
 const path = require('path');
 
 // ---- arguments, parsed before anything loads chain parameters --------------
@@ -116,16 +118,33 @@ that also mines, use:  hearthd --evm --mine --peer wss://p2p.<apex>/p2p
 
 The reward is paid to the key in <data>/coinbase-key.json, created on first run.
 Back that file up. Whoever holds it holds the coins.
+
+Where the key comes from (first one that is set wins)
+  HEARTH_COINBASE_KEY             the key itself, 0x-hex, never written to disk
+  HEARTH_COINBASE_KEY_FILE        a path holding it — a docker secret, a tmpfs
+  <data>/coinbase-keystore.json   encrypted; opened with
+    HEARTH_COINBASE_PASSPHRASE_FILE, or HEARTH_COINBASE_PASSPHRASE
+  <data>/coinbase-key.json        the plaintext file, still read
+
+Two refusals worth setting deliberately
+  HEARTH_COINBASE_ADDRESS   the address the key MUST derive. A mount that did
+                            not come up then stops the miner instead of paying
+                            a brand-new key nobody has.
+  HEARTH_COINBASE_SOURCE    env | env-file | keystore | plaintext — the only
+                            source that may be used, and no key is ever created.
+
+  \`hearth minerkey status\` says which of these is in play without opening any
+  of them. docs/mining-key-custody.md is the whole story.
 `;
 
 if (opts.help) { process.stdout.write(HELP); process.exit(0); }
 if (opts.bad) { process.stderr.write(`hearth-mine: unknown option ${opts.bad}\n\n${HELP}`); process.exit(2); }
 if (opts.network) process.env.HEARTH_NETWORK = opts.network;
 
-let P, loadCoinbaseKey, ember, MineSession;
+let P, resolveCoinbaseKey, ember, MineSession;
 try {
   P = require('../src/params');
-  ({ loadCoinbaseKey, ember } = require('../src/coinbase'));
+  ({ resolveCoinbaseKey, ember } = require('../src/coinbase'));
   ({ MineSession } = require('../src/mine/session'));
 } catch (e) {
   // An unregistered --network is the likely cause, and params.js says so well.
@@ -134,7 +153,25 @@ try {
 }
 
 const dataDir = opts.dataDir || path.join(process.cwd(), 'data');
-const keyFile = path.join(dataDir, 'coinbase-key.json');
+
+/**
+ * Load the key, and STOP HERE if anything about it is wrong.
+ *
+ * Every refusal src/coinbase.js can raise — a pinned address the key does not
+ * derive, a keystore with no passphrase, a named source that is not there — is
+ * a refusal to mine into an account this machine cannot spend from. There is
+ * nothing useful to do after one, and continuing would be the failure they exist
+ * to prevent, so they end the process with a message and code 2 rather than a
+ * stack trace. micro-org#206.
+ */
+function loadKeyOrDie() {
+  try {
+    return resolveCoinbaseKey(dataDir);
+  } catch (e) {
+    process.stderr.write(`hearth-mine: ${e && e.message || e}\n`);
+    process.exit(2);
+  }
+}
 
 // ---- presentation ----------------------------------------------------------
 
@@ -160,11 +197,22 @@ function rate(h) {
 // ---- --address: answer the question without mining -------------------------
 
 if (opts.addressOnly) {
-  const k = loadCoinbaseKey(dataDir);
-  process.stdout.write(`\n  ${C.b(k.addressHex)}\n\n`);
-  process.stdout.write(C.dim(`  every block you mine pays this address. The key is in ${keyFile} —\n`));
+  const r = loadKeyOrDie();
+  process.stdout.write(`\n  ${C.b(r.key.addressHex)}\n\n`);
+  process.stdout.write(C.dim(`  every block you mine pays this address. Its key comes from ${describe(r)} —\n`));
   process.stdout.write(C.dim('  back it up, and never share it or paste it anywhere.\n\n'));
   process.exit(0);
+}
+
+/** Where the key came from, in words, for a human. Never the key. */
+function describe(r) {
+  switch (r.source) {
+    case 'env': return 'the HEARTH_COINBASE_KEY environment variable';
+    case 'env-file': return `${r.file} (HEARTH_COINBASE_KEY_FILE)`;
+    case 'keystore': return `${r.file} (encrypted — scrypt + AES-256-GCM)`;
+    case 'ephemeral': return 'nowhere: it was generated for this run and is not saved';
+    default: return `${r.file}${r.created ? ' (created just now — back it up)' : ''}`;
+  }
 }
 
 // ---- the refusal -----------------------------------------------------------
@@ -186,18 +234,18 @@ if (!opts.url) {
 }
 
 const base = String(opts.url).replace(/\/+$/, '');
-const key = loadCoinbaseKey(dataDir);
+const resolved = loadKeyOrDie();
+const key = resolved.key;
 const pubHex = key.publicKey.toString('hex');
 const throttle = opts.throttle === undefined ? 1.0 : opts.throttle;
 
 // ---- banner ----------------------------------------------------------------
 
-const keyIsNew = Date.now() - fs.statSync(keyFile).mtimeMs < 5000;
 say('');
 say(`  ${C.b('hearth-mine')} ${C.dim('·')} ${P.NETWORK} ${C.dim('·')} chain ${P.CHAIN_ID} ${C.dim('·')} ${P.COIN}`);
 say('');
 say(`  paid to    ${C.b(key.addressHex)}`);
-say(`  key file   ${keyFile} ${C.dim(keyIsNew ? '(created just now — back it up)' : '(loaded)')}`);
+say(`  key from   ${describe(resolved)}`);
 say(`  work from  ${base}`);
 say(`  throttle   ${throttle} ${C.dim(throttle >= 1 ? '(one full core)' : `(${Math.round(throttle * 100)}% of a core)`)}`);
 say('');
@@ -281,7 +329,7 @@ function bye(reason) {
   say('');
   say(`  stopped after ${clock(Date.now() - t0)} · found ${s.found} · earned ${ember(BigInt(s.earnedWei))} ${P.COIN}`
     + (s.stale ? C.dim(` · ${s.stale} stale`) : ''));
-  say(C.dim(`  paid to ${key.addressHex} — the key is in ${keyFile}`));
+  say(C.dim(`  paid to ${key.addressHex} — its key comes from ${describe(resolved)}`));
   say('');
   process.exit(0);
 }
