@@ -24,28 +24,38 @@
  * thousands, a balance at a state root it left behind hours ago — is internally
  * consistent, plausible and wrong, and a wallet told that a balance is zero does
  * not ask a second time. `refuses while starting` below asks over real HTTP, on
- * both surfaces, from inside the replay, for an account whose balance IS zero at
- * genesis and is not at the tip: the pre-fix answer to that question is 0x0 with
- * a 200 beside it.
+ * both surfaces, from inside the replay, for an account that holds one block
+ * reward at height 1 and twenty-four of them at the tip. With the guard removed
+ * on 2026-08-11 that question was answered `200 {"result":"0x4af0a6cef3bdca00"}`
+ * — not an error, not zero, just last hour's balance with today's timestamp.
  *
- * MUTATION-PROVED, on 2026-08-11. Each of these was broken on purpose and the
- * named test went red, then it was reverted:
+ * MUTATION-PROVED, on 2026-08-11. Each of these was broken on purpose, the named
+ * test went red, and it was reverted:
  *   - delete the `await new Promise(r => setImmediate(r))` in `_replayAsync`
- *       → "the event loop turns while the chain replays"
+ *       → "the event loop turns while the chain replays"                (2 red)
  *   - restore `.load()` in EvmNode's constructor
- *       → "construction reads no chain"
+ *       → "construction reads no chain"                (12 red here; and in
+ *         test/evmchain.js "a node with unreplayed history on disk is NOT ready
+ *         to answer"; and in test/evm-p2p-fork.js "a node that has not replayed
+ *         yet holds only genesis, and refuses to answer")
  *   - drop the `if (!this.ready)` guard in EvmNode `_rest`
- *       → "REST refuses every route while replaying"
+ *       → "REST refuses every route while replaying"                    (2 red)
  *   - drop the `if (!this.ready())` guard in jsonrpc/server.js `_serve`
- *       → "eth_getBalance is refused rather than answered as zero"
+ *       → "eth_getBalance is refused rather than answered as zero"      (2 red)
+ *   - drop the `if (!this.node.ready)` guard in rpc.js `_handle`
+ *       → "the retired UTXO node refuses the same way"                  (2 red)
+ *   - restore `.load()` in the UTXO Node's constructor
+ *       → "the retired UTXO node refuses the same way"; and in test/e2e.js
+ *         "a node that has not replayed holds only genesis, and says it is not
+ *         ready"
  *   - attach the `replay-rejected` listener after the replay instead of before
  *       → "a damaged data directory is reported to the operator"
  *   - start the miner before `await this.open()` in `start()`
  *       → "the miner does not run on a half-replayed tip"
  *   - make `abortReplay()` a no-op
- *       → "a node closed mid-replay never becomes ready"
- *   - skip every tenth line in `_replayAsync`
- *       → "open() and load() reach the same chain" (both chains)
+ *       → "a node closed mid-replay never becomes ready"                (3 red)
+ *   - skip every tenth block in the EVM `_replayAsync` → "open() and load() reach
+ *     the same chain" (6 red); the same in the UTXO one → the UTXO half of it
  */
 
 /* Mine on the test network, as every suite here that mines does. It shrinks the
@@ -64,6 +74,7 @@ const path = require('path');
 const P = require('../src/params');
 const { Blockchain } = require('../src/chain/blockchain');
 const { Chain } = require('../src/chain');
+const { Node: UtxoNode } = require('../src/node');
 const { EvmNode } = require('../src/evmnode');
 const POW = require('../src/pow');
 const BLOCK = require('../src/block');
@@ -187,6 +198,7 @@ const listening = server => new Promise(res => {
   console.log('\nHearth boot — a replay that does not stop the process\n');
 
   const built = chainOf(24, 'built');
+  const utxo = { dir: utxoChainOf(4), height: 4 };
   console.log(`  (a ${built.height}-block data directory, `
     + `${(fs.statSync(path.join(built.dir, 'blocks.ndjson')).size / 1024).toFixed(0)} KB)`);
 
@@ -224,10 +236,9 @@ const listening = server => new Promise(res => {
   {
     // …and on the UTXO chain, which had the same replay in the same place, with
     // a line of damage in the file so both have something to disagree about.
-    const dir = utxoChainOf(4);
-    fs.appendFileSync(path.join(dir, 'blocks.ndjson'), '{"filler":1}\n');
-    const sync = new Chain(dir).load();
-    const async_ = await new Chain(dir).open();
+    fs.appendFileSync(path.join(utxo.dir, 'blocks.ndjson'), '{"filler":1}\n');
+    const sync = new Chain(utxo.dir).load();
+    const async_ = await new Chain(utxo.dir).open();
     assert(async_.height === sync.height && async_.height === 4,
       `the UTXO chain replays to the same height either way (${async_.height})`);
     assert(async_.tipId === sync.tipId, 'and the same tip');
@@ -325,6 +336,29 @@ const listening = server => new Promise(res => {
     assert(bal.status === 200 && BigInt(bal.body.result) === built.balance && built.balance > 0n,
       `and eth_getBalance answers the ${built.balance} wei this account really holds`);
     node.close();
+  }
+
+  // ==========================================================================
+  group('the retired UTXO node refuses the same way');
+  // ==========================================================================
+  {
+    /* Same defect, same fix, one HTTP surface instead of two. Its `/info` is
+     * what the explorer polls, and a supply figure short by however far the
+     * replay has got is exactly the kind of number that gets screenshotted. */
+    const port = await freePort();
+    const node = new UtxoNode({ dataDir: utxo.dir, quiet: true });
+    node.rpc.listen(port);
+    await listening(node.rpc.server);
+    const during = await get(port, '/info');
+    assert(during.status === 503 && during.body && during.body.status === 'starting',
+      `/info answers 503 while the chain is still on disk (${during.status})`);
+    assert(during.body && during.body.height === undefined && during.body.supply === undefined,
+      'and offers neither a height nor a supply to be believed');
+    await node.open();
+    const after = await get(port, '/info');
+    assert(after.status === 200 && after.body.height === utxo.height,
+      `and answers 200 at height ${after.body && after.body.height} once it has replayed`);
+    node.rpc.server.close();
   }
 
   // ==========================================================================
