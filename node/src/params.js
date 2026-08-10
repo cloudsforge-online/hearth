@@ -533,6 +533,31 @@ module.exports = {
    *  0 to this field directly. */
   SSE_HEARTBEAT_MS: 20_000,
 
+  /** How long a chain replay may hold the event loop before handing it back,
+   *  and how often it reports where it has got to.
+   *
+   *  THE MEASUREMENT THESE COME FROM. On 2026-08-11, at mainnet height 11,247 (a
+   *  16.1 MB blocks.ndjson), replaying that file took 90.8 s on an M-series
+   *  laptop — 8.07 ms a block — every millisecond of it inside the `EvmNode`
+   *  constructor with the loop blocked and nothing logged. The live seed
+   *  `cf-hearth-seed` is slower and busier: its previous cold start replayed
+   *  10,577 blocks in 539 s, measured from the container's StartedAt to its
+   *  first log line, about 51 ms a block. The chain grows ~5,760 blocks a day at
+   *  a 15 s target, so that boot lengthens by about five minutes a day and has
+   *  no ceiling (micro-org#349).
+   *
+   *  25 ms is chosen against the SLOW figure, not the fast one: at 51 ms a block
+   *  the loop comes back after every block, so the worst delay the replay adds
+   *  to a health check or an RPC refusal is one block's validation. Yielding per
+   *  line unconditionally would pay a loop turn for a 7 ms unit of work, and
+   *  yielding on a block count would mean a different bound on every host.
+   *
+   *  Neither is a consensus value: they change WHEN this process answers, never
+   *  WHAT it answers. Both replays produce the same chain (test/chain-replay.js
+   *  requires exactly that, on the same directory). */
+  REPLAY_YIELD_MS: 25,
+  REPLAY_PROGRESS_MS: 5_000,
+
   /** Pending transactions one sender may occupy, so one funded key cannot fill
    *  the pool with a nonce ladder nobody will ever mine. */
   EVM_MEMPOOL_PER_SENDER: 64,

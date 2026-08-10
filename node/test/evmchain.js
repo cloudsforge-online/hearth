@@ -682,6 +682,16 @@ group('persistence');
   a.close();
 
   const b = new EvmNode({ dataDir: dir, quiet: true, coinbaseKey: miner });
+  /* The SYNCHRONOUS replay, because this suite is synchronous. A node boots with
+   * the awaited one (`node.open()`, micro-org#349) and this file cannot await;
+   * test/chain-replay.js is where the two are required to agree, block for block
+   * and root for root, which is what makes this shorter spelling of the same
+   * assertion still worth having. Nothing is loaded by the constructor now, so
+   * without this line `b` is a genesis-only chain — and it says so, rather than
+   * answering. */
+  eq(b.ready, false, 'a node with unreplayed history on disk is NOT ready to answer');
+  b.chain.load();
+  eq(b.ready, true, 'and is once its chain is the one on disk');
   eq(b.chain.tipId, tip, 'a restarted node replays to the same tip');
   eq(b.chain.stateAtTip().rootHex(), root, 'and to the same state root');
   eq(b.chain.stateAtTip().getBalance(bob.address), 3n, 'with balances intact');

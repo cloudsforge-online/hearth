@@ -89,6 +89,14 @@ class RPC {
     const p = url.pathname;
     if (req.method === 'OPTIONS') return json(res, 204, {});
 
+    /* EVERY ROUTE, WHILE THE CHAIN IS STILL LOADING. This port is bound before
+     * the data directory has been replayed (src/node.js `start`), and every
+     * answer available in that window — a height, a supply, an address balance,
+     * a block by number — is internally consistent and stale by however far the
+     * replay has got. 503 is retryable and reads as "not yet"; the body says how
+     * far along it is. micro-org#349. */
+    if (!this.node.ready) return json(res, 503, this.node.startupStatus());
+
     const started = Date.now();
     // one record per request, at debug so a busy node does not pay for it by
     // default — but a 5xx below is always reported

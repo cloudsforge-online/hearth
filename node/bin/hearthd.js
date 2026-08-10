@@ -107,6 +107,16 @@ try {
   }
   throw e;
 }
-node.start();
+/* `start()` on the account-model node is ASYNCHRONOUS — it binds its ports, then
+ * replays the data directory while remaining answerable, and only then joins the
+ * network (micro-org#349). Anything it throws must end the process with a
+ * message: an unhandled rejection here would leave a bound port and a node that
+ * never finished starting, which is precisely the state this work exists to make
+ * impossible to mistake for a working one. `Promise.resolve` because the UTXO
+ * node's `start()` returns nothing at all. */
+Promise.resolve(node.start()).catch(e => {
+  console.error('hearthd: ' + String(e && e.stack || e));
+  process.exit(1);
+});
 
 process.on('SIGINT', () => { node.log('shutting down'); process.exit(0); });

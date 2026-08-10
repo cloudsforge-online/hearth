@@ -41,21 +41,31 @@ const DEFAULT_MAX_LINE_BYTES = 16 * 1024 * 1024;
 const DEFAULT_CHUNK_BYTES = 1024 * 1024;
 
 /**
- * Call `onLine` with every newline-delimited line in `file`, decoded as UTF-8.
+ * Every newline-delimited line in `file`, decoded as UTF-8, as an iterator.
  *
  * A final line with no trailing newline is delivered — a power cut during an
  * append leaves exactly that, and the caller decides what to do with it. Multi-
  * byte characters are safe across chunk boundaries because only whole lines are
  * ever decoded; the remainder is carried as bytes.
  *
+ * PULLED RATHER THAN PUSHED, which `readLines` below was and still is for every
+ * caller that wants it. The difference is who owns the loop: a caller that owns
+ * it can stop early, and — the reason this exists — can AWAIT between lines. The
+ * chain replay does, so that a boot whose length is proportional to the chain is
+ * not also a stall of that length (micro-org#349). A push-shaped reader cannot
+ * offer that: `onLine` returning a promise would be ignored here and the file
+ * would be read to the end regardless.
+ *
+ * The file descriptor is closed by the `finally` below on ANY exit, including
+ * the `return()` a `for…of` sends when its body breaks or throws.
+ *
  * @param {string}   file
- * @param {(line: string) => void} onLine
  * @param {object}   [opts]
  * @param {number}   [opts.maxLineBytes]  refuse a line longer than this
  * @param {(bytes: number) => void} [opts.onOversized]  told once per skipped line
  * @param {number}   [opts.chunkBytes]    read buffer size
  */
-function readLines(file, onLine, opts = {}) {
+function* eachLine(file, opts = {}) {
   const maxLineBytes = opts.maxLineBytes || DEFAULT_MAX_LINE_BYTES;
   const onOversized = opts.onOversized || (() => {});
   const chunkBytes = opts.chunkBytes || DEFAULT_CHUNK_BYTES;
@@ -75,7 +85,7 @@ function readLines(file, onLine, opts = {}) {
         const nl = data.indexOf(NL, start);
         if (nl < 0) break;
         if (skipping) skipping = false;             // the refused line ends here
-        else onLine(data.toString('utf8', start, nl));
+        else yield data.toString('utf8', start, nl);
         start = nl + 1;
       }
       const rest = data.length - start;
@@ -85,10 +95,19 @@ function readLines(file, onLine, opts = {}) {
       // of it would also pin the whole buffer.
       carry = rest ? Buffer.from(data.subarray(start)) : EMPTY;
     }
-    if (carry.length && !skipping) onLine(carry.toString('utf8'));
+    if (carry.length && !skipping) yield carry.toString('utf8');
   } finally {
     fs.closeSync(fd);
   }
 }
 
-module.exports = { readLines, DEFAULT_MAX_LINE_BYTES };
+/**
+ * Call `onLine` with every line in `file`. The push-shaped reader, unchanged in
+ * behaviour and now one line of code over `eachLine` — two loops that read the
+ * same format would drift, and this one is on the boot path of both chains.
+ */
+function readLines(file, onLine, opts = {}) {
+  for (const line of eachLine(file, opts)) onLine(line);
+}
+
+module.exports = { readLines, eachLine, DEFAULT_MAX_LINE_BYTES };
