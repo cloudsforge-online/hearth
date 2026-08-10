@@ -36,6 +36,7 @@ const { RpcChain } = require('./chain/rpcadapter');
 const HDR = require('./chain/header');
 const { P2P } = require('./p2p');
 const { JsonRpcServer } = require('./jsonrpc/server');
+const { openSseStream } = require('./sse');
 
 const LEVELS = { trace: 10, debug: 20, info: 30, warn: 40, error: 50, fatal: 60 };
 const FORMAT = process.env.HEARTH_LOG_FORMAT || (process.stdout.isTTY ? 'text' : 'json');
@@ -447,13 +448,14 @@ class EvmNode {
         }
       }
       if (p === '/events') {
-        res.writeHead(200, {
-          'content-type': 'text/event-stream', 'cache-control': 'no-cache',
-          connection: 'keep-alive', 'access-control-allow-origin': '*',
-        });
-        res.write(': connected\n\n');
-        this.sseClients.add(res);
-        req.on('close', () => this.sseClients.delete(res));
+        // Capped and heartbeated — see src/sse.js. This route is published to the
+        // public internet by micro-deploy's `cf-api-mining` router as of
+        // micro-org#236, which is what turned an unbounded Set into an exposure.
+        if (!openSseStream({ req, res, clients: this.sseClients })) {
+          this.warn('refused an event subscriber: this node is at its stream limit', {
+            limit: P.SSE_MAX_CLIENTS,
+          });
+        }
         return undefined;
       }
       if (req.method === 'POST' && p === '/mining/submit') {

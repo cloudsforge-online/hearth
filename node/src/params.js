@@ -504,6 +504,35 @@ module.exports = {
    *  memory leak unless it is capped; oldest-seen is evicted first. */
   MINING_MAX_CLIENTS: 1_024,
 
+  /** Concurrent `GET /events` streams this node will hold open, in total.
+   *
+   *  A HELD SOCKET IS NOT A RATE, so no rate limit bounds it — see the header of
+   *  src/sse.js. This is the node's own ceiling; the per-client-IP half has to
+   *  live at an ingress that can see the client, because every request through
+   *  cloudflared arrives from one address.
+   *
+   *  256 rather than something larger: the estate's node serves a handful of
+   *  browser miners and one explorer, and the number that matters is the one an
+   *  operator can reason about when it is hit. Each stream costs a socket, a
+   *  ~64 KiB write buffer and a heartbeat timer, so this is single-digit MiB —
+   *  the bound is on the failure mode, not on the memory. Deliberately the same
+   *  order as MAX_TEMPLATES (256) in src/chain/miner.js, which bounds the other
+   *  thing an unauthenticated caller can accumulate here. */
+  SSE_MAX_CLIENTS: 256,
+
+  /** How often an idle `/events` stream is sent an SSE comment frame.
+   *
+   *  20 s, chosen against the shortest clock that can close the stream: a
+   *  Cloudflare tunnel drops a connection with no bytes on it, and this node
+   *  writes nothing between blocks. It has to be comfortably under that and
+   *  comfortably over the block interval's own noise, and 20 s is both.
+   *
+   *  Not an operator knob and not read from the environment: unlike the mining
+   *  budgets above it bounds nothing a stranger can spend, so there is nothing
+   *  for a compose typo to silently unbound. A suite that needs it off assigns
+   *  0 to this field directly. */
+  SSE_HEARTBEAT_MS: 20_000,
+
   /** Pending transactions one sender may occupy, so one funded key cannot fill
    *  the pool with a nonce ladder nobody will ever mine. */
   EVM_MEMPOOL_PER_SENDER: 64,
