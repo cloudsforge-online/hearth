@@ -243,8 +243,13 @@ validated and reorged, two real nodes partition and converge in
 `node/test/evm-p2p-fork.js`, and three run under `docker-compose.testnet.yml`.
 None of that shortens this list:
 
-- The chain is **hours old and under 250 blocks tall**, and it runs at the
-  `GENESIS_TARGET` difficulty floor. **No block has ever been produced at
+- The chain is **just under six days old and 10,987 blocks tall** (measured
+  2026-08-10 17:56 UTC), and walking every one of those blocks finds **62
+  transactions in 52 of them** — nine successful contract creations on
+  2026-08-04, three strays, and a 41-transaction automated sweep between two
+  addresses on 2026-08-10. **No third party has ever transacted here**, so the
+  state machine has been exercised by tests far more than by use. It runs at
+  the `GENESIS_TARGET` difficulty floor. **No block has ever been produced at
   production proof-of-work parameters**
   ([`docs/pow-parameters.md`](docs/pow-parameters.md)), and nothing here has ever
   run under adversarial load.

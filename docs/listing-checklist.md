@@ -10,8 +10,13 @@ published vectors. Nor is it consensus, and it is no longer publication either:
 **mainnet is live at `https://rpc.cloudsforge.online`, chain id 7411**. What
 blocks a listing now is everything that being reachable does not buy you:
 
-- The chain is **hours old and under 250 blocks tall**, with **zero transactions
-  in it so far**. No exchange will risk-assess that.
+- The chain is **just under six days old and 10,987 blocks tall** (measured
+  2026-08-10 17:56 UTC), and holds **62 transactions in 52 blocks** — a mean of
+  one transaction per 177 blocks, and **every one of them produced by this
+  project**: nine contract creations on 2026-08-04, three strays, and a
+  41-transaction automated sweep between two addresses on 2026-08-10. No
+  exchange will risk-assess that. Growing the height does not fix it; the
+  figure that has to move is transactions from somebody who is not us.
 - It runs at the `GENESIS_TARGET` difficulty floor. **No block has ever been
   produced at mainnet proof-of-work parameters** (§7, and
   [`pow-parameters.md`](pow-parameters.md)) — and there is no demonstrated
@@ -41,7 +46,7 @@ Everything below is downstream of those.
 | B5 | Independent audit of consensus and the EVM | ⬜ |
 
 Nothing in §1–§8 should be filed before the rest of B4 and B5. An application
-submitted against a chain that is hours old, has no transactions and has never
+submitted against a chain that is days old, has no transactions and has never
 run at its own production difficulty is a permanent mark against the project —
 and "it answers `eth_chainId`" is not a track record.
 
@@ -106,7 +111,10 @@ Once WEMBER and any issued assets exist, publish a
 [Uniswap token-list](https://tokenlists.org) JSON at a stable HTTPS URL with a
 schema-valid `version`, `tokens[]` (address, chainId 7411, decimals, symbol,
 name, logoURI) and a signed release process. Front-ends, aggregators and wallets
-consume this. Nothing to list yet — no contract is deployed.
+consume this. Nothing to list yet: no token contract is deployed. (Mainnet is
+not contract-free — nine `ForesightMarket` instances went live there on
+2026-08-04 — but they are not assets, and a token list of them would be empty
+anyway.)
 
 ### 1.4 Asset metadata ✅ / 🟡
 
@@ -144,7 +152,7 @@ minimum set:
 | Rich list / holder count | | ⬜ |
 | Block explorer, `0x`-native | address, tx, block, contract pages with search | 🟡 — **built, but no longer here.** `web/` was deleted in `48bc28a`; the surface is [`micro-explorer-web`](https://github.com/cloudsforge-online/micro-explorer-web), which reads `micro-indexer` rather than `eth_*` and **has no contract disassembly**. The 147-self-test figure described the deleted page and is not carried over. An explorer is deployed at `https://explorer.cloudsforge.online`, but it is that repository's, not this one's |
 | Etherscan-compatible `/api` | `module=account&action=balance`, `module=stats&action=…`, `module=logs&action=getLogs` | 🟡 — [`../tools/explorer-api`](../tools/explorer-api), with the address index behind it. `account`, `contract`, `stats`, `transaction`, `logs` and `proxy`. B2 is done and mainnet can back it; what is missing is somewhere to host it |
-| Verified contract sources | source, ABI, compiler settings, constructor args | 🟡 — [`../tools/verify`](../tools/verify), which also speaks the API `forge verify-contract` speaks. Nothing hosts it, and no contract is deployed to verify |
+| Verified contract sources | source, ABI, compiler settings, constructor args | 🟡 — [`../tools/verify`](../tools/verify), which also speaks the API `forge verify-contract` speaks. Nothing hosts it — and there **are** now contracts on mainnet to verify: nine `ForesightMarket` instances live since 2026-08-04, all of them unverified bytecode to anybody outside this estate |
 
 **The existing `/supply` REST endpoint is not usable as-is.** Its `circulating`
 field is the sum of the entire UTXO set and *includes* the Commons treasury

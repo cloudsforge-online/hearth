@@ -14,14 +14,22 @@ edges.
 JSON-RPC over POST with a publicly trusted certificate, and an explorer is at
 `https://explorer.cloudsforge.online`.
 
-Read it before you trust it. It is **hours old** — block 1 was mined 2026-08-04
-19:12 UTC — under 250 blocks tall, carries zero transactions so far, sits at its
-launch difficulty, and runs on **one home server behind one Cloudflare Tunnel**
-with no redundancy and no restored backup. Nothing here has been independently
-audited. A **public testnet** is reachable at
-`https://rpc-testnet.cloudsforge.online` (chain id 7412), with a faucet at
-`https://network-testnet.cloudsforge.online/faucet` — point anything that writes
-at that, not at mainnet.
+Read it before you trust it. Block 1 was mined 2026-08-04 19:12:21 UTC; measured
+2026-08-10 17:56 UTC it is **just under six days old and 10,987 blocks tall**,
+carries **62 transactions in 52 of those blocks — none of them from anybody
+outside this project**, sits at its launch difficulty, and runs on **one
+home server behind one Cloudflare Tunnel** with no redundancy and no restored
+backup. Nothing here has been independently audited.
+
+A **public testnet** is reachable at `https://rpc-testnet.cloudsforge.online`
+(chain id 7412), with a faucet at
+`https://network-testnet.cloudsforge.online/faucet` — but it is **stopped right
+now**, and that changes what you should do. Its height has not moved from 7,765
+since 2026-08-08 18:00:11 UTC, deliberately, while the host's `bitcoind` and
+`dogecoind` finish initial block download on the same disk. **A write sent there
+will not confirm and the faucet cannot pay.** Until it resumes, point anything
+that writes at a chain of your own — `hearthd --evm --mine` — rather than at
+mainnet.
 
 Which is why most of this page still runs against a chain of your own. One
 command starts one:
@@ -657,7 +665,7 @@ Do not plan around any of these:
 | A **deployed** `0x`-native block explorer | 🟡 one is deployed at `https://explorer.cloudsforge.online`, but **not from this repository** — `web/` was deleted in `48bc28a`. The estate surface is [`micro-explorer-web`](https://github.com/cloudsforge-online/micro-explorer-web), which reads `micro-indexer` rather than talking `eth_*` to your node — so there is still **nothing here you can point at your own node** |
 | Contract source verification | 🟡 the services are written — [`../tools/verify`](../tools/verify) (116/116, and it speaks what `forge verify-contract` speaks) and [`../tools/explorer-api`](../tools/explorer-api) (the Etherscan-compatible `/api`, 177/177 plus 27/27 against a real chain). Neither is hosted |
 | A deployed faucet | ⬜ the service is written and tested; nowhere public to run it. Mine instead — §4 |
-| Any **persistently** deployed contract | ⬜ WEMBER, the AMM and Multicall3 deploy and run (§5.0, §7), but nothing is deployed to mainnet — every block on it so far carries zero transactions |
+| Any **persistently** deployed contract **of record** | ⬜ WEMBER, the AMM and Multicall3 deploy and run (§5.0, §7). Nine `ForesightMarket` contracts *are* live on mainnet from 2026-08-04 — `eth_getCode` at `0x49408b99deb3afaafd914ed9f0e71a89874b980e` returns 6,007 bytes — but **no file in this repository names one of them**, none is verified, and none is part of this repository's own deployment story. Unrecorded is not the same as deployed |
 | `eth_subscribe` / WebSockets | ⬜ v2. Port 8546 is reserved for it |
 | `eth_newFilter` / `eth_getFilterChanges` | ✅ implemented, bounded and served (`node/src/jsonrpc/filters.js`) — the poll-based stand-in for `eth_subscribe` |
 | `eth_feeHistory` | 🟡 implemented but **OFF by default** — `HEARTH_RPC_FEE_HISTORY=1` turns it on. See §5.3 for why the default is off on a legacy-only chain |

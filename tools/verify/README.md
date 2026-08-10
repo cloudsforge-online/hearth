@@ -17,10 +17,16 @@ npm test        # 116 assertions; the first run downloads ~9 MB of solc
 > That sentence stood here until 2026-08-10 and it had stopped being true: mainnet
 > is live, chain id 7411 at `https://rpc.cloudsforge.online`, measured that day at
 > height 10,987 and climbing. What is missing is a host for *this service*, not a
-> chain for it to read. Two things follow. There is nothing on mainnet to verify
-> yet — every block measured carries zero transactions, so no contract of record
-> exists — and the round trip below is still proven end to end against a real
-> artifact from `contracts/src` with `eth_getCode` coming from a stub. See
+> chain for it to read.
+>
+> **And there is already something on it to verify, which makes this the most
+> load-bearing unhosted service in the repository.** Nine `ForesightMarket`
+> contracts were deployed to mainnet on 2026-08-04 and are live now:
+> `eth_getCode` at `0x49408b99deb3afaafd914ed9f0e71a89874b980e` returns 6,007
+> bytes of runtime code. **Every one of them is unverified bytecode to anybody
+> outside this estate** — which is precisely the gap the section below describes,
+> no longer hypothetically. The round trip is still proven end to end against a
+> real artifact from `contracts/src` with `eth_getCode` coming from a stub. See
 > [What is proven, and what is not](#what-is-proven-and-what-is-not).
 
 ---

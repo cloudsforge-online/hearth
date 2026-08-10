@@ -36,12 +36,18 @@ reproduce all of that are in the [README](../README.md).
 **Yes — to mainnet.** Point your tooling at `https://rpc.cloudsforge.online`,
 chain id 7411. Locally, `hearthd --evm --mine` produces and validates blocks and
 serves `eth_*` on 8545, and `docker-compose.testnet.yml` runs three nodes on
-chain id 7412 — but that testnet is **not** publicly reachable, so it is your
-machine only.
+chain id 7412 — that one is your machine only. There is also a **public**
+testnet on chain id 7412 at `https://rpc-testnet.cloudsforge.online`, and it is
+reachable but **stopped**: measured 2026-08-10, it answers reads and its height
+has not moved since 2026-08-08 18:00:11 UTC, deliberately, while the host's
+Bitcoin and Dogecoin nodes finish initial block download on the same disk. A
+transaction sent there will not confirm, so run your own chain meanwhile.
 
-Two warnings before you do. The chain is hours old and runs on one home server
-behind one tunnel with no failover, so do not deploy anything you cannot afford
-to lose to an outage. And nothing here has been independently audited
+Two warnings before you do. Mainnet is just under six days old at 10,987 blocks
+(measured 2026-08-10), carries 62 transactions in 52 blocks and not one of them
+from anybody outside this project, and runs on one home
+server behind one tunnel with no failover, so do not deploy anything you cannot
+afford to lose to an outage. And nothing here has been independently audited
 ([`../SECURITY.md`](../SECURITY.md)). The throughput defect that used to be the second half
 of this answer (`StateDB` re-rooting both tries per mutation, 443 MB and 65 s for
 one 30M-gas transaction) is fixed and gated at 5.2 s and 9.2 MiB

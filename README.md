@@ -38,11 +38,30 @@ stopped since — just under six days at that measurement.
 
 **What is not there yet, said in the same breath, because a chain id without this
 paragraph reads as a promise.** There is no EMBER of any monetary value: no
-market, no listed price, no liquidity. **Not one transaction has ever been
-mined** — the tip carries zero and so does every block behind it — so there is no
-contract of record, no token, and nothing deployed on mainnet to point a wallet
-at. There is no payout path of any kind in this repository. And the public
+market, no listed price, no liquidity. There is no payout path of any kind in
+this repository. Nobody outside the project has used any of it. And the public
 testnet is deliberately **stopped** (below).
+
+**The chain is nearly empty, and "nearly" is the honest word rather than
+"entirely".** Walking every block from 1 to 10,987 on 2026-08-10 counts **62
+transactions in 52 blocks** — a mean of one transaction per 177 blocks. They fall
+into three groups, and none of them is a stranger using this chain:
+
+- **Blocks 235–251, 2026-08-04.** 18 transactions, of which **nine are successful
+  contract creations** — `ForesightMarket` instances belonging to another
+  repository in this estate. They are real: `eth_getCode` at
+  `0x49408b99deb3afaafd914ed9f0e71a89874b980e` returns 6,007 bytes of runtime
+  code, and the creation receipt reports `status: 0x1`. **So "no contract is
+  deployed on mainnet" is false**, and this README asserted it until 2026-08-10.
+- **Blocks 1,323, 1,506 and 1,518.** Three transactions, days apart.
+- **Blocks 10,851–10,967, 2026-08-10 17:19–17:23 UTC.** 41 transactions, roughly
+  one per block, **every one a plain value transfer with empty input from a
+  single address to a single address** — the signature of an automated sweep
+  rather than of anybody using the chain.
+
+What *is* unqualifiedly true is narrower and more important: **no block has ever
+been produced at production proof-of-work parameters**, and no third party has
+ever transacted here.
 
 **"Live" means reachable and mining, not established, and each measurement below
 says something the height alone does not.**
@@ -91,7 +110,7 @@ The original UTXO ledger is being retired.
 | **Built and running locally** | Consensus on the account model. `hearthd --evm --mine` produces and validates blocks and serves `eth_*` on 8545; two real nodes partition and reorg in `node/test/evm-p2p-fork.js`; `docker-compose.testnet.yml` runs three on chain id 7412 |
 | **Published, and mining** | **Mainnet, chain id 7411**, at `https://rpc.cloudsforge.online` — publicly trusted TLS, JSON-RPC over POST (a GET answers 405), plus an explorer at [`explorer.cloudsforge.online`](https://explorer.cloudsforge.online). Height `10,987` and climbing, measured 2026-08-10 17:56 UTC. The node ports still bind `127.0.0.1`; a Cloudflare Tunnel on one home server is the only thing routing them, so this is one machine with no failover |
 | **Published, and paused** | **Testnet, chain id 7412**, at `https://rpc-testnet.cloudsforge.online` — same POST-only surface, same publicly trusted TLS, with an explorer at [`explorer-testnet.cloudsforge.online`](https://explorer-testnet.cloudsforge.online) and a faucet at [`network-testnet.cloudsforge.online/faucet`](https://network-testnet.cloudsforge.online/faucet). **It answers reads and produces no blocks**: height `7,765`, tip timestamp 2026-08-08 18:00:11 UTC, unchanged across polls on 2026-08-10 — stopped on purpose while the host's `bitcoind` and `dogecoind` finish initial block download. P2P is a WebSocket at `wss://p2p-testnet.cloudsforge.online/p2p` — **only the `/p2p` path is routed**, the host root answers 404 |
-| **Still not published** | Any deployed contract of record, and **any transaction at all** — every mainnet block measured on 2026-08-10 carries zero. Off mainnet no genesis outlives a `docker compose down -v`, so testnet state is not durable and should be treated as disposable |
+| **Still not published** | Any contract **of record** — nine `ForesightMarket` instances are live on mainnet from 2026-08-04 and **no file in this repository names one of them**, which is the defect rather than the achievement. Off mainnet no genesis outlives a `docker compose down -v`, so testnet state is not durable and should be treated as disposable |
 | **Measured, and open** | The proof of work is 64 KiB and cannot be raised: a 2 GiB pad measures **185.7 s per evaluation** and a validator pays one per block received ([`docs/pow-parameters.md`](docs/pow-parameters.md)). Making it meaningfully memory-hard needs an amortised dataset, not a constant |
 
 [`MAP.md`](MAP.md) is the verified inventory — every claim in it cites `path:line`
@@ -206,11 +225,12 @@ Everything below **runs**, and every number was produced by running it:
   [docs/why-two-implementations.md](docs/why-two-implementations.md)
 
 > **Two honest caveats about that list.** It *is* driven by blocks now — mainnet
-> has produced `10,987` of them as of 2026-08-10 — but never by a block carrying
-> a transaction, so every path through the EVM above the empty-block case is still
-> proven by tests rather than by traffic. And the merchant-button *mockup* that
-> used to sit in `web/pay-demo.html` — it simulated settlement on a timer — went
-> with that directory; there is still no payment SDK and no payout path.
+> has produced `10,987` of them as of 2026-08-10, carrying 62 transactions
+> including nine contract deployments — but that is a rounding error of traffic,
+> all of it produced by this project, so every path through the EVM is still
+> proven by tests rather than by use. And the merchant-button *mockup* that used
+> to sit in `web/pay-demo.html` — it simulated settlement on a timer — went with
+> that directory; there is still no payment SDK and no payout path.
 
 **`npm test` passes from a clean clone** — **39 suites, 86,451 checks**, no install,
 no corpus and no network. Re-measured 2026-08-09 by cloning this repository into an
