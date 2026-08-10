@@ -32,7 +32,11 @@ well after 2026-08-08, assume the numbers have moved again and re-measure.
 credentials. Mainnet: `eth_chainId` → `0x1cf3`, `eth_blockNumber` → `0x2aeb`
 (**10,987 blocks**), tip timestamp 2026-08-10 17:56:10 UTC, `difficulty` still
 `0x100`, tip transaction count `0`. Block 1 to tip is a mean interval of
-**46.8 s**. Testnet: `eth_chainId` → `0x1cf4`, `eth_blockNumber` → `0x1e55`
+**46.8 s**. **That `0x100` was the last floor reading this file will ever
+record**: two hours later a browser miner took the difficulty to 8,146 and then
+left, and difficulty became a live number that oscillates rather than a standing
+property of the chain — §1 has the account, and is the only place in this
+repository that states it. Testnet: `eth_chainId` → `0x1cf4`, `eth_blockNumber` → `0x1e55`
 (**7,765 blocks**) — **unchanged across polls, with a tip timestamp of
 2026-08-08 18:00:11 UTC, so testnet is serving reads and producing nothing.**
 That is deliberate rather than a fault, and the reason is not in this repository:
@@ -69,21 +73,66 @@ from outside this network on 2026-08-08 UTC: `eth_blockNumber` → `0x1ad8`
 (**6,872 blocks**), and the latest block's timestamp `0x6a77a04a` =
 2026-08-08 21:31:54 UTC, which makes mainnet **four days and two hours old** —
 not the "hours old and under 200 blocks tall" this paragraph claimed for its
-first four days. It is still at the `GENESIS_TARGET` difficulty floor
-(`difficulty: 0x100` on that same latest block, `node/src/params.js`), and it
-runs on one home server behind one Cloudflare Tunnel.
+first four days. On that block it was at the `GENESIS_TARGET` difficulty floor
+(`difficulty: 0x100`, `node/src/params.js`), as it was on every block until the
+evening of 2026-08-10 — see **the difficulty is no longer at the floor, and no
+longer a fact worth writing down** below. It runs on one home server behind one
+Cloudflare Tunnel.
 
 **Those two figures do not divide into the 15-second block time, and the gap is
 the interesting part.** Four days at 15 s would be roughly 23,600 blocks, not
 6,872. Walking every block from 1 to 6,872 on 2026-08-08 UTC, the mean interval
 is **51.5 s** and the median **34 s**, a little over three times target, and the
-last 500 blocks average **45.5 s**. One miner sitting at the `GENESIS_TARGET`
-floor is the entire explanation: the floor sets the work, a single machine
-supplies whatever hash rate it has, and nothing retargets because there is no
-competition to retarget against. Any reader dividing the height by the age and
-concluding the block time is broken should read this paragraph instead — the
-15-second figure at the top of this section is the **design target**, and no live
-block has ever been produced under the parameters that would deliver it.
+last 500 blocks average **45.5 s**. One miner at the `GENESIS_TARGET` floor is
+the entire explanation for *that* reading: the floor set the work, a single
+machine supplied whatever hash rate it had, and nothing retargeted because there
+was nothing to retarget against. That last clause stopped being true on
+2026-08-10 — the paragraph below is what happened when a second miner appeared —
+but the conclusion for a reader is unchanged and is now stronger. Any reader
+dividing the height by the age and concluding the block time is broken should
+read these two paragraphs instead: the 15-second figure at the top of this
+section is the **design target**, and no live block has ever been produced under
+the parameters that would deliver it.
+
+**The difficulty is no longer at the floor, and it is no longer a fact worth
+writing down.** This is the one place in this repository that records it;
+everything else points here, because a live reading copied into nine files is
+nine corrections the next time it moves. Every block from genesis to **10,842**
+carried `difficulty: 256` — `0x100`, the `GENESIS_TARGET` floor. It then rose:
+**358 at height 10,942, 594 at 11,142, 8,146 at 11,242**, a factor of 32 in four
+hundred blocks. The cause is not in this repository. Browser mining shipped to
+three surfaces in release 2.5.16 that evening, and `hub-web`'s EMBER sweep has
+been mining mainnet from **block 10,919** — 23 blocks before difficulty first
+left the floor, which is the lag `LWMA_WINDOW: 60` produces (`node/src/params.js`;
+`_nextTarget` in `node/src/chain/blockchain.js` averages over that window). One
+reader's browser tab was the entire second miner, and when it closed it left the
+chain stranded far above what the baseline miner (`cf-miner-mainnet`,
+`--throttle 0.25`, a steady 8 H/s) can carry: **the tip did not advance for
+1,154 s.**
+
+**Measured 2026-08-10 20:06 UTC**, from outside this network and with no
+credentials, walking the 60 blocks below the tip: `eth_blockNumber` → `0x2bed`
+(**11,245**), tip `difficulty` **5,712** — 22x the floor, still falling — tip
+timestamp 2026-08-10 19:41:02 UTC, which is **1,538 s before the reading was
+taken**. Over the 50 blocks below the tip the mean interval is **35.3 s** and
+difficulty ranges **4,312 to 8,417**; the largest gap in that window is
+**1,210 s**, between blocks 11,243 and 11,244. **Polled again at 20:21 UTC, the
+tip was still 11,245** — 2,393 s and counting with no new block, so the stall was
+ongoing while this paragraph was written, not recovered from. The excursion is
+therefore not a single past event: the chain is oscillating between bursts of
+blocks seconds apart and stalls of tens of minutes, and it will do that every
+time somebody opens or closes a mining tab. **Do not copy these numbers
+anywhere.** Re-measure, or say what the difficulty does rather than what it is.
+
+**What does not expire, and is what a reader actually needs.** Two facts survive
+every one of these readings. **Every block this chain has ever had was mined by
+this project** — there has never been an independent miner, and the browser tab
+above was ours too, running our own code from our own site. And **one browser tab
+is enough to move this chain's difficulty by a factor of 32 and then stall it for
+twenty minutes**, because the LWMA retarget cannot shed work faster than the
+remaining 8 H/s can produce blocks to retarget on. Write those, not the tip
+difficulty. Fixing the second is a consensus change and is tracked as
+`micro-org#363`; it is deliberately not fixed here.
 
 **The public testnet is reachable but stopped** — chain id 7412 at
 `https://rpc-testnet.cloudsforge.online`, verified from outside on 2026-08-05
@@ -120,7 +169,7 @@ here first.
 | Contract verification (`forge verify-contract`-compatible) | `tools/verify/` | ✅ **merged**, 116 checks |
 | Property fuzzing | `node/test/fuzz/` | ✅ **merged**, 82,481 checks; two open findings — §4.7, §11 |
 | **Consensus on the account model** | `node/src/chain/`, `node/src/evmnode.js` | ✅ **merged.** Blocks are produced, validated and reorged — `evmchain` 191 checks, `evm-p2p-fork` 51 across two real nodes; three run under `docker-compose.testnet.yml` |
-| **Public mainnet** | — | ✅ **published 2026-08-04.** Chain id 7411 at `https://rpc.cloudsforge.online`, mining, publicly trusted TLS. Measured from outside on **2026-08-08**: **6,872 blocks**, **four days and two hours** old, **21 transactions**, mean block interval 51.5 s — §1. Still at the difficulty floor, on one home server behind one tunnel — running, not established |
+| **Public mainnet** | — | ✅ **published 2026-08-04.** Chain id 7411 at `https://rpc.cloudsforge.online`, mining, publicly trusted TLS. Measured from outside on **2026-08-08**: **6,872 blocks**, **four days and two hours** old, **21 transactions**, mean block interval 51.5 s — §1. On one home server behind one tunnel, and **every block it has ever had was mined by this project** — running, not established. It left the `GENESIS_TARGET` difficulty floor on 2026-08-10 when a single browser tab took the difficulty up 32x and then stalled the chain; difficulty is now a live reading, stated once in §1 and nowhere else |
 | **Public testnet** | — | ✅ **published.** Chain id 7412 at `https://rpc-testnet.cloudsforge.online` — verified from outside on 2026-08-05, `eth_chainId` → `0x1cf4`. Explorer at `explorer-testnet.cloudsforge.online`, faucet at `network-testnet.cloudsforge.online/faucet`, P2P at `wss://p2p-testnet.cloudsforge.online/p2p` (**only the `/p2p` path is routed**). Hostnames are single-label `<surface>-testnet.` — the `*.testnet.cloudsforge.online` form fails TLS, because Cloudflare Universal SSL's `*.cloudsforge.online` covers one label |
 | Any deployed contract of record | — | ⬜ **still none.** Off mainnet, no genesis outlives a `docker compose down -v`, so testnet state is disposable |
 | The UTXO chain (ledger, P2P, REST, reorg) | `node/src/chain.js`, `tx.js`, `p2p.js`, `rpc.js` | ✅ runs, and **is being retired** |
@@ -133,9 +182,13 @@ checks, a swap at **112,456 gas**. §4.4.
 **The most important gap is no longer publication.** Blocks are produced,
 validated and reorged, the components above have been driven by one, and mainnet
 is reachable. What remains is that **no block has ever been produced at
-production PoW parameters** — the live chain is pinned at the `GENESIS_TARGET`
-floor — and those parameters have now been measured and found unreachable
-([`docs/pow-parameters.md`](docs/pow-parameters.md)). Under that sits a
+production PoW parameters** — every block ever mined, here and on the live
+chain, used a 64 KiB scratchpad and a 256-step walk against an intent of 2 GiB
+and 2,048 steps — and those parameters have now been measured and found
+unreachable ([`docs/pow-parameters.md`](docs/pow-parameters.md)). **That is a
+claim about the pad and the walk, not about difficulty**, and the two were run
+together in this sentence until 2026-08-10, when difficulty left the
+`GENESIS_TARGET` floor and the pad did not move at all — §1. Under that sits a
 deployment fact worth stating plainly: one home server, one tunnel, no
 redundancy, and no backup that has ever been restored. That is no longer only a
 worry — walking every block on 2026-08-08 UTC found exactly one stall, **2 h
@@ -1210,9 +1263,12 @@ only externally reachable caller is the unauthenticated `/mining/template`.
   are successful contract creations** (receipt `status: 0x1`, about 1,358,000 gas
   each, 6,007 bytes of runtime code apiece) and twelve are plain value transfers.
   What survives without qualification is the last clause: **no block has ever
-  been produced at production proof-of-work parameters.** The latest block still
-  reports `difficulty: 0x100`, the `GENESIS_TARGET` floor, and §1 records what
-  that does to the block interval.
+  been produced at production proof-of-work parameters** — the pad is still
+  64 KiB and the walk still 256 steps, everywhere, and nothing about 2026-08-10
+  changed that. What this bullet used to offer as its evidence, `difficulty:
+  0x100` on the latest block, is **no longer evidence and no longer true**: the
+  chain left the floor that evening and difficulty is now a live reading. §1 has
+  it, and is the only place that states it.
 - **§2's "Any deployed contract of record — still none" row and the chain now
   disagree, and the row is deliberately left standing.** Deciding what "of
   record" is meant to cover is not a measurement, so it is not made here; the

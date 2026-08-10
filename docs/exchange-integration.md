@@ -32,7 +32,7 @@ honest account of what is not built yet.
 | AMM contracts | **Compiled, and executed on our own EVM** — a full Uniswap V2 deployment and a real swap, `node/test/dex.js`, 167/167 |
 | **Header v2 and consensus on the account model** | **Built.** Blocks are produced, validated and reorged |
 | Public testnet on the account model | **Published, and currently stopped.** Chain 7412 at `https://rpc-testnet.cloudsforge.online`, with an explorer at `explorer-testnet.cloudsforge.online` and a faucet at `network-testnet.cloudsforge.online/faucet` — integrate against this before mainnet, but note that it is producing no blocks: height 7,765, unchanged since 2026-08-08 18:00:11 UTC (measured 2026-08-10), while the host's `bitcoind` and `dogecoind` finish initial block download. Reads answer; **a write will not confirm and the faucet cannot pay**. Hostnames are single-label `<surface>-testnet.`; the `*.testnet.cloudsforge.online` form fails TLS |
-| Mainnet | **Live.** Chain id 7411 at `https://rpc.cloudsforge.online`. Measured 2026-08-10 17:56 UTC: **10,987 blocks, just under six days old**, mean interval 46.8 s against a 15 s target, **62 transactions in 52 blocks and none of them from a third party**, at the difficulty floor, on one home server with no failover |
+| Mainnet | **Live.** Chain id 7411 at `https://rpc.cloudsforge.online`. Measured 2026-08-10 17:56 UTC: **10,987 blocks, just under six days old**, mean interval 46.8 s against a 15 s target, **62 transactions in 52 blocks and none of them from a third party**, and at that reading still at the difficulty floor — **it left the floor hours later** and difficulty is now a live oscillating number, not a standing property; on one home server with no failover, and **every block it has ever had was mined by this project** |
 
 **The caveat on the RPC row, because it is the row you care about.** The method
 table, the strict QUANTITY/DATA hex codec, the JSON-RPC 2.0 transport, the error
@@ -49,7 +49,14 @@ days old at 10,987 blocks (measured 2026-08-10), **holds 62 transactions in 52
 blocks and not one of them from anybody outside this project**, has never run
 at its production proof-of-work parameters, has
 not been independently audited, and runs on a single home server with no
-failover. The testnet you would rehearse against is stopped besides. Scope the work now; schedule it against a chain with a track record.
+failover. **Every block it has ever had was mined by this project**, and on
+2026-08-10 a single browser tab moved its difficulty by a factor of 32 and then,
+on closing, left the chain with no new block for 1,154 s — so a confirmation
+policy expressed in blocks has no stable time behind it, and a difficulty figure
+is not a security budget you can quote
+([`../MAP.md` §1](../MAP.md#1-what-this-is-in-one-paragraph) has the
+measurements and the cause). The testnet you would rehearse against is stopped
+besides. Scope the work now; schedule it against a chain with a track record.
 Tell us now if anything below would be a problem for you. The request/response
 shapes in §5 and §6 are the Ethereum JSON-RPC specification, which is what this
 chain implements to — they are the contract, not captures from a running node. The

@@ -17,10 +17,18 @@ blocks a listing now is everything that being reachable does not buy you:
   41-transaction automated sweep between two addresses on 2026-08-10. No
   exchange will risk-assess that. Growing the height does not fix it; the
   figure that has to move is transactions from somebody who is not us.
-- It runs at the `GENESIS_TARGET` difficulty floor. **No block has ever been
-  produced at mainnet proof-of-work parameters** (§7, and
-  [`pow-parameters.md`](pow-parameters.md)) — and there is no demonstrated
-  hashrate to quote.
+- **No block has ever been produced at mainnet proof-of-work parameters** (§7,
+  and [`pow-parameters.md`](pow-parameters.md)) — every block ever mined used a
+  64 KiB scratchpad and a 256-step walk against an intent of 2 GiB and 2,048
+  steps. That is a claim about the pad and the walk, and it is separate from
+  difficulty, which is no longer at the floor and is no longer a fixed number —
+  see B4.
+- **Every block this chain has ever had was mined by this project**, and on
+  2026-08-10 **one browser tab moved its difficulty by a factor of 32 and then
+  stalled it for twenty minutes** on leaving. An exchange asking "who secures
+  this chain" gets the answer "we do, and one participant is enough to destabilise
+  it". [`../MAP.md` §1](../MAP.md#1-what-this-is-in-one-paragraph) has the
+  measurements.
 - It is **one home server behind one tunnel**, with no redundancy and no
   restored backup. Exchanges ask about node infrastructure early.
 - **Nothing has been independently audited** ([`../SECURITY.md`](../SECURITY.md)).
@@ -42,12 +50,13 @@ Everything below is downstream of those.
 | B2 | `eth_*` JSON-RPC surface | ✅ **built and mounted** — `node/src/evmnode.js` serves it on 8545. 41 methods, 422 checks against a fake chain and 170 against a real one over HTTP |
 | B2a | **Header v2, and consensus on the account state model** | ✅ **landed.** Two real nodes partition, reorg and agree state roots byte for byte (`node/test/evm-p2p-fork.js`, 51 checks); three run under `docker-compose.testnet.yml` |
 | B3 | Public account-model testnet with a stable endpoint | ✅ **done.** Chain 7412 at `https://rpc-testnet.cloudsforge.online`, publicly trusted TLS, verified from outside 2026-08-05 (`eth_chainId` → `0x1cf4`). Explorer `explorer-testnet.cloudsforge.online`, faucet `network-testnet.cloudsforge.online/faucet`. Single-label hostnames only — the two-label `*.testnet.` form fails TLS at Cloudflare's edge |
-| B4 | Mainnet genesis, launch, and demonstrated hashrate | 🟡 **genesis and launch done** — chain 7411 published 2026-08-04, mining, publicly reachable. **Hashrate is not demonstrated**: the chain sits at the difficulty floor, so there is no number to quote |
+| B4 | Mainnet genesis, launch, and demonstrated hashrate | 🟡 **genesis and launch done** — chain 7411 published 2026-08-04, mining, publicly reachable. **Hashrate is still not demonstrated, and the reason changed on 2026-08-10.** There is now a number, and it is worse than having none: difficulty sat at the `GENESIS_TARGET` floor for every block to height 10,842, then reached **8,146** by height 11,242 — a factor of 32 — because a **single reader's browser tab** joined the mining. When that tab closed, the tip did not advance for **1,154 s**. So the demonstrated hashrate is one browser, it was ours, and it left; the steady-state miner is one throttled process at ~8 H/s. **Every block this chain has ever had was mined by this project.** Do not quote a difficulty figure to an exchange as though it were a security budget — it is a live reading that oscillates with one tab. [`../MAP.md` §1](../MAP.md#1-what-this-is-in-one-paragraph) has the measurements and the cause; the retarget behaviour is `micro-org#363` |
 | B5 | Independent audit of consensus and the EVM | ⬜ |
 
 Nothing in §1–§8 should be filed before the rest of B4 and B5. An application
 submitted against a chain that is days old, has no transactions and has never
-run at its own production difficulty is a permanent mark against the project —
+run at its own production proof-of-work parameters is a permanent mark against
+the project —
 and "it answers `eth_chainId`" is not a track record.
 
 ---

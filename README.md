@@ -66,15 +66,22 @@ ever transacted here.
 **"Live" means reachable and mining, not established, and each measurement below
 says something the height alone does not.**
 
-- **Difficulty on the tip is `0x100`** — exactly the `GENESIS_TARGET` floor in
-  `node/src/params.js`, so no block has yet been produced at production
-  proof-of-work parameters.
-- **The mean interval from block 1 to the tip is 46.8 s**, against a 15 s
-  protocol *target*. One miner sitting at the difficulty floor is the whole
-  explanation: the floor sets the work, a single machine supplies whatever hash
-  rate it has, and nothing retargets because there is no competition to retarget
-  against. Dividing height by age and concluding the block time is broken is the
-  wrong conclusion; 15 s is a design target, not an observed rate.
+- **Every block this chain has ever had was mined by this project.** There has
+  never been an independent miner. This is the fact that does not expire, and it
+  is the one to read instead of a difficulty number.
+- **One browser tab can move this chain's difficulty by a factor of 32 and then
+  stall it for twenty minutes.** That is not a hypothetical: it happened on the
+  evening of 2026-08-10, and the chain spent 1,154 s at a standstill afterwards.
+  Difficulty is therefore a **live reading that oscillates**, not a property —
+  which is why no number for it appears in this README. The account, the
+  measurements and the cause are in
+  [`MAP.md` §1](MAP.md#1-what-this-is-in-one-paragraph), stated once there and
+  nowhere else in this repository.
+- **The mean interval from block 1 to the tip is 46.8 s** (measured
+  2026-08-10 17:56 UTC), against a 15 s protocol *target*. Dividing height by age
+  and concluding the block time is broken is the wrong conclusion; 15 s is a
+  design target, not an observed rate, and the observed rate is whatever the one
+  or two machines mining at the time happen to supply.
 - **It is one home server behind a single Cloudflare Tunnel** — no redundancy, no
   failover, and no backup that has ever been restored.
 

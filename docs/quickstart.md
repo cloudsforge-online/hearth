@@ -17,9 +17,16 @@ JSON-RPC over POST with a publicly trusted certificate, and an explorer is at
 Read it before you trust it. Block 1 was mined 2026-08-04 19:12:21 UTC; measured
 2026-08-10 17:56 UTC it is **just under six days old and 10,987 blocks tall**,
 carries **62 transactions in 52 of those blocks — none of them from anybody
-outside this project**, sits at its launch difficulty, and runs on **one
-home server behind one Cloudflare Tunnel** with no redundancy and no restored
-backup. Nothing here has been independently audited.
+outside this project**, and runs on **one home server behind one Cloudflare
+Tunnel** with no redundancy and no restored backup. Nothing here has been
+independently audited.
+
+**Every block it has ever had was mined by this project**, and its difficulty is
+not a stable number: on the evening of 2026-08-10 a single browser tab took it up
+by a factor of 32 and, on closing, left the chain with no new block for 1,154 s.
+Expect block times to swing between seconds and tens of minutes, and **do not
+write a timeout against an assumed block interval** — poll for the receipt.
+[`../MAP.md` §1](../MAP.md#1-what-this-is-in-one-paragraph) has the measurements.
 
 A **public testnet** is reachable at `https://rpc-testnet.cloudsforge.online`
 (chain id 7412), with a faucet at
