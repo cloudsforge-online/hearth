@@ -15,6 +15,7 @@ const P = require('./params');
 const C = require('./crypto');
 const TX = require('./tx');
 const BLOCK = require('./block');
+const { openSseStream } = require('./sse');
 
 function json(res, code, body) {
   const s = JSON.stringify(body);
@@ -174,23 +175,28 @@ class RPC {
   }
 
   _sse(req, res, url) {
-    res.writeHead(200, {
-      'content-type': 'text/event-stream',
-      'cache-control': 'no-cache',
-      connection: 'keep-alive',
-      'access-control-allow-origin': '*',
+    // Capped and heartbeated — see src/sse.js, which holds the reasoning for
+    // both and is shared with src/evmnode.js so the two cannot drift.
+    const opened = openSseStream({
+      req,
+      res,
+      clients: this.sseClients,
+      // ?app=chat[&key=ember1…] narrows the stream to one application's records.
+      // Without a filter the stream stays what it always was: new blocks.
+      decorate: (r) => {
+        const app = url && url.searchParams.get('app');
+        if (app && P.APP_NS_RE.test(app)) {
+          r.cfApp = app;
+          const key = url.searchParams.get('key');
+          if (key && P.RECORD_KEY_RE.test(key)) r.cfKey = key;
+        }
+      },
     });
-    // ?app=chat[&key=ember1…] narrows the stream to one application's records.
-    // Without a filter the stream stays what it always was: new blocks.
-    const app = url && url.searchParams.get('app');
-    if (app && P.APP_NS_RE.test(app)) {
-      res.cfApp = app;
-      const key = url.searchParams.get('key');
-      if (key && P.RECORD_KEY_RE.test(key)) res.cfKey = key;
+    if (!opened) {
+      this.node.warn('refused an event subscriber: this node is at its stream limit', {
+        limit: P.SSE_MAX_CLIENTS,
+      });
     }
-    res.write(': connected\n\n');
-    this.sseClients.add(res);
-    req.on('close', () => this.sseClients.delete(res));
   }
 
   _info() {
