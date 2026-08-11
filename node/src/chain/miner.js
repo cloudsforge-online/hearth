@@ -71,10 +71,17 @@ const MAX_TEMPLATES = 256;
  * `now - tip.timestamp` is overstated by a whole solve time, so a chain hitting
  * its target exactly still reports a tip that is never fresher than one block
  * interval — which is the quantity the tip-age alert and every "last block N
- * seconds ago" surface read. It is also the quantity an absolute-time emergency
- * difficulty rule would key on, and such a rule cannot engage at all while
+ * seconds ago" surface read. It is also the quantity the absolute-time emergency
+ * difficulty rule keys on, and such a rule cannot engage at all while
  * `timestamp - parent.timestamp` is stamped before the search rather than after
- * it. That rule is a hard fork and is not shipped here; this is its prerequisite.
+ * it. That rule SHIPPED in 0.3.0 (params.js EMERGENCY_ACTIVATION_HEIGHT), so
+ * this constant is now consensus-adjacent in one specific way: the bucket is how
+ * quickly a search in progress notices that it has crossed the easement
+ * threshold and may rebuild at the floor. At one TARGET_BLOCK_TIME the worst
+ * case is 120 s of grinding at the wedged target plus at most 15 s more before
+ * the eased candidate exists. Lengthening it lengthens that tail; it cannot make
+ * a block invalid, because `chain._targetFor` prices whatever stamp the rebuilt
+ * candidate carries.
  *
  * TARGET_BLOCK_TIME is the interval because it is the strongest claim worth
  * making and the cheapest to state: a header is never more than one target block

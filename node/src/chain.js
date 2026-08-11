@@ -327,6 +327,15 @@ class Chain extends EventEmitter {
   }
 
   // ---- difficulty (branch-aware LWMA) -------------------------------------
+  /* NO EMERGENCY EASEMENT HERE, AND THAT IS A DECISION RATHER THAN AN OMISSION.
+   * micro-org#363's absolute-time rule lands on the account model only
+   * (chain/blockchain.js `_targetFor`, params.js EMERGENCY_ACTIVATION_HEIGHT).
+   * This is the retired UTXO chain; it still runs `docker-compose.yml` and its
+   * data directories still exist, and giving it the same rule would fork every
+   * one of them to fix a wedge measured on a chain this file does not carry.
+   * Its MAX_FUTURE_DRIFT_S stays at 7,200 s for the same reason — the tighter
+   * drift is a consequence of the easement, so a chain without the easement has
+   * no reason to pay for it. */
   nextTarget() { return this._nextTarget(this.tipId); }
 
   _nextTarget(parentId) {
