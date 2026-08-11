@@ -36,13 +36,15 @@ credentials. Mainnet: `eth_chainId` → `0x1cf3`, `eth_blockNumber` → `0x2aeb`
 record**: two hours later a browser miner took the difficulty to 8,146 and then
 left, and difficulty became a live number that oscillates rather than a standing
 property of the chain — §1 has the account, and is the only place in this
-repository that states it. Testnet: `eth_chainId` → `0x1cf4`, `eth_blockNumber` → `0x1e55`
-(**7,765 blocks**) — **unchanged across polls, with a tip timestamp of
-2026-08-08 18:00:11 UTC, so testnet is serving reads and producing nothing.**
-That is deliberate rather than a fault, and the reason is not in this repository:
-the host runs `bitcoind` and `dogecoind`, both still in initial block download,
-and testnet mining competes with them for the same disk and bandwidth
-(`micro-deploy`, `docs/releasing.md`). The §1 sentence below calling the testnet
+repository that states it. Testnet: measured again 2026-08-11 14:04 UTC, `eth_chainId` → `0x1cf4`,
+`eth_blockNumber` → `0x1f22` (**7,970 blocks**), tip timestamp three minutes
+before the reading and the height advancing across a 75-second poll — **testnet
+is mining again.** It was stopped at 7,765 from 2026-08-08 18:00:11 UTC to
+2026-08-11, deliberately, because the machine it shared ran `bitcoind` and
+`dogecoind` through initial block download and testnet mining competed with them
+for the same disk and bandwidth. `bitcoind` reached the tip, the chain daemons
+moved to a host of their own, and the miner was repointed at the public RPC name
+and restarted (`micro-deploy`). The §1 sentence below calling the testnet
 "live" was written on 2026-08-05 and is kept, corrected in place, rather than
 deleted — a status that changed is itself a fact about this repository.
 
@@ -134,15 +136,15 @@ remaining 8 H/s can produce blocks to retarget on. Write those, not the tip
 difficulty. Fixing the second is a consensus change and is tracked as
 `micro-org#363`; it is deliberately not fixed here.
 
-**The public testnet is reachable but stopped** — chain id 7412 at
+**The public testnet is reachable and mining** — chain id 7412 at
 `https://rpc-testnet.cloudsforge.online`, verified from outside on 2026-08-05
-(`eth_chainId` → `0x1cf4`), on the same single home server and the same tunnel.
-It answered the same chain id on 2026-08-10 and its height had not moved from
-`0x1e55` (7,765) since 2026-08-08 18:00:11 UTC. Mining there is stopped on
-purpose so the host's `bitcoind` and `dogecoind` can finish initial block
-download without competing for the same disk and bandwidth. **A reader deploying
-to testnet today will get a receipt from no block**: reads answer, writes never
-confirm.
+(`eth_chainId` → `0x1cf4`) and again on 2026-08-11 14:04 UTC at `0x1f22` (7,970)
+with the height moving across a 75-second poll. Between 2026-08-08 18:00:11 UTC
+and 2026-08-11 it was stopped at 7,765 on purpose, so the machine it shared could
+take `bitcoind` and `dogecoind` through initial block download without competing
+for the same disk and bandwidth; that reason expired when `bitcoind` synced and
+the chain daemons moved to a host of their own. **A reader deploying to testnet
+today gets a receipt from a real block.**
 
 ---
 

@@ -38,13 +38,15 @@ chain id 7411. Locally, `hearthd --evm --mine` produces and validates blocks and
 serves `eth_*` on 8545, and `docker-compose.testnet.yml` runs three nodes on
 chain id 7412 — that one is your machine only. There is also a **public**
 testnet on chain id 7412 at `https://rpc-testnet.cloudsforge.online`, and it is
-reachable but **stopped**: measured 2026-08-10, it answers reads and its height
-has not moved since 2026-08-08 18:00:11 UTC, deliberately, while the host's
-Bitcoin and Dogecoin nodes finish initial block download on the same disk. A
-transaction sent there will not confirm, so run your own chain meanwhile.
+**mining again**: measured 2026-08-11 14:04 UTC it is at height 7,970 and moving,
+with a tip three minutes old. It was deliberately stopped at 7,765 from
+2026-08-08 to 2026-08-11 while the machine it shared took `bitcoind` and
+`dogecoind` through initial block download; that reason expired. Sends confirm
+there and the faucet can pay, so **rehearse on testnet before mainnet**.
 
-Two warnings before you do. Mainnet is just under six days old at 10,987 blocks
-(measured 2026-08-10), carries 62 transactions in 52 blocks and not one of them
+Two warnings before you do. Mainnet is just under seven days old at 13,946 blocks
+(measured 2026-08-11 14:04 UTC), carried 62 transactions in 52 blocks when last
+walked in full on 2026-08-10 and not one of them
 from anybody outside this project, and runs on one home
 server behind one tunnel with no failover, so do not deploy anything you cannot
 afford to lose to an outage. And nothing here has been independently audited
