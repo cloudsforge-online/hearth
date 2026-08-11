@@ -45,6 +45,46 @@ const TEMPLATE_TTL_MS = 120_000;
 /** Bounded, so an unauthenticated caller cannot grow the map without limit. */
 const MAX_TEMPLATES = 256;
 
+/* HOW STALE A CANDIDATE'S TIMESTAMP IS ALLOWED TO GET WHILE IT IS BEING GROUND.
+ *
+ * `buildCandidate` stamps `header.timestamp` when it assembles the candidate, and
+ * the timestamp is inside `coreHash`, so it is frozen for the whole search. The
+ * memo below had no time in its key, so the candidate for a given tip was built
+ * once — the instant its parent landed — and every block sealed from it carried
+ * that moment rather than the moment its nonce was found.
+ *
+ * Measured on mainnet on 2026-08-11, polling the tip every 2 s: six consecutive
+ * blocks arrived already 51, 28, 42, 9, 29 and 24 seconds old, against a
+ * TARGET_BLOCK_TIME of 15. That is not clock skew — the age on arrival IS the
+ * solve time, because the header records when the search STARTED. The chain's
+ * whole timestamp series is therefore shifted one block late.
+ *
+ * Two things follow, and only the second is worth much.
+ *
+ * The sum telescopes, so the retarget still sees the right solve times attributed
+ * one block late; simulating the real LWMA against a browser-sized burst, fixing
+ * the shift moves the recovery walk from 97 to 90 minutes and does not shorten
+ * the longest block at all. This is NOT a fix for the wedge in micro-org#363 and
+ * must not be read as one.
+ *
+ * What it does fix is that no observer can tell a fresh tip from a stalling one.
+ * `now - tip.timestamp` is overstated by a whole solve time, so a chain hitting
+ * its target exactly still reports a tip that is never fresher than one block
+ * interval — which is the quantity the tip-age alert and every "last block N
+ * seconds ago" surface read. It is also the quantity an absolute-time emergency
+ * difficulty rule would key on, and such a rule cannot engage at all while
+ * `timestamp - parent.timestamp` is stamped before the search rather than after
+ * it. That rule is a hard fork and is not shipped here; this is its prerequisite.
+ *
+ * TARGET_BLOCK_TIME is the interval because it is the strongest claim worth
+ * making and the cheapest to state: a header is never more than one target block
+ * interval behind the moment its block was found. Rebuilding is bucketed rather
+ * than continuous so that a rebuild — which EXECUTES the block to learn its state
+ * root — stays bounded at one per interval however many callers ask, which is the
+ * property the memo exists for.
+ */
+const CANDIDATE_MAX_AGE_MS = P.TARGET_BLOCK_TIME * 1000;
+
 class Miner {
   constructor(node) {
     this.node = node;
@@ -67,10 +107,29 @@ class Miner {
    * built for one miner has a state root that is wrong for any other — which is
    * exactly the difference the UTXO chain did NOT have and is the easiest way to
    * produce a block that fails its own validation.
+   *
+   * …and on the clock, in whole CANDIDATE_MAX_AGE_MS buckets, so a candidate that
+   * outlives its bucket is rebuilt with an honest timestamp. A bucket rather than
+   * an age comparison because it is what keeps the DoS property: every caller
+   * inside one interval shares one execution, so an unauthenticated `/mining/
+   * template` still cannot buy more than one block of EVM per interval.
    */
+  /** The clock bucket a candidate built right now belongs to. */
+  static bucketAt(ms = Date.now()) { return Math.floor(ms / CANDIDATE_MAX_AGE_MS); }
+
+  /**
+   * Whether `cand`'s timestamp is old enough that it should be rebuilt.
+   *
+   * A named predicate rather than an expression inside the loop because it is the
+   * one thing here that is easy to write plausibly and wrongly — see the note at
+   * its call site in `_mineOne` — and a test can only pin it if it can call it.
+   */
+  _stale(cand) { return cand.bucket !== Miner.bucketAt(); }
+
   candidateFor(coinbasePubHex, { extraData = this.node.extraData || '' } = {}) {
     const { chain, mempool } = this.node;
-    const key = `${chain.tipId}:${mempool.version}:${coinbasePubHex}:${extraData}`;
+    const bucket = Miner.bucketAt();
+    const key = `${chain.tipId}:${mempool.version}:${coinbasePubHex}:${extraData}:${bucket}`;
     if (this._cand && this._cand.key === key) return this._cand.val;
 
     const state = chain.stateAtTip();
@@ -81,6 +140,7 @@ class Miner {
       extraData,
     });
     cand.selected = selected;
+    cand.bucket = bucket;
     this._cand = { key, val: cand };
     return cand;
   }
@@ -107,6 +167,25 @@ class Miner {
     const step = () => {
       if (!this.running) return;
       if (this.node.chain.height + 1 !== startHeight) return this._mineOne();  // someone mined
+      /* …and the same restart when the candidate has outlived its clock bucket, so
+       * a long search seals an honest moment instead of the one it started at.
+       *
+       * THE TEST IS THE MEMO'S OWN QUESTION, NOT THE CANDIDATE'S AGE, and the
+       * difference is not cosmetic. `buildCandidate` stamps
+       * `max(now, medianTimePast + 1)`, so on a chain whose timestamps run ahead
+       * of this node's clock — which `_validate` tolerates up to
+       * MAX_FUTURE_DRIFT_S — the header carries a moment in the FUTURE, an age
+       * comparison against it is negative forever, and the refresh silently never
+       * happens. That is precisely the chain state where a late timestamp matters
+       * most, and the failure would be invisible. Two readings of one clock cannot
+       * drift apart that way.
+       *
+       * Discarding the nonces ground so far costs NOTHING in expectation —
+       * Homefire attempts are independent, nothing accumulates across them, and
+       * the expected time to the next block is the same after a million failures
+       * as after none. This looks like thrown-away work and is not; what it
+       * actually spends is one candidate rebuild per interval. */
+      if (this._stale(cand)) return this._mineOne();
       /* A TURN IS A SLICE OF WALL CLOCK, NOT A COUNT OF NONCES — see
        * ../minerloop.js. One nonce is one full Homefire evaluation, so a fixed
        * count is a variable and unbounded amount of blocked event loop, and on
