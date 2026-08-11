@@ -179,21 +179,42 @@ module.exports = {
    * comment records for the ceiling; there it was accepted because nothing but
    * throwaway testnets had ever run, and here it is not.
    *
-   * 15,000 was chosen on 2026-08-11 with the mainnet tip at 13,483 and blocks
-   * arriving every ~43 s: about eighteen hours of notice. Both live chains are
-   * below it (mainnet 13,483, testnet 7,765 at the time of writing), so one
-   * constant serves both. TESTNET WILL NOT REHEARSE THIS FORK and that is worth
-   * saying rather than leaving to be discovered: it is stopped, and its own tip
-   * is half the activation height, so mainnet crosses first. An operator who
-   * wants a rehearsal has to restart testnet and mine it past 15,000, and that
-   * is a decision about Bitcoin's IBD budget on the chain host, not about this
-   * constant.
+   * 15,000 was the first proposal, chosen on 2026-08-11 with the mainnet tip at
+   * 13,483 and an assumed ~43 s a block: about eighteen hours of notice. Measured
+   * the same afternoon at merge time the tip was 13,671 and the real rate over
+   * the last 500 blocks was 23 s — so 15,000 was **eight hours** away, not
+   * eighteen. THE NOTICE PERIOD IS THE POINT OF AN ACTIVATION HEIGHT, and eight
+   * hours is not a notice period for a consensus change on a chain whose node
+   * ships as a downloadable .deb, .rpm, AppImage, .dmg, MSI and NSIS installer.
+   * A node that is still on 0.2.x when the tip crosses does not degrade: it
+   * rejects the first eased block as `wrong difficulty target` and stops
+   * following the chain, silently, from an operator's point of view.
+   *
+   * 20,000 at 23 s a block is about forty hours from 13,671. That is the number
+   * this ships with, and the arithmetic is written down because the next person
+   * to move it should redo it against a MEASURED rate rather than a remembered
+   * one — an estimate that was off by 2.6x is the whole reason this paragraph
+   * exists.
+   *
+   * What the delay costs is bounded and known: two more days in which a browser
+   * tab leaving can wedge the tip for the ~20 minutes micro-org#363 measured.
+   * The estate has tolerated that since 2026-08-10 and now alerts on it
+   * (`EmberChainStalled`, `EmberDifficultyAtFloor`), so the wedge is loud rather
+   * than invisible. Forking a node operator off the chain is neither bounded nor
+   * loud, which is why the trade goes this way.
+   *
+   * Both live chains are below it (mainnet 13,671, testnet 7,820 at the time of
+   * writing), so one constant serves both. TESTNET WILL NOT REHEARSE THIS FORK
+   * and that is worth saying rather than leaving to be discovered: its own tip is
+   * barely a third of the activation height and it mines from one miner, so
+   * mainnet crosses first by a wide margin. An operator who wants a rehearsal has
+   * to mine testnet past 20,000 deliberately.
    *
    * Below this height the old rule applies EXACTLY as before — that is the whole
    * point of the gate, and test/emergency-difficulty.js replays the real mainnet
    * header series against it to prove the two agree at every height.
    */
-  EMERGENCY_ACTIVATION_HEIGHT: 15_000,
+  EMERGENCY_ACTIVATION_HEIGHT: 20_000,
 
   // ---- emission (see docs/coinnomics.md) ----
   R0_EMBER: 6,                                  // genesis block reward

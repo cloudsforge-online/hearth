@@ -237,7 +237,7 @@ group('the rule does not fire below the activation height, and does at it');
    * a reason nobody will find by reading a log.
    *
    * Built as a header series rather than by mining, because the point is which
-   * HEIGHT the gate turns on at and mining 15,000 blocks to ask is not a test. */
+   * HEIGHT the gate turns on at and mining twenty thousand blocks to ask is not a test. */
   const ACT = 40;
   atActivation(ACT, () => {
     const chain = headerChain();
