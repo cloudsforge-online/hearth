@@ -140,6 +140,110 @@ None of the following exists in this repository. Do not describe them as feature
 - **A non-outsourceable puzzle** — see §2 above.
 - **A RandomX-class VM** — see §1 above. Not scheduled.
 
+## Where to point a miner
+
+Everything below explains how the mining works. This section is the part you can
+copy. All of it was measured from off the estate on **2026-08-11**; where a
+reading is a moving number it is marked as one.
+
+| | Mainnet | Testnet |
+|---|---|---|
+| `--network` | `hearth` | `hearth-testnet` |
+| Chain id | **7411** (`0x1cf3`) | **7412** (`0x1cf4`) |
+| Work endpoint (`--url`) | `https://rpc.cloudsforge.online` | `https://rpc-testnet.cloudsforge.online` |
+| Peer endpoint (`--peer`) | `wss://p2p.cloudsforge.online/p2p` | `wss://p2p-testnet.cloudsforge.online/p2p` |
+| Explorer | `https://explorer.cloudsforge.online` | `https://explorer-testnet.cloudsforge.online` |
+
+To mine the main network, which is the one EMBER is real on:
+
+```
+node node/bin/hearth-mine.js \
+  --url https://rpc.cloudsforge.online \
+  --network hearth \
+  --data ./data
+```
+
+That is the whole command. There is no port to add, no `--cacert`, no host pin
+and no account to create: all four endpoints above are plain HTTPS on 443 behind
+a publicly trusted Cloudflare certificate (`ssl_verify_result` 0 from a stock
+curl on a laptop that has never seen this estate). `--data` is where the
+coinbase key is written on first run — **back it up, because whoever holds it
+holds the coins.**
+
+**Check it before you trust it.** Two commands, and the answers they gave:
+
+```
+$ curl -X POST -H 'content-type: application/json' \
+    -d '{"jsonrpc":"2.0","id":1,"method":"eth_chainId"}' https://rpc.cloudsforge.online
+{"jsonrpc":"2.0","id":1,"result":"0x1cf3"}
+
+$ curl -X POST -H 'content-type: application/json' \
+    -d '{"jsonrpc":"2.0","id":1,"method":"eth_chainId"}' https://rpc-testnet.cloudsforge.online
+{"jsonrpc":"2.0","id":1,"result":"0x1cf4"}
+```
+
+`0x1cf3` is 7411 and `0x1cf4` is 7412. Both were reported by
+`Hearth/v0.2.1/linux-x64/node22.23.1` and `Hearth/v0.2.0` respectively.
+
+### Three ways this goes wrong, and how to tell them apart
+
+**The testnet hostname has a hyphen, not a dot.** It is
+`rpc-testnet.cloudsforge.online`. The form `rpc.testnet.cloudsforge.online`
+has no DNS record at all, and could not work even if it did: Cloudflare's
+certificate for this zone is `*.cloudsforge.online`, a wildcard covering exactly
+one label, so a two-label name fails the TLS handshake at the edge. The same is
+true of every other surface — `explorer-testnet`, not `explorer.testnet`.
+
+**`/info` does not answer on the public endpoints, and that is not a fault.**
+On a node you run yourself, port 8645 serves `/info`, `/supply`, `/mempool` and
+`/mining/*` together. On the public endpoints only `/mining/*` is routed to that
+REST port; everything else reaches the Ethereum JSON-RPC on 8545. So:
+
+```
+$ curl https://rpc.cloudsforge.online/info
+{"jsonrpc":"2.0","id":null,"error":{"code":-32600,"message":"JSON-RPC requires POST"}}   # 405
+
+$ curl 'https://rpc.cloudsforge.online/mining/template?pub=<65-byte-hex>'
+{"templateId":"…","height":13513,"coreHash":"…","target":"…"}                            # 200
+```
+
+A 405 from `/info` on a URL that mines perfectly well has sent people looking
+for a wrong hostname. Ask for a template instead — that is the path the miner
+uses.
+
+**A 503 saying "this node is starting" is a healthy node, not a wrong address.**
+While a node replays its chain from disk after a restart it answers:
+
+```
+{"jsonrpc":"2.0","id":null,"error":{"code":-32000,"message":"this node is starting: replaying its chain from disk"}}
+```
+
+Observed for several minutes during a restart on 2026-08-11, after which the
+same URL returned `0x1cf3` without anything being changed. Wait and retry. The
+distinguishing signal is that DNS and TLS both succeeded to get you that error;
+a wrong hostname fails before any JSON comes back.
+
+### Gossip is WebSocket only
+
+`hearth-mine` does not need a peer — it takes work over HTTP. A **full**
+validating node does, and from outside this estate the only way in is the
+WebSocket:
+
+```
+hearthd --evm --mine --peer wss://p2p.cloudsforge.online/p2p
+```
+
+Only the `/p2p` path is routed; the host root answers 404. A WebSocket upgrade
+request to `/p2p` answers `426 Upgrade Required — Hearth p2p speaks WebSocket at
+/p2p`, which is what a healthy endpoint looks like to curl.
+
+The raw TCP gossip port **8646 is not reachable from outside and will not
+become reachable.** These hosts are published through a Cloudflare tunnel, and a
+tunnel does not carry raw TCP — that is why the node has a WebSocket transport
+on 8648 at all. `nc -z p2p.cloudsforge.online 8646` fails, as does 8645. Inside
+one machine or one compose network, 8646 is still the right port and nothing
+here changes that.
+
 ## Mining as a light client
 
 > **The browser miner is not in this repository, and it is not gone.** `web/mine.html`
@@ -289,7 +393,7 @@ not the best one. Two programs share **one** implementation of the loop —
 
 | | |
 |---|---|
-| `hearth-mine --url https://<host>` | The command line. `node/bin/hearth-mine.js`. A status line, a key file, no window. |
+| `hearth-mine --url https://rpc.cloudsforge.online` | The command line. `node/bin/hearth-mine.js`. A status line, a key file, no window. |
 | `app-desktop/` | A window: the address it pays, the hashrate, what it has earned, and a list of what it is doing. Ships its own Node runtime, so nothing has to be installed. |
 
 Both are light miners over the same two endpoints as the browser, and both carry

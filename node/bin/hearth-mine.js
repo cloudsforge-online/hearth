@@ -103,18 +103,54 @@ const HELP = `hearth-mine — mine EMBER against a Hearth node, over HTTP
   hearth-mine --url https://<host> [options]
   hearth-mine --address              print the address you would be paid at, and exit
 
+To mine the public CloudsForge networks, copy one of these exactly:
+
+  hearth-mine --url https://rpc.cloudsforge.online         --network hearth
+  hearth-mine --url https://rpc-testnet.cloudsforge.online --network hearth-testnet
+
+Both are plain HTTPS on port 443 with a publicly trusted certificate: no port,
+no --cacert, no host pin. The testnet name is spelled with a HYPHEN;
+rpc.testnet.cloudsforge.online does not exist.
+
 Options
-  --url URL         the node to take work from. Its REST API — the one that
-                    serves /info and /mining/*. Required.
+  --url URL         the node to take work from — the host serving /mining/*.
+                    Required.
   --data DIR        where the coinbase key lives (default ./data)
   --network NAME    hearth (default, chain 7411) or hearth-testnet (7412)
   --throttle F      0..1, the share of a core to use (default 1.0 — all of it)
   --status-ms N     how often to print progress when stdout is not a terminal
   --quiet           only print blocks found and problems
 
+--network must match the chain the --url serves, and nothing checks it for you:
+it selects the proof-of-work parameters this miner grinds with, so a mismatch
+produces proofs the node rejects rather than an error that names the cause.
+
+DO NOT probe these endpoints with /info. On a local node, :8645 serves both
+/info and /mining/*. On the public endpoints only /mining/* is routed to that
+REST port; everything else goes to the Ethereum JSON-RPC, so /info answers
+405 "JSON-RPC requires POST" on a URL that mines perfectly well. To check one
+by hand, ask for a template or ask the JSON-RPC what chain it is:
+
+  curl "https://rpc.cloudsforge.online/mining/template?pub=<65-byte-hex>"
+  curl -X POST -d '{"jsonrpc":"2.0","id":1,"method":"eth_chainId"}' https://rpc.cloudsforge.online
+
+The second answers {"result":"0x1cf3"} for mainnet and {"result":"0x1cf4"} for
+the testnet — 7411 and 7412.
+
+A node still replaying its chain at startup answers -32000 "this node is
+starting" with HTTP 503. That is a healthy node that is not ready yet; wait and
+retry rather than changing the URL.
+
 This is a LIGHT miner: no chain, no sync, no open ports. It cannot validate the
 chain it mines on, so point it at a node you trust. For a full validating node
-that also mines, use:  hearthd --evm --mine --peer wss://p2p.<apex>/p2p
+that also mines, use:
+
+  hearthd --evm --mine --peer wss://p2p.cloudsforge.online/p2p          (mainnet)
+  hearthd --evm --mine --peer wss://p2p-testnet.cloudsforge.online/p2p  (testnet)
+
+Only the /p2p path is routed on those hosts, and the WebSocket is the only way
+in from outside: the raw TCP gossip port 8646 is not published and cannot be,
+because a Cloudflare tunnel does not carry raw TCP.
 
 The reward is paid to the key in <data>/coinbase-key.json, created on first run.
 Back that file up. Whoever holds it holds the coins.
@@ -223,12 +259,17 @@ if (!opts.url) {
   This is a light miner: it takes work from a node over HTTP and posts proofs
   back. It has no chain of its own, so there is nothing for it to mine alone.
 
-      hearth-mine --url https://<host>
+      hearth-mine --url https://rpc.cloudsforge.online --network hearth
+
+  is the public EMBER main network (chain 7411). The test network is
+  https://rpc-testnet.cloudsforge.online with --network hearth-testnet — one
+  hyphen, not a dot. Both are plain HTTPS on 443; neither needs a port or a
+  certificate flag.
 
   If you want a full node that validates the chain AND mines it, that is a
   different program and it is already here:
 
-      hearthd --evm --mine --peer wss://p2p.<apex>/p2p
+      hearthd --evm --mine --peer wss://p2p.cloudsforge.online/p2p
 `);
   process.exit(2);
 }
@@ -289,7 +330,13 @@ session.on('accepted', a => {
 session.on('unreachable', u => {
   say(C.y(`  ⚠ ${u.err}`));
   say(C.y('    will retry every few seconds. Nothing is being mined until it answers.'));
-  if (u.status) say(C.y('    Check that --url points at the REST API, the one that serves /info.'));
+  /* This used to say "check that --url points at the REST API, the one that serves /info", which
+   * sends a miner to the one path that is deliberately NOT routed on the public endpoints. There,
+   * /mining/* reaches the REST port and everything else reaches the Ethereum JSON-RPC, so /info
+   * answers 405 on a URL that mines correctly — the hint manufactured the doubt it was meant to
+   * settle. /mining/template is the path this program actually uses, so it is the one to check. */
+  if (u.status) say(C.y('    Check that --url serves /mining/template — that is the path this needs.'));
+  if (u.status === 503) say(C.y('    A 503 with "this node is starting" is a healthy node replaying its chain. Wait.'));
 });
 session.on('reachable', u => say(C.g(`  ✓ ${u.url} is answering again`)));
 
