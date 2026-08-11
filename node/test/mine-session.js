@@ -359,12 +359,12 @@ function fakeFetch(handler) {
   //
   // The cause is an interaction, which is why neither half looks wrong alone:
   //
-  //   THE NODE MEMOIZES THE CANDIDATE on (tip, mempool version, coinbase key)
-  //   — src/chain/miner.js — because /mining/template is unauthenticated
-  //   and building one EXECUTES a full block. So while the tip is still, every
-  //   request returns a byte-identical `coreHash` with a frozen `timestamp`;
-  //   only `templateId` and `expiresAt` change. That is asserted below rather
-  //   than assumed.
+  //   THE NODE MEMOIZES THE CANDIDATE on (tip, mempool version, coinbase key,
+  //   clock bucket) — src/chain/miner.js — because /mining/template is
+  //   unauthenticated and building one EXECUTES a full block. So while the tip
+  //   is still AND the bucket has not rolled over, every request returns a
+  //   byte-identical `coreHash` with a frozen `timestamp`; only `templateId` and
+  //   `expiresAt` change. That is asserted below rather than assumed.
   //
   //   THE MINER RESTARTED ITS SEARCH AT NONCE 0 on every re-fetch, and a
   //   template expires every 120 s (src/chain/miner.js), so it re-fetched
@@ -383,7 +383,21 @@ function fakeFetch(handler) {
   // ==========================================================================
   {
     /* Two issues from a still tip. The node's own behaviour, checked, because
-     * every line below depends on it. */
+     * every line below depends on it.
+     *
+     * ALIGNED TO THE BUCKET FIRST, and without it this block is a 7% flake — it
+     * failed once in twenty runs on a laptop and once on CI. The memo key grew a
+     * clock bucket in 0.2.1 so that a long search is re-stamped (hearth#12), the
+     * bucket is TARGET_BLOCK_TIME wide and aligned to the epoch rather than to
+     * this test, and the second issue is 1.1 s after the first: if the first
+     * lands in the last 1.1 s of a bucket the two straddle it, the candidate is
+     * rebuilt with a fresh timestamp, and BOTH assertions below fail. That is the
+     * memo working as designed, not the defect this group exists for. Waiting for
+     * the rollover buys the pair a full interval of headroom and costs at most
+     * one interval of wall clock. */
+    const bucketOf = ms => Math.floor(ms / (P.TARGET_BLOCK_TIME * 1000));
+    for (const b0 = bucketOf(Date.now()); bucketOf(Date.now()) === b0;) await sleep(50);
+
     const t1 = fixtureNode.templates.issue(minerKey.publicKey.toString('hex'));
     await sleep(1100);                          // long enough for a second to tick over
     const t2 = fixtureNode.templates.issue(minerKey.publicKey.toString('hex'));
