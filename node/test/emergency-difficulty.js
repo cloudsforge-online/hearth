@@ -152,9 +152,14 @@ group('EMBER mainnet replays through the new rule, block for block');
    * cost is not 86 blocks, it is every block from 10,968 to the tip. */
   const ungated = replay(0);
   ok(ungated.disagreed > 0,
-    `and an UNGATED rule disagrees with ${ungated.disagreed} of them, first at height `
-    + `${ungated.firstAt.toLocaleString()} — which is where replay would stop, `
-    + `losing the ${(n - ungated.firstAt + 1).toLocaleString()} blocks above it`);
+    ungated.firstAt === null
+      /* Reported rather than thrown, because an easement that eases NOTHING
+       * reaches this line: the whole suite's premise is that the two rules
+       * differ somewhere, and if they do not, that is the finding. */
+      ? 'and an UNGATED rule disagrees NOWHERE — the easement is not easing anything'
+      : `and an UNGATED rule disagrees with ${ungated.disagreed} of them, first at height `
+        + `${ungated.firstAt.toLocaleString()} — which is where replay would stop, `
+        + `losing the ${(n - ungated.firstAt + 1).toLocaleString()} blocks above it`);
 }
 
 // ===========================================================================
