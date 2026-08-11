@@ -445,6 +445,16 @@ class Blockchain extends EventEmitter {
 
   // ---- difficulty ----------------------------------------------------------
 
+  /**
+   * The LWMA target at the tip — what a block arriving ON TIME must meet.
+   *
+   * Deliberately NOT the emergency-eased target: this is the number `/info`,
+   * `eth_getBlockByNumber` and the difficulty alert in micro-deploy read, and the
+   * easement is a momentary permission granted to one late block, not a change in
+   * what the chain is asking for. Reporting the eased value would make a gauge
+   * that reads the floor every time a block runs long, which is the opposite of
+   * what `EmberDifficultyAtFloor` was built to notice.
+   */
   nextTarget() { return this._nextTarget(this.tipId); }
 
   /**
@@ -452,6 +462,10 @@ class Blockchain extends EventEmitter {
    * solve times, each clamped to [1, 6×target], linearly weighted, scaling the
    * window's mean target. Unchanged on purpose: spec §4 says the proof of work and
    * the retarget are untouched and only the key they bind moves.
+   *
+   * Still a pure function of COMMITTED HISTORY and of nothing else, which is what
+   * `_targetFor` below depends on: the base a block is eased FROM cannot be
+   * influenced by the block doing the easing.
    */
   _nextTarget(parentId) {
     const parent = this.store.get(parentId);
@@ -476,6 +490,44 @@ class Blockchain extends EventEmitter {
     if (next < min) next = min;
     if (next > max) next = max;
     return next.toString(16).padStart(64, '0');
+  }
+
+  /**
+   * The target a block extending `parentId` and stamped `timestamp` must meet —
+   * the LWMA above, eased to the difficulty floor if the block is already more
+   * than `P.emergencySolveSeconds()` past its parent.
+   *
+   * THE WHOLE RULE IS THE TWO COMPARISONS BELOW. The argument for it, the burst
+   * it was measured against, why the easement is the floor rather than something
+   * proportional, and why a branch built out of eased blocks loses on cumulative
+   * work anyway, are all at EMERGENCY_SOLVE_MULTIPLE in ../params.js. Two things
+   * that belong here rather than there:
+   *
+   * `timestamp` is the block's OWN stamp and never this node's clock. That is the
+   * difference between a rule that replays and one that does not: `_validate`
+   * recomputes this for every block on disk at boot, days or months after the
+   * fact, and a `Date.now()` in here would make the expected target a function of
+   * WHEN the check runs. Two nodes would then disagree about the same block for
+   * no reason either could see. The stamp is honest because the two checks in
+   * `_validate` bracket it — median-time-past below, `P.maxFutureDriftS` above —
+   * and params.js refuses to load unless that drift is smaller than the threshold.
+   *
+   * The height gate is `parent.height + 1` — the height of the block being
+   * priced, not the tip's — so a reorg across the activation boundary prices each
+   * block by its own height and both sides of the fork agree about which rule
+   * applied to which block.
+   *
+   * MAX_TARGET is never harder than the base: `_nextTarget` clamps its result to
+   * it, and params.js asserts GENESIS_TARGET ≤ MAX_TARGET, so the substitution
+   * below can only ever ease.
+   */
+  _targetFor(parentId, timestamp) {
+    const base = this._nextTarget(parentId);
+    const parent = this.store.get(parentId);
+    if (!parent) return base;
+    if (!P.emergencyActive(parent.height + 1)) return base;
+    if (timestamp - parent.block.header.timestamp <= P.emergencySolveSeconds()) return base;
+    return P.MAX_TARGET;
   }
 
   // ---- the block reward ----------------------------------------------------
@@ -520,14 +572,21 @@ class Blockchain extends EventEmitter {
     if (hdr.prevHash !== parent.id) return { ok: false, err: 'parent mismatch' };
 
     const now = Math.floor(Date.now() / 1000);
-    if (hdr.timestamp > now + P.MAX_FUTURE_DRIFT_S) return { ok: false, err: 'timestamp too far in future' };
+    /* THESE TWO CHECKS ARE WHAT MAKES THE EMERGENCY EASEMENT HONEST, and from
+     * EMERGENCY_ACTIVATION_HEIGHT they are load-bearing rather than hygiene. The
+     * drift tightens from 7,200 s to 30 s at exactly the height the easement
+     * begins, because a block that may be stamped two hours ahead can claim a
+     * 120-second easement without waiting for it (params.js
+     * EMERGENCY_MAX_FUTURE_DRIFT_S). Median-time-past closes the other side: the
+     * gap the rule reads cannot be widened by backdating either. */
+    if (hdr.timestamp > now + P.maxFutureDriftS(hdr.height)) return { ok: false, err: 'timestamp too far in future' };
     if (hdr.timestamp <= this._medianTimePast(parent.id)) return { ok: false, err: 'timestamp <= median-time-past' };
 
     /* Fixed in v1 (spec §1). It is in the header so a later fork can move it, but
      * a block that moves it now is invalid — otherwise a miner sets it to 2^53 and
      * everyone else's node runs out of memory validating one block. */
     if (BigInt(hdr.gasLimit) !== this.gasLimit) return { ok: false, err: 'wrong gas limit' };
-    if (hdr.target !== this._nextTarget(parent.id)) return { ok: false, err: 'wrong difficulty target' };
+    if (hdr.target !== this._targetFor(parent.id, hdr.timestamp)) return { ok: false, err: 'wrong difficulty target' };
 
     if (!pow) pow = HDR.verifyPow(hdr);
     if (!pow.ok) return { ok: false, err: pow.err };
@@ -708,11 +767,17 @@ class Blockchain extends EventEmitter {
     if (!parent) throw new Error('blockchain: no such parent ' + parentId);
     const height = parent.height + 1;
     const coinbase = HDR.coinbaseAddress(coinbasePub);
-    const target = this._nextTarget(parentId);
     const ts = Math.max(
       Number(timestamp === undefined ? Math.floor(Date.now() / 1000) : timestamp),
       this._medianTimePast(parentId) + 1,
     );
+    /* THE STAMP IS TAKEN BEFORE THE TARGET, and the order is the rule working.
+     * `_targetFor` prices a block by how late it already is, so a candidate
+     * rebuilt past the threshold — which is what the clock bucket in
+     * chain/miner.js `candidateFor` exists to force — is assembled at the eased
+     * target and the search that follows is the short one. Computing the target
+     * first would hand every miner the pre-easement number forever. */
+    const target = this._targetFor(parentId, ts);
 
     const hdrCtx = {
       height, timestamp: ts, gasLimit: Number(this.gasLimit),

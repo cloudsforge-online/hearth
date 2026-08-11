@@ -91,6 +91,131 @@ module.exports = {
   BLOCKS_PER_YEAR: Math.round((365.25 * 24 * 3600) / 15), // ~2,103,840
   LWMA_WINDOW: 60,                              // blocks used to retarget difficulty
 
+  /* ---- THE ABSOLUTE-TIME EMERGENCY DIFFICULTY RULE (micro-org#363) ----------
+   *
+   * A block whose own timestamp is more than EMERGENCY_SOLVE_MULTIPLE ×
+   * TARGET_BLOCK_TIME past its parent's may be mined at MAX_TARGET — the
+   * difficulty floor — instead of at the LWMA target. 8 × 15 s = 120 s.
+   *
+   * WHY, MEASURED. On 2026-08-10 one browser tab took EMBER mainnet from the
+   * floor (difficulty 256) to 8,146 in about 140 blocks, and then closed. The
+   * estate's remaining ~17 H/s needed roughly 13 minutes a block against what
+   * was left, and the tip did not move for 19 minutes; the wedge was still being
+   * walked off 48 minutes later. LWMA cannot answer that quickly and the reason
+   * is the WINDOW, not the clamp: one fresh sample carries weight 60 out of a
+   * weight sum of 1,830, so it moves the average about 3% however honest it is
+   * allowed to be. Replaying the real retarget against the measured burst
+   * (baseline 17.1 H/s, +550 H/s for 30 minutes), widening the solve clamp from
+   * 90 s to 1,800 s only moves recovery from 90 to 48 minutes, and NOTHING that
+   * adjusts the NEXT target shortens the longest block at all — the first block
+   * after the hashrate leaves is priced at the peak by definition.
+   *
+   * So the remedy has to price the block being ground, not the one after it.
+   * That is what an absolute-time rule is, it is what Digishield's and Zawy's
+   * exist for, and it is the only candidate that bounds the WORST case rather
+   * than the average.
+   *
+   * WHY 8x AND NOT 20x OR 40x. The easement has to engage BELOW the wedged block
+   * time or it never fires: the measured burst's longest block was 486 s, so a
+   * 40x (600 s) threshold is identical to doing nothing. 8x also leaves ordinary
+   * operation alone — replaying a single laptop's tab (+60 H/s for 10 minutes)
+   * the peak reaches 4x the floor, the longest block is 54 s, and the rule never
+   * engages. Of the 13,483 blocks mainnet had mined by 2026-08-11, 877 have a
+   * solve time over 120 s, which is exactly why the activation height below is
+   * not optional.
+   *
+   * WHY THE FLOOR AND NOT A PROPORTIONAL EASEMENT. A target eased in proportion
+   * to how late the block already is still leaves the worst case growing with
+   * the size of the burst (as its square root); simulated against +550 H/s it
+   * gives a 2.8-minute longest block and against +2,000 H/s a much worse one.
+   * Dropping straight to the floor makes the worst case 120 s plus one block at
+   * the difficulty the chain launched at, WHATEVER the burst was — which is the
+   * property micro-org#363 is asking for. It is also one comparison and one
+   * substitution: `rust/hearthd` is not a second implementation (it has no block
+   * store and never accepts a block, see docs/why-two-implementations.md), so
+   * nothing cross-checks this rule and it has to be right on inspection.
+   *
+   * WHY THIS IS NOT THE CHEAP-SIDE-BRANCH ATTACK MAX_TARGET DOCUMENTS. That
+   * attack is cheap AND FAST: closely-spaced timestamps walk the target to the
+   * floor in three blocks and then pin there, and the branch grows as fast as a
+   * CPU can make 0.44 s blocks. Claiming this easement is cheap and SLOW. The
+   * stamp that claims it cannot run ahead of real time by more than
+   * EMERGENCY_MAX_FUTURE_DRIFT_S, and median-time-past forbids going backwards,
+   * so such a branch accrues 256 of work every ~91 s — 2.8 work/s — against an
+   * honest chain at the floor accruing 256 every 15 s, or 17 work/s. Fork choice
+   * here is cumulative work (`_ingest`), so the honest side wins by six times
+   * and the attacker has bought a slower chain. Emission is bounded the same
+   * way: a miner that games this produces blocks eight times SLOWER than one
+   * that does not.
+   *
+   * THE TIMESTAMP IS AN INPUT, AND IT IS BRACKETED ON BOTH SIDES. The rule reads
+   * `header.timestamp - parent.timestamp`. The parent's half is committed
+   * history; the block's own half is bounded below by median-time-past and above
+   * by real time plus the drift, and the assertion at the foot of this file
+   * requires that drift to be smaller than the threshold — so no miner can
+   * stamp its way into the easement without genuinely waiting for it. What the
+   * rule never reads is the VALIDATOR's clock: two nodes checking the same block
+   * a day apart compute the same target, and so does disk replay, which is the
+   * property `_validate` needs and the one a naive `now - tipTimestamp` would
+   * have broken.
+   *
+   * PREREQUISITE, ALREADY SHIPPED (hearth#12). Until 0.2.1 a candidate's
+   * timestamp was stamped when the search STARTED, so `timestamp -
+   * parent.timestamp` never reflected a stall in progress and this rule could
+   * not have engaged at any height. `candidateFor` now re-stamps on a clock
+   * bucket; without that, everything here is inert.
+   */
+  EMERGENCY_SOLVE_MULTIPLE: 8,                  // × TARGET_BLOCK_TIME ⇒ 120 s
+
+  /* THE ACTIVATION HEIGHT, AND WHY THERE HAS TO BE ONE.
+   *
+   * `_validate` recomputes the expected target for every block, and disk replay
+   * runs the same validation, so an UNGATED easement would change the target of
+   * mainnet blocks that are already on disk — the node would refuse its own
+   * history and load a shorter chain. Replaying the real header series through
+   * the shipped rule, the first disagreement is at height 10,968, so the cost of
+   * getting this wrong is not a handful of blocks, it is every block from the
+   * browser-mining excursion to the tip. This is the same failure MAX_TARGET's
+   * comment records for the ceiling; there it was accepted because nothing but
+   * throwaway testnets had ever run, and here it is not.
+   *
+   * 15,000 was the first proposal, chosen on 2026-08-11 with the mainnet tip at
+   * 13,483 and an assumed ~43 s a block: about eighteen hours of notice. Measured
+   * the same afternoon at merge time the tip was 13,671 and the real rate over
+   * the last 500 blocks was 23 s — so 15,000 was **eight hours** away, not
+   * eighteen. THE NOTICE PERIOD IS THE POINT OF AN ACTIVATION HEIGHT, and eight
+   * hours is not a notice period for a consensus change on a chain whose node
+   * ships as a downloadable .deb, .rpm, AppImage, .dmg, MSI and NSIS installer.
+   * A node that is still on 0.2.x when the tip crosses does not degrade: it
+   * rejects the first eased block as `wrong difficulty target` and stops
+   * following the chain, silently, from an operator's point of view.
+   *
+   * 20,000 at 23 s a block is about forty hours from 13,671. That is the number
+   * this ships with, and the arithmetic is written down because the next person
+   * to move it should redo it against a MEASURED rate rather than a remembered
+   * one — an estimate that was off by 2.6x is the whole reason this paragraph
+   * exists.
+   *
+   * What the delay costs is bounded and known: two more days in which a browser
+   * tab leaving can wedge the tip for the ~20 minutes micro-org#363 measured.
+   * The estate has tolerated that since 2026-08-10 and now alerts on it
+   * (`EmberChainStalled`, `EmberDifficultyAtFloor`), so the wedge is loud rather
+   * than invisible. Forking a node operator off the chain is neither bounded nor
+   * loud, which is why the trade goes this way.
+   *
+   * Both live chains are below it (mainnet 13,671, testnet 7,820 at the time of
+   * writing), so one constant serves both. TESTNET WILL NOT REHEARSE THIS FORK
+   * and that is worth saying rather than leaving to be discovered: its own tip is
+   * barely a third of the activation height and it mines from one miner, so
+   * mainnet crosses first by a wide margin. An operator who wants a rehearsal has
+   * to mine testnet past 20,000 deliberately.
+   *
+   * Below this height the old rule applies EXACTLY as before — that is the whole
+   * point of the gate, and test/emergency-difficulty.js replays the real mainnet
+   * header series against it to prove the two agree at every height.
+   */
+  EMERGENCY_ACTIVATION_HEIGHT: 20_000,
+
   // ---- emission (see docs/coinnomics.md) ----
   R0_EMBER: 6,                                  // genesis block reward
   REWARD_HALFLIFE_YEARS: 2,
@@ -248,6 +373,35 @@ module.exports = {
   // have a maturity rule is a real and open question; it is not this constant.
   COINBASE_MATURITY: 10,                    // coinbase unspendable until N deep (UTXO path only)
   MAX_FUTURE_DRIFT_S: 7200,                 // reject timestamps >2h in the future (Bitcoin-like)
+
+  /* …and what it becomes on the account model at EMERGENCY_ACTIVATION_HEIGHT,
+   * because 7,200 s and a 120-second easement threshold cannot both be true.
+   *
+   * 7,200 is Bitcoin's number, and Bitcoin's block is 600 s: it is twelve block
+   * intervals there and FOUR HUNDRED AND EIGHTY here. Against the emergency rule
+   * that is not slack, it is a gift — a miner stamps 121 s past its parent
+   * whenever it likes, well inside two hours of drift, and mines every block at
+   * the floor without ever waiting. The rule would be optional.
+   *
+   * 30 s is two block intervals. It leaves 90 of the easement's 120 s that must
+   * be genuinely elapsed before the eased target can even be asked for, and the
+   * assertion at the foot of this file refuses to load if that inequality is
+   * ever broken by a retune of either constant.
+   *
+   * WHAT IT COSTS. A node whose clock is slow rejects a fresh tip it would
+   * otherwise accept. That is survivable here in a way it is not on Bitcoin:
+   * blocks are stamped by the node that BUILDS the template (`buildCandidate`),
+   * so the honest path has no drift at all, and a peer that rejects a block for
+   * this reason re-requests it on the next P2P_RESYNC_MS sweep — 20 s — and
+   * accepts it then. A permanently misconfigured clock is a real failure and it
+   * is meant to be: on a chain whose difficulty now depends on timestamps, a
+   * node that cannot tell the time should say so loudly rather than mine.
+   *
+   * Kept as a SECOND constant rather than an edit to the first because the UTXO
+   * chain (`src/chain.js`) reads MAX_FUTURE_DRIFT_S too, has no emergency rule,
+   * and must not be forked by a change made for the account model. */
+  EMERGENCY_MAX_FUTURE_DRIFT_S: 30,
+
   MEDIAN_TIME_SPAN: 11,                     // median-time-past window
   P2P_MAX_LINE: 4 * 1024 * 1024,            // drop peers that send >4MiB without a newline
   P2P_MAX_PEERS: 64,
@@ -569,6 +723,24 @@ module.exports = {
    *  this many percent, or a free re-broadcast loop evicts it forever. */
   EVM_REPLACE_BUMP_PERCENT: 10,
 
+  /* ---- the emergency difficulty rule, as three questions ------------------
+   *
+   * Functions rather than constants so that the ONE height a caller has to
+   * supply is the same one in all three, and so a suite can move
+   * EMERGENCY_ACTIVATION_HEIGHT and have every reader follow it — the pattern
+   * test/records.js already uses for RECORDS_ACTIVATION_HEIGHT. */
+
+  /** Is the emergency rule in force for a block at this height? */
+  emergencyActive(height) { return height >= this.EMERGENCY_ACTIVATION_HEIGHT; },
+
+  /** The solve time past which a block may be mined at MAX_TARGET. */
+  emergencySolveSeconds() { return this.EMERGENCY_SOLVE_MULTIPLE * this.TARGET_BLOCK_TIME; },
+
+  /** How far ahead of this node's clock a block at this height may be stamped. */
+  maxFutureDriftS(height) {
+    return this.emergencyActive(height) ? this.EMERGENCY_MAX_FUTURE_DRIFT_S : this.MAX_FUTURE_DRIFT_S;
+  },
+
   /** Subsidy in WEI at a given height — the identical schedule, scaled. */
   subsidyWei(height) {
     return BigInt(this.subsidy(height)) * this.WEI_PER_SPARK;
@@ -645,5 +817,26 @@ module.exports = {
   // it is still one SHA-256 per step inside the same per-block budget.
   if (!Number.isInteger(m.POW_WALK_STEPS) || m.POW_WALK_STEPS < 1 || m.POW_WALK_STEPS > 1_048_576) {
     throw new Error('params: POW_WALK_STEPS must be a positive integer at most 1,048,576');
+  }
+
+  /* THE ONE INEQUALITY THE EMERGENCY RULE RESTS ON, asserted at load for the
+   * same reason the difficulty ladder above is: it spans two constants three
+   * hundred lines apart, either of which a future retune would edit alone.
+   *
+   * If a block may be stamped further into the future than the easement's
+   * threshold, then the easement can be TAKEN rather than waited for, the rule
+   * stops bounding anything, and every block on the chain can be mined at the
+   * floor. Nothing about a node in that state looks broken — it mines, it syncs,
+   * it serves RPC — so there is no later moment at which it would be noticed.
+   * Refuse to start instead. */
+  if (!(m.EMERGENCY_MAX_FUTURE_DRIFT_S < m.EMERGENCY_SOLVE_MULTIPLE * m.TARGET_BLOCK_TIME)) {
+    throw new Error(
+      `params: EMERGENCY_MAX_FUTURE_DRIFT_S ${m.EMERGENCY_MAX_FUTURE_DRIFT_S} must be strictly less than the `
+      + `emergency solve threshold ${m.EMERGENCY_SOLVE_MULTIPLE * m.TARGET_BLOCK_TIME} s `
+      + '(EMERGENCY_SOLVE_MULTIPLE × TARGET_BLOCK_TIME). Above it, a miner stamps forward into the eased '
+      + 'target instead of waiting for it and mines every block at MAX_TARGET. See micro-org#363.');
+  }
+  if (!Number.isInteger(m.EMERGENCY_ACTIVATION_HEIGHT) || m.EMERGENCY_ACTIVATION_HEIGHT < 0) {
+    throw new Error('params: EMERGENCY_ACTIVATION_HEIGHT must be a non-negative integer block height');
   }
 }
