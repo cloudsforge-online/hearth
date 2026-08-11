@@ -160,11 +160,44 @@ restarts.
 
 **`hearth-mine` is the way in, and it is not a node.** It takes work from a node
 over HTTP, grinds it, and posts the proof back. No chain on your disk, no sync,
-no open ports:
+no open ports.
+
+Against **your own** isolated network from this file — the compose stack above, or
+a single `hearthd` — `--url` is the REST port on the machine running it:
 
 ```bash
-cd node && node bin/hearth-mine.js --url https://<host>
+cd node && node bin/hearth-mine.js \
+  --url http://127.0.0.1:8645 \
+  --network hearth-testnet \
+  --data ./data
 ```
+
+Against the **public** test network it is one hostname and no port, because
+everything there is plain HTTPS on 443 behind a publicly trusted certificate:
+
+```bash
+cd node && node bin/hearth-mine.js \
+  --url https://rpc-testnet.cloudsforge.online \
+  --network hearth-testnet \
+  --data ./data
+```
+
+This block used to be a lone `--url https://<host>` with no `--network`. Both
+halves of that were a trap. `https://<host>` is the shape of a public endpoint
+and this file never said which one, so a reader mining the public testnet had to
+guess a hostname from a document that names the right one four lines into its own
+header — and the near-miss this repository keeps retyping from old drafts is
+`rpc.testnet.cloudsforge.online`, which has no DNS record and could not work if it
+did, because the edge certificate is `*.cloudsforge.online` and a wildcard covers
+exactly one label. And `--network` defaults to `hearth`, so the
+omitted flag silently mines the test network under mainnet's name: the banner
+prints `chain 7411` while every template comes from 7412, which is the one line a
+miner reads to confirm they are on the network they meant to be on. The proofs
+themselves survive it — `hearth` and `hearth-testnet` share the same Homefire
+parameters (`node/src/params.js`, `POW_SCRATCH_KIB`/`POW_WALK_STEPS` differ only
+on `hearth-test*`) — so nothing breaks, which is exactly why it can go unnoticed
+for as long as it likes. [`docs/mining.md`](docs/mining.md) §"Where to point a
+miner" is the full table for both networks and is the source for this one.
 
 Two commands before that one are worth knowing:
 
@@ -195,8 +228,29 @@ an address you did not ask for. [`docs/mining-key-custody.md`](docs/mining-key-c
 is the whole procedure, including what to do about a key that already holds a
 balance.
 
-`--url` points at the **REST** API — the port serving `/info` and `/mining/*`,
-container `8645` — not the Ethereum JSON-RPC one.
+**`--url` is the host serving `/mining/*`, and on the public endpoints that is
+the same hostname as the JSON-RPC.** This paragraph used to read "`--url` points
+at the REST API — the port serving `/info` and `/mining/*`, container `8645` —
+not the Ethereum JSON-RPC one", which is true of a node you run yourself and
+false of anything published. On the public endpoints the gateway routes
+`/mining/template`, `/mining/submit` and `/events` to the REST port and sends
+everything else to the Ethereum JSON-RPC, so `https://rpc-testnet.cloudsforge.online`
+is simultaneously the JSON-RPC endpoint *and* the correct `--url`. Told
+otherwise, a miner reads "not the Ethereum JSON-RPC one", discards the only
+hostname that works, and goes looking for a REST name that was never published.
+
+The same sentence also sent people to `/info` to check the address, and `/info`
+is not routed publicly: it falls through to the JSON-RPC and answers
+`405 JSON-RPC requires POST` on a URL that mines perfectly well. The path to
+check by hand is the one the miner actually uses:
+
+```bash
+curl 'https://rpc-testnet.cloudsforge.online/mining/template?pub=<65-byte-hex>'   # 200 + a template
+```
+
+`node/bin/hearth-mine.js` carries the corrected form of both of these in its
+`--help` and in its unreachable-endpoint hint; this file was the copy that kept
+the old one.
 
 ### What a light miner gives up, and what it does not
 
