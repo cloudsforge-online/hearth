@@ -18,10 +18,10 @@ npm test        # 66 assertions over real HTTP against a stub node
 > being true on 2026-08-04, when mainnet 7411 went public. The estate's faucet is
 > a separate service, `micro-faucet`, behind
 > [`network-testnet.cloudsforge.online/faucet`](https://network-testnet.cloudsforge.online/faucet)
-> — testnet only, by four independent locks, and **it cannot pay out right now
-> either**, because testnet is stopped while the host's Bitcoin and Dogecoin nodes
-> finish initial block download (measured 2026-08-10: chain 7412 answers reads,
-> tip unchanged since 2026-08-08 18:00:11 UTC). There is deliberately **no mainnet
+> — testnet only, by four independent locks, and **it can pay out**: testnet is
+> mining again as of 2026-08-11 (chain 7412 at height 7,970 and moving, measured
+> 14:04 UTC). It could not between 2026-08-08 and 2026-08-11, while the chain it
+> drips from was deliberately stopped. There is deliberately **no mainnet
 > faucet**. This one runs against a local chain — `hearthd --evm --mine`, or the
 > three-node `docker-compose.testnet.yml` — and the service is finished and
 > tested. See [`../../docs/network-config.md`](../../docs/network-config.md).

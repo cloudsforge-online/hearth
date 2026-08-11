@@ -277,9 +277,11 @@ None of that shortens this list:
   perimeter, so a tunnel misconfiguration is an exposure, not just an outage.
 
 Reproduce findings against the **public testnet** — chain id 7412 at
-`https://rpc-testnet.cloudsforge.online` — rather than mainnet. It runs on the
-same home server and the same tunnel, so it is not an isolation boundary; it is
-just the chain where a mistake costs nothing.
+`https://rpc-testnet.cloudsforge.online` — rather than mainnet. It is mining
+again as of 2026-08-11 (height 7,970 and moving, measured 14:04 UTC), so a
+finding that needs a confirmation can get one there. It runs on the same host and
+the same tunnel as mainnet, so it is not an isolation boundary; it is just the
+chain where a mistake costs nothing.
 
 [`docs/evm-spec.md`](docs/evm-spec.md) §8 tracks the phases,
 [`docs/decisions.md`](docs/decisions.md) records why the non-obvious choices were

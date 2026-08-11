@@ -182,8 +182,11 @@ $ curl -X POST -H 'content-type: application/json' \
 {"jsonrpc":"2.0","id":1,"result":"0x1cf4"}
 ```
 
-`0x1cf3` is 7411 and `0x1cf4` is 7412. Both were reported by
-`Hearth/v0.2.1/linux-x64/node22.23.1` and `Hearth/v0.2.0` respectively.
+`0x1cf3` is 7411 and `0x1cf4` is 7412. Measured 2026-08-11 14:04 UTC,
+`web3_clientVersion` answered **`Hearth/v0.3.0/linux-x64/node22.23.1` on both** —
+which is the version that carries the emergency difficulty rule below, so both
+published chains will survive its activation. Ask the same question of your own
+node before mainnet reaches height 20,000.
 
 ### Three ways this goes wrong, and how to tell them apart
 
@@ -412,14 +415,28 @@ every block it found was thrown away. The desktop application therefore runs the
 same JavaScript the command-line miner runs, in a bundled Node runtime, rather
 than a port. `app-desktop/src-tauri/src/engine.rs:7-17` is the long version.
 
-**The key is the difference between them.** `hearth-mine` and `hearthd` write the
-coinbase key in the clear at mode 600 (`node/src/coinbase.js`), which is the
-right trade for a server that must come back up unattended after a reboot — a
-passphrase the machine can read by itself is not a passphrase. A laptop is the
-opposite case: the file is synced, backed up to a cloud and carried around. So the
-desktop app uses an encrypted keystore instead — scrypt N=2¹⁸ over a passphrase,
-AES-256-GCM over the key, and the address in the clear so the app can say who it
-pays before you unlock anything (`node/src/mine/keystore.js`).
+**The key is where they used to differ, and they no longer have to.** A server
+that must come back up unattended after a reboot cannot hold a passphrase a human
+types, so `hearth-mine` and `hearthd` will still create and read a plaintext
+`coinbase-key.json` at mode 600 if nothing better is configured. That is the
+**fallback, not the recommendation.** `node/src/coinbase.js` resolves a key from
+four sources, most protected first — `env`, `env-file`, `keystore`, `plaintext`
+— and two environment variables make the choice explicit:
+
+| Variable | What it does |
+| --- | --- |
+| `HEARTH_COINBASE_SOURCE` | Names **one** source and consults no other. Creation on miss is switched off, so a keystore that fails to mount is a refusal rather than a quiet fall back to a plaintext file you thought you had deleted. |
+| `HEARTH_COINBASE_ADDRESS` | Pins the address the resolved key must derive. Get it wrong and the process refuses to start, instead of mining happily into an account nobody has the key for. This is what makes a key migration checkable without ever printing a key. |
+
+The estate's own miners run this way: seal a key with `hearth minerkey seal` and
+set `HEARTH_COINBASE_SOURCE=keystore` with a passphrase file. Read
+[`mining-key-custody.md`](mining-key-custody.md) before you decide, because the
+belief this paragraph used to encourage — "a server has to keep it in the clear"
+— is exactly the one that document exists to correct.
+
+The desktop app uses the same encrypted keystore by default: scrypt N=2¹⁸ over a
+passphrase, AES-256-GCM over the key, and the address in the clear so the app can
+say who it pays before you unlock anything (`node/src/mine/keystore.js`).
 
 **There is no mobile miner, and there should not be.** Proof-of-work on a phone is
 thermally throttled and battery-hostile, and at a 15-second block target against
@@ -430,16 +447,73 @@ key.
 ## Difficulty & security
 - Retarget every block with LWMA to resist timestamp manipulation and hashrate
   swings.
+- **From height 20,000 an absolute-time emergency rule sits beside the LWMA —
+  and it is a consensus change you must upgrade for.** See the section below.
 - The **perpetual tail** (0.3 EMBER/block) guarantees a standing reward, so
   security never depends on a speculative fee market (no "fee cliff").
+
+### The emergency difficulty rule, and the upgrade it obliges (mainnet height 20,000)
+
+**If you run a node — not just `hearth-mine` — upgrade it to 0.3.0 before
+mainnet reaches height 20,000.** A node still on 0.2.x rejects the first eased
+block as `wrong difficulty target` and stops following the chain. It does not
+crash and it does not say anything an operator would notice; it just quietly
+stops advancing. Check what you are running with `web3_clientVersion`.
+
+`hearth-mine` and the desktop app hold no chain and validate nothing, so they do
+not fork — but they take work from whatever node they point at, and a wedged
+node hands out work on a chain nobody else is on.
+
+**What the rule is.** A block whose own timestamp is more than
+`EMERGENCY_SOLVE_MULTIPLE × TARGET_BLOCK_TIME` — **8 × 15 s = 120 s** — past its
+parent's may be mined at `MAX_TARGET`, the difficulty floor, instead of at the
+LWMA target. Below height 20,000 the old rule applies exactly as before, which
+is what the activation height is for: `_validate` recomputes the expected target
+for every block including on disk replay, so an ungated easement would make a
+node refuse its own history.
+
+**Why it exists.** On 2026-08-10 a single browser tab took mainnet from
+difficulty 256 to 8,146 in about 140 blocks and then closed. The tip did not move
+for 19 minutes and the wedge was still being walked off 48 minutes later. LWMA
+cannot answer that quickly, and the reason is the window rather than the clamp:
+one fresh sample carries weight 60 out of a weight sum of 1,830, so it moves the
+average about 3% however honest it is allowed to be. Nothing that adjusts the
+*next* target shortens the longest block at all — the first block after the
+hashrate leaves is priced at the peak by definition. An absolute-time rule prices
+the block being ground.
+
+**Why it cannot be gamed for cheap blocks.** Claiming the easement is cheap but
+*slow*: the stamp that claims it may not run ahead of real time by more than
+`EMERGENCY_MAX_FUTURE_DRIFT_S` — **30 s from height 20,000, down from 7,200 s**
+— and median-time-past forbids going backwards, so such a branch accrues 256 of
+work every ~91 s against an honest chain at the floor accruing 256 every 15 s.
+Fork choice is cumulative work, so the honest side wins by six times. A miner who
+games this produces blocks eight times *slower* than one who does not.
+
+Every constant, and the arithmetic behind each of them, is in
+[`node/src/params.js`](../node/src/params.js) under
+`THE ABSOLUTE-TIME EMERGENCY DIFFICULTY RULE`;
+`node/test/emergency-difficulty.js` replays the real mainnet header series to
+prove the two rules agree at every height below the gate.
+
+**Testnet will not rehearse this fork.** Its tip is around a third of the
+activation height and it mines from one miner, so mainnet crosses first by a wide
+margin. A rehearsal has to be mined for deliberately.
 
 ## FAQ for miners
 - **Do I need a GPU or ASIC?** No. A normal CPU is the intended machine. GPUs and
   ASICs gain little to nothing.
-- **Can I join a pool for steadier payouts?** None exists today, and nothing in
-  the protocol prevents one from being built — a pool would hand out work under
-  its own key and pay hashers off chain. What consensus *does* guarantee is that
-  work handed to you under your own key cannot be taken from you.
+- **Can I join a pool for steadier payouts?** **Not for EMBER.** CloudsForge does
+  run a Stratum v1 pool (`micro-pool`), and it serves the Bitcoin-family chains —
+  BTC and LTC, with DOGE merge-mined under AuxPoW against Litecoin. It **refuses
+  EMBER by name** rather than silently omitting it: Hearth hands out work over
+  HTTP under *your* key at `/mining/template?pub=…`, which is a different shape
+  from `getblocktemplate` and stratum, and there is no stratum port to serve it
+  on. Nothing in the protocol prevents an EMBER pool from being built — it would
+  hand out work under its own key and pay hashers off chain. What consensus
+  *does* guarantee is that work handed to you under your own key cannot be taken
+  from you, which is why solo mining here is not the disadvantage it is on a
+  chain where a pool holds the coinbase.
 - **Will it drain my battery?** It will use whatever share of a core you give it and
   **nothing here is power-aware.** `hearth-mine`, the desktop app and `hearthd --mine`
   all have a duty-cycle throttle and no power awareness at all. The pause-on-battery

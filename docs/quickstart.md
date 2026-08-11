@@ -15,11 +15,18 @@ JSON-RPC over POST with a publicly trusted certificate, and an explorer is at
 `https://explorer.cloudsforge.online`.
 
 Read it before you trust it. Block 1 was mined 2026-08-04 19:12:21 UTC; measured
-2026-08-10 17:56 UTC it is **just under six days old and 10,987 blocks tall**,
-carries **62 transactions in 52 of those blocks — none of them from anybody
-outside this project**, and runs on **one home server behind one Cloudflare
-Tunnel** with no redundancy and no restored backup. Nothing here has been
-independently audited.
+2026-08-11 14:04 UTC it is **just under seven days old and 13,946 blocks tall**,
+carried **62 transactions in 52 of those blocks — none of them from anybody
+outside this project** when last walked in full on 2026-08-10, and runs on **one
+home server behind one Cloudflare Tunnel** with no redundancy and no restored
+backup. Nothing here has been independently audited.
+
+**A consensus change activates at height 20,000.** If you run a node rather than
+just pointing a client at one, it must be **0.3.0 or later** before the tip gets
+there; a 0.2.x node rejects the first eased block and silently stops following
+the chain. Both published chains already answer `web3_clientVersion` with
+`Hearth/v0.3.0`. [`mining.md`](mining.md#the-emergency-difficulty-rule-and-the-upgrade-it-obliges-mainnet-height-20000)
+has the rule and the reason.
 
 **Every block it has ever had was mined by this project**, and its difficulty is
 not a stable number: on the evening of 2026-08-10 a single browser tab took it up
@@ -30,16 +37,17 @@ write a timeout against an assumed block interval** — poll for the receipt.
 
 A **public testnet** is reachable at `https://rpc-testnet.cloudsforge.online`
 (chain id 7412), with a faucet at
-`https://network-testnet.cloudsforge.online/faucet` — but it is **stopped right
-now**, and that changes what you should do. Its height has not moved from 7,765
-since 2026-08-08 18:00:11 UTC, deliberately, while the host's `bitcoind` and
-`dogecoind` finish initial block download on the same disk. **A write sent there
-will not confirm and the faucet cannot pay.** Until it resumes, point anything
-that writes at a chain of your own — `hearthd --evm --mine` — rather than at
-mainnet.
+`https://network-testnet.cloudsforge.online/faucet`, and **it is mining again**.
+It was deliberately stopped between 2026-08-08 and 2026-08-11 while the chain
+host's `bitcoind` and `dogecoind` competed for the same disk; `bitcoind` has
+since reached the tip, the chain daemons now run on a host of their own, and the
+testnet miner was repointed at the public RPC name and restarted. Measured
+2026-08-11 14:04 UTC its height is **7,970 and moving** — it advanced across a
+75-second poll — with a tip timestamp three minutes before the reading. Sends
+confirm there and the faucet can pay.
 
-Which is why most of this page still runs against a chain of your own. One
-command starts one:
+Most of this page still runs against a chain of your own, because that is faster
+to iterate against than either public chain. One command starts one:
 
 ```bash
 node node/bin/hearthd.js --evm --mine --data /tmp/hearth      # [RUN]
@@ -121,11 +129,26 @@ receive funds here.
 
 ## 3. Point your tooling at a node
 
+Two chains are published, and either is a real answer to this step:
+
 ```bash
-export HEARTH_RPC_URL=…      # ⬜ [WAITING] — nothing is published to point at
+export HEARTH_RPC_URL=https://rpc.cloudsforge.online          # mainnet, chain id 7411
+export HEARTH_RPC_URL=https://rpc-testnet.cloudsforge.online  # testnet, chain id 7412
 ```
 
-Run your own instead. This is the path the rest of the page takes:
+Both answered from outside this network, with no credentials, on **2026-08-11
+14:04 UTC**: `eth_chainId` → `0x1cf3` and `0x1cf4`, `web3_clientVersion` →
+`Hearth/v0.3.0/linux-x64/node22.23.1` on both, and both heights moved across a
+75-second poll — mainnet 13,941 → 13,946, testnet 7,969 → 7,970. A `GET` to
+either answers `405`, because these are JSON-RPC endpoints and not pages; that
+is the correct response and not a fault.
+
+**Deploy to testnet first** if you are deploying something you have not deployed
+before, and fund it from
+[`network-testnet.cloudsforge.online/faucet`](https://network-testnet.cloudsforge.online/faucet).
+
+A chain of your own is still the fastest thing to iterate against, and it is the
+path the rest of this page takes:
 
 ```bash
 node node/bin/hearthd.js --evm --mine --data /tmp/hearth   # [RUN]
@@ -220,11 +243,10 @@ not deployed anywhere public.
 
 The estate does serve a faucet, at
 [`network-testnet.cloudsforge.online/faucet`](https://network-testnet.cloudsforge.online/faucet),
-and it is a different service (`micro-faucet`). **It cannot pay you today**:
-it drips on testnet only, and testnet is stopped while the host's Bitcoin and
-Dogecoin nodes finish initial block download — measured 2026-08-10, chain 7412
-answers `eth_chainId` but its tip has not moved since 2026-08-08 18:00:11 UTC.
-There is deliberately no mainnet faucet at all.
+and it is a different service (`micro-faucet`). **It drips on testnet only** —
+there is deliberately no mainnet faucet at all — and testnet is producing blocks
+again as of 2026-08-11, so a drip from it now confirms. Between 2026-08-08 and
+2026-08-11 it could not pay, because the chain it drips from was stopped.
 
 On your own chain you do not need it: **mine.** `hearthd --evm --mine` pays the
 subsidy to a key it generates on first start and keeps at
@@ -668,7 +690,7 @@ Do not plan around any of these:
 | | |
 | --- | --- |
 | A **published** RPC endpoint | ✅ `https://rpc.cloudsforge.online`, chain id 7411, POST only. What it does **not** have is age, transactions, a demonstrated hashrate, an audit or a second machine |
-| A **public** testnet | 🟡 chain id **7412** at `https://rpc-testnet.cloudsforge.online`, explorer `https://explorer-testnet.cloudsforge.online`, faucet `https://network-testnet.cloudsforge.online/faucet` — all reachable, and **the chain is stopped**: measured 2026-08-10, height `0x1e55` (7,765) with a tip timestamp of 2026-08-08 18:00:11 UTC and no movement across polls. Deliberate, while the host's `bitcoind` and `dogecoind` finish initial block download on the same disk. Reads answer; a transaction sent there will not confirm. Hostnames are single-label `<surface>-testnet.` — the two-label `*.testnet.cloudsforge.online` form fails the TLS handshake and is not used. Genesis hash in [`../TESTNET.md`](../TESTNET.md) |
+| A **public** testnet | ✅ chain id **7412** at `https://rpc-testnet.cloudsforge.online`, explorer `https://explorer-testnet.cloudsforge.online`, faucet `https://network-testnet.cloudsforge.online/faucet` — all reachable, and **the chain is mining**: measured 2026-08-11 14:04 UTC, height `0x1f22` (7,970), tip three minutes old, advancing across a 75-second poll. It was deliberately stopped at 7,765 from 2026-08-08 to 2026-08-11 while the machine it shared took `bitcoind` and `dogecoind` through initial block download; the chain daemons now run on a host of their own. A transaction sent there confirms. Hostnames are single-label `<surface>-testnet.` — the two-label `*.testnet.cloudsforge.online` form fails the TLS handshake and is not used. Genesis hash in [`../TESTNET.md`](../TESTNET.md) |
 | A **deployed** `0x`-native block explorer | 🟡 one is deployed at `https://explorer.cloudsforge.online`, but **not from this repository** — `web/` was deleted in `48bc28a`. The estate surface is [`micro-explorer-web`](https://github.com/cloudsforge-online/micro-explorer-web), which reads `micro-indexer` rather than talking `eth_*` to your node — so there is still **nothing here you can point at your own node** |
 | Contract source verification | 🟡 the services are written — [`../tools/verify`](../tools/verify) (116/116, and it speaks what `forge verify-contract` speaks) and [`../tools/explorer-api`](../tools/explorer-api) (the Etherscan-compatible `/api`, 177/177 plus 27/27 against a real chain). Neither is hosted |
 | A deployed faucet | ⬜ the service is written and tested; nowhere public to run it. Mine instead — §4 |

@@ -35,9 +35,11 @@ guess and nobody has to ask.
 > client against an assumed block interval, and do not treat any difficulty
 > reading as a standing property
 > ([`../MAP.md` §1](../MAP.md#1-what-this-is-in-one-paragraph) states it once).
-> The public testnet on 7412 is reachable but **stopped**: its height
-> has not moved from 7,765 since 2026-08-08 18:00:11 UTC, while the host's
-> `bitcoind` and `dogecoind` finish initial block download. Precisely:
+> The public testnet on 7412 is reachable and **mining**: height 7,970 and moving,
+> measured 2026-08-11 14:04 UTC. It was deliberately stopped at 7,765 from
+> 2026-08-08 to 2026-08-11, while the machine it shared took `bitcoind` and
+> `dogecoind` through initial block download; both that sync and the co-tenancy
+> are over. Precisely:
 >
 > - **The chain runs.** `node/src/evmnode.js` builds the blockchain, the miner
 >   and the JSON-RPC server and mounts it on 8545 (`evmnode.js`).
