@@ -76,7 +76,26 @@ function defaultConfig() {
     decimals: 18,
     gasLimit: P.EVM_BLOCK_GAS_LIMIT,
     /* Fixed, not `now`: a genesis whose timestamp is the moment the node first
-     * started gives every node a different genesis hash and therefore no peers. */
+     * started gives every node a different genesis hash and therefore no peers.
+     *
+     * THIS IS A CONSENSUS CONSTANT AND IT IS NOT WHEN THE CHAIN STARTED. It is a
+     * round number somebody picked (2025-06-15T15:06:40Z) so that every node
+     * derives the same genesis hash. EMBER mainnet's block 1 was mined on
+     * 2026-08-04T19:12:21Z, 415 days later, and nothing here moves when that
+     * changes — a chain relaunched tomorrow would still carry this number.
+     *
+     * So anything computing chain age, uptime or a realised block time as
+     * `tip.timestamp - genesis.timestamp` is wrong by that whole gap, and wrong in
+     * the direction that looks plausible. Measured against mainnet on 2026-08-12
+     * at height 16,457: the chain is 7.2 days old and that subtraction calls it
+     * 422.4; the mean block time is 38 s and that subtraction calls it 2,218 s.
+     * Neither reads as a bug. That is micro-org#396.
+     *
+     * The real start is `Blockchain#launchedAt()` — the timestamp of block 1, one
+     * source — exposed over JSON-RPC as `hearth_chainStart` so that no consumer
+     * has to infer it. `test/chain-start.js` fails if anything in this tree
+     * subtracts a genesis timestamp to produce a duration. DO NOT change this
+     * literal to make an age come out right. */
     timestamp: 1750000000,
     extraData: '0x' + Buffer.from(`${P.NETWORK}/${TX.CHAIN_ID}`, 'utf8').toString('hex'),
     target: P.GENESIS_TARGET,

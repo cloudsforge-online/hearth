@@ -185,6 +185,8 @@
  *   coinbase()    -> Address    where this node mines to -> eth_coinbase
  *   txpoolStatus() -> { pending: bigint, queued: bigint } -> txpool_status
  *   blockHashAt(n: bigint) -> Hash | null   a cheap header-only hash lookup
+ *   chainStart() -> { launchedAt: bigint|null, launchHeight, genesisTimestamp,
+ *                     height: bigint }                   -> hearth_chainStart
  *
  *   EACH ONE THAT IS ABSENT MAKES ITS METHOD ABSENT, rather than making it
  *   answer a default. "0 peers" and "not mining" are meaningful answers; a node
@@ -1441,6 +1443,38 @@ function buildMethods(options = {}) {
    * rather than guarded inside each body so that `has()` and therefore -32601
    * tell the truth: a caller that gets "the method does not exist" knows to stop
    * asking, where one that gets a plausible zero does not. */
+  if (typeof chain.chainStart === 'function') {
+    /**
+     * WHEN THIS CHAIN STARTED, so that nothing has to infer it. micro-org#396.
+     *
+     * `hearth_` and not `eth_` because it is not in the Ethereum JSON-RPC spec
+     * and a client that finds an unknown method under `eth_` has been lied to
+     * about which chain it is talking to.
+     *
+     * Both timestamps ride together deliberately. `genesisTimestamp` is not the
+     * launch — on EMBER it is a round number picked so every node derives the
+     * same genesis hash, 415 days before block 1 — and a caller that gets only
+     * `launchedAt` learns nothing about the trap it just avoided, while a caller
+     * that has to make a second call to find the genesis figure will instead
+     * make the subtraction it already knows how to make.
+     *
+     * `launchedAt` is NULL on a chain holding only genesis, and null is the
+     * answer: that chain has no start to report and no honest age. A default
+     * here — genesis, zero, `now` — is the whole defect, restated one layer down.
+     */
+    methods.hearth_chainStart = async params => {
+      arity(params, 0, 0);
+      const s = await chain.chainStart();
+      return {
+        launchedAt: s.launchedAt === null || s.launchedAt === undefined
+          ? null
+          : H.encodeQuantity(s.launchedAt, 'launchedAt'),
+        launchHeight: H.encodeQuantity(s.launchHeight, 'launchHeight'),
+        genesisTimestamp: H.encodeQuantity(s.genesisTimestamp, 'genesisTimestamp'),
+        height: H.encodeQuantity(s.height, 'height'),
+      };
+    };
+  }
   if (typeof chain.peerCount === 'function') {
     methods.net_peerCount = async params => {
       arity(params, 0, 0);
