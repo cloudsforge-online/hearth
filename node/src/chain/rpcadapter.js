@@ -118,6 +118,26 @@ class RpcChain {
   blockNumber() { return BigInt(this.chain.height); }
   gasPrice() { return this.suggestedGasPrice; }
 
+  /**
+   * When the chain started, and the genesis timestamp beside it so no caller has
+   * to fetch block 0 to find out that it is not an answer. micro-org#396.
+   *
+   * `launchedAt` is null on a chain that holds only genesis, and that is a real
+   * answer rather than a missing one — see `Blockchain#launchedAt`. Both figures
+   * ride in one response ON PURPOSE: a consumer that has to make two calls to
+   * learn "the round number is not the start" will make one, and the one it makes
+   * is the wrong one.
+   */
+  chainStart() {
+    const launchedAt = this.chain.launchedAt();
+    return {
+      launchedAt: launchedAt === null ? null : BigInt(launchedAt),
+      genesisTimestamp: BigInt(this.chain.config.timestamp),
+      launchHeight: 1n,
+      height: BigInt(this.chain.height),
+    };
+  }
+
   /** The block's own bloom logic, so the bit order lives in one vector-tested place. */
   bloomMatches(b, item) { return bloom.contains(b, item); }
 

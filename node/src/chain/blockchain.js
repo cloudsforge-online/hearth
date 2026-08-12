@@ -342,6 +342,33 @@ class Blockchain extends EventEmitter {
     return id ? this.store.get(id) : null;
   }
 
+  /**
+   * WHEN THIS CHAIN ACTUALLY STARTED — the timestamp of block 1, in seconds, or
+   * null on a chain that holds nothing but genesis.
+   *
+   * Block 1 rather than block 0 because the genesis timestamp is a consensus
+   * constant that was never a wall-clock reading: `chain/genesis.js` fixes it so
+   * every node derives the same genesis hash, and it therefore does not move when
+   * the chain is launched, relaunched or launched on a different day. Block 1 is
+   * the first timestamp a miner actually produced.
+   *
+   * ONE SOURCE, deliberately. micro-org#396 is what happens without it: five
+   * consumers each infer the chain's age from what they can reach, `tip -
+   * genesis` is the obvious subtraction, and on EMBER mainnet it is wrong by 415
+   * days in the direction that looks like a performance disaster rather than like
+   * a bug — 38 s per block reported as 2,218 s. A near-published campaign called
+   * the chain "0.5% of a continuous chain" on that arithmetic.
+   *
+   * Null is a real answer and callers must render it as one. A chain with no
+   * block 1 has not started, and there is no honest age to show for it; the
+   * failure this method exists to prevent is precisely a consumer that reaches
+   * for a number when it does not have one.
+   */
+  launchedAt() {
+    const e = this.entryAt(1);
+    return e ? Number(e.block.header.timestamp) : null;
+  }
+
   /** A read-only StateDB at a block id — the whole point of content addressing. */
   stateAt(id) {
     const e = this.store.get(id);

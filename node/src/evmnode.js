@@ -432,6 +432,21 @@ class EvmNode {
       height: this.chain.height,
       tip: '0x' + this.chain.tipId,
       genesis: '0x' + this.chain.genesisId,
+      /* WHEN THE CHAIN STARTED, in seconds, or null before block 1. micro-org#396.
+       *
+       * Here as well as on `hearth_chainStart` because this is the endpoint the
+       * estate's surfaces actually read — the network page, status, the explorer —
+       * and the fix for "five consumers each infer it differently" is that the
+       * figure is already in the response they were fetching anyway. A consumer
+       * that has to learn a new method to get it will keep computing the wrong one.
+       *
+       * `genesisTimestamp` rides beside it, NAMED so it cannot be mistaken for a
+       * launch: it is a fixed consensus constant (see chain/genesis.js) that on
+       * EMBER predates block 1 by 415 days. Subtracting it from the tip overstates
+       * the chain's age by that whole gap and understates its block rate by ~58x,
+       * and the result reads like a real performance problem rather than a bug. */
+      launchedAt: this.chain.launchedAt(),
+      genesisTimestamp: this.chain.config.timestamp,
       /* Consensus, and NOT covered by the genesis hash — block 0 does not commit to
        * where the Commons share is paid, so two nodes can match on `genesis` and
        * still fork at block 1. The p2p handshake compares it (see p2p.js `_binding`);
