@@ -110,7 +110,7 @@ test('pairFor derivation is reproducible off-chain', () => {
 
 // -------------------------------------------------------------------------- code size
 
-const SIZED = ['WEMBER', 'HearthV2Factory', 'HearthV2Pair', 'HearthV2Router02', 'Multicall3']
+const SIZED = ['WEMBER', 'HearthV2Factory', 'HearthV2Pair', 'HearthV2Router02', 'Multicall3', 'HearthMultisig']
 
 test('every deployable contract is under the EIP-170 limit (24576 B)', () => {
   for (const [file, contracts] of Object.entries(output.contracts)) {
@@ -349,6 +349,86 @@ test('Multicall3 matches the canonical ABI and selectors', () => {
     assert.equal(selector(sig), sel, `selector drift on ${sig}`)
   }
   assert.equal(have.size, Object.keys(canonical).length, 'Multicall3 has functions the canonical ABI does not')
+})
+
+test('HearthMultisig exposes the surface a signer and a runbook need', () => {
+  const have = sigsOf('HearthMultisig', 'HearthMultisig.sol')
+  for (const sig of [
+    'submitTransaction(address,uint256,bytes)',
+    'confirmTransaction(uint256)',
+    'revokeConfirmation(uint256)',
+    'executeTransaction(uint256)',
+    'addOwner(address)',
+    'removeOwner(address)',
+    'replaceOwner(address,address)',
+    'changeRequirement(uint256)',
+    'owners()',
+    'ownerCount()',
+    'isOwner(address)',
+    'required()',
+    'transactionCount()',
+    'transaction(uint256)',
+    'confirmedBy(uint256,address)',
+    'confirmationCount(uint256)',
+    'isConfirmed(uint256)',
+    'MAX_OWNERS()',
+  ]) {
+    assert.ok(have.has(sig), `HearthMultisig is missing ${sig}`)
+  }
+  const abi = output.contracts['HearthMultisig.sol'].HearthMultisig.abi
+  const ctor = abi.find((e) => e.type === 'constructor')
+  assert.deepEqual(
+    ctor.inputs.map((i) => i.type),
+    ['address[]', 'uint256'],
+    'the constructor must take (owners, required) — a factory deployed against the wrong one is unrecoverable',
+  )
+  assert.ok(abi.some((e) => e.type === 'receive'), 'HearthMultisig cannot be paid, so it cannot be feeTo')
+})
+
+test('nothing but the wallet itself can change the owners or the threshold', () => {
+  // The whole point of the contract. An `onlyOwner` slipped in where `onlyWallet`
+  // belongs turns an m-of-n into a 1-of-n for the one operation that matters, and no
+  // ABI check can see the difference — the selectors are identical either way.
+  const src = readFileSync(new URL('../src/HearthMultisig.sol', import.meta.url), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\/\/.*$/gm, '')
+  for (const fn of ['addOwner', 'removeOwner', 'replaceOwner', 'changeRequirement']) {
+    const at = src.indexOf(`function ${fn}(`)
+    assert.ok(at !== -1, `${fn} is gone`)
+    const head = src.slice(at, src.indexOf('{', at))
+    assert.ok(head.includes('onlyWallet'), `${fn} is not onlyWallet — it can be called without the threshold`)
+  }
+  assert.ok(
+    /modifier onlyWallet\(\)\s*\{\s*require\(msg\.sender == address\(this\)/.test(src),
+    'onlyWallet does not compare msg.sender to this contract',
+  )
+})
+
+test('confirmations are counted over the live owner set, never a stored tally', () => {
+  // A cached count is wrong in one direction only: a removed signer still counts toward
+  // the threshold, which is exactly the failure removing them was meant to prevent.
+  const src = readFileSync(new URL('../src/HearthMultisig.sol', import.meta.url), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\/\/.*$/gm, '')
+  const body = src.slice(src.indexOf('function confirmationCount('))
+  const loop = body.slice(0, body.indexOf('function isConfirmed('))
+  assert.ok(loop.includes('_owners.length'), 'confirmationCount does not walk the owner list')
+  assert.ok(loop.includes('confirmedBy[txId][_owners[i]]'), 'confirmationCount reads something other than the owner list')
+  assert.ok(
+    !/uint256\s+public\s+\w*[Cc]onfirmations\b/.test(src),
+    'there is a stored confirmation tally, which goes stale the moment an owner is removed',
+  )
+})
+
+test('adding the multisig did not move the pair init code hash', () => {
+  // `metadata.bytecodeHash: 'none'` is what makes this true — with a metadata hash
+  // appended, adding a source file to the compilation unit changes other contracts'
+  // bytecode, and a deployed router would silently stop finding its own pairs.
+  assert.equal(
+    readDeclaredInitCodeHash(),
+    '0x46b4122ae9db4a03c913cfbed4e6321064741545c60aafe3ed9410be7657a537',
+    'the hash in contracts/README.md, docs/ecosystem/39-forge-exchange.md and node/test/dex.js is now wrong',
+  )
 })
 
 // --------------------------------------------------------------- deliberate overflow

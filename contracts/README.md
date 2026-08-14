@@ -11,7 +11,7 @@ This directory is self-contained. It has one dev dependency (`solc`), it does no
 cd contracts
 pnpm install
 pnpm compile      # -> out/*.json
-pnpm test         # 22 build-level assertions
+pnpm test         # 27 build-level assertions
 ```
 
 ---
@@ -26,6 +26,7 @@ pnpm test         # 22 build-level assertions
 | `HearthV2Router02` | `UniswapV2Router02` | Swaps, liquidity, multi-hop paths, deadlines, native-EMBER wrapping, and the fee-on-transfer variants. Selector-for-selector identical to Router02. |
 | `Multicall3` | canonical Multicall3 | Batched reads in one `eth_call`. |
 | `HearthV2ERC20` | `UniswapV2ERC20` | Base of `HearthV2Pair`; the LP token. Not deployed on its own. |
+| `HearthMultisig` | Gnosis `MultiSigWallet`, reduced | An *m*-of-*n* wallet. It exists because `feeToSetter` must not be an EOA and the estate had nothing else that could hold it. Confirmations are recorded on-chain by each signer rather than aggregated off-chain — no `ecrecover`, no domain separator, no nonce discipline. Owner and threshold changes are proposals the wallet makes to itself. |
 
 Libraries (`src/libraries/`) are all `internal` and inline into their callers, so nothing
 needs library linking at deploy time:
@@ -91,12 +92,14 @@ ForgeMint's existing EVM path, in this order:
 
 | # | Contract | Constructor arguments | Depends on |
 | --- | --- | --- | --- |
-| 1 | `WEMBER` | *(none)* | — |
-| 2 | `HearthV2Factory` | `address _feeToSetter` | — |
-| 3 | `HearthV2Router02` | `address _factory`, `address _WEMBER` | 1, 2 |
-| 4 | `Multicall3` | *(none)* | — |
+| 1 | `HearthMultisig` | `address[] owners_`, `uint256 required_` | — |
+| 2 | `WEMBER` | *(none)* | — |
+| 3 | `HearthV2Factory` | `address _feeToSetter` | 1 |
+| 4 | `HearthV2Router02` | `address _factory`, `address _WEMBER` | 2, 3 |
+| 5 | `Multicall3` | *(none)* | — |
 
-1 and 2 are independent and can go in either order. 4 is independent of all of them.
+5 is independent of all of them, and 2 can go anywhere before 4. **1 cannot move**: it is
+the argument to 3, and there is no second chance at it — see below.
 
 `HearthV2Pair` is **never deployed directly** — the factory creates each one with
 `CREATE2` inside `createPair`. Its constructor takes no arguments, which is load-bearing:
@@ -117,18 +120,106 @@ The one privileged role in the system. It is the only address that can:
 It cannot touch pool funds, cannot pause anything, and cannot upgrade anything. Nothing in
 this system is upgradeable.
 
-**Set it to a multisig or a governance contract, not a deployer EOA.** Uniswap launched
-with `feeTo` unset and it is the right default here too: turn the protocol fee off at
-launch, and only consider switching it on once there is liquidity worth taxing.
+**Set it to a multisig, not a deployer EOA — at deployment, not afterwards.** The reason
+it cannot wait is circular: moving the role off a key requires that key, so a factory
+deployed with an EOA in the slot can only be fixed by the very key you would be trying to
+stop relying on. That is why `HearthMultisig` is step 1 of the table above rather than a
+follow-up, and why `node/test/multisig.js` deploys a real `HearthV2Factory` against it and
+proves the deploying EOA is refused while the wallet is obeyed.
+
+Uniswap launched with `feeTo` unset and it is the right default here too: turn the
+protocol fee off at launch, and only consider switching it on once there is liquidity
+worth taxing.
 
 ### After deploying
 
 1. `HearthV2Factory.pairCodeHash()` == the hash above. If not, stop.
-2. `HearthV2Router02.factory()` and `.WETH()` return the addresses from steps 2 and 1.
-3. Create the first pair and check that the address matches what `pairFor` derives
+2. `HearthV2Factory.feeToSetter()` == the multisig from step 1, and
+   `HearthMultisig.owners()` / `.required()` are the signer set and threshold you meant.
+   Read them from the chain rather than from the deployment script — this is the one
+   setting with no second chance.
+3. `HearthV2Router02.factory()` and `.WETH()` return the addresses from steps 3 and 2.
+4. Create the first pair and check that the address matches what `pairFor` derives
    off-chain from the factory address and the init code hash.
-4. **Ship with liquidity** (spec §7). A DEX with empty pools attracts nobody. Seed
+5. **Ship with liquidity** (spec §7). A DEX with empty pools attracts nobody. Seed
    EMBER/WEMBER and at least one pair against a stable asset before announcing anything.
+
+---
+
+## `HearthMultisig`
+
+The first Solidity in this repository that is not a port. It is here for one reason —
+`feeToSetter` needs a holder that no single person can operate — and it is deliberately
+the smallest thing that satisfies that.
+
+```
+constructor(address[] owners_, uint256 required_)
+```
+
+Duplicates and the zero address are rejected at construction, because a repeated owner is
+one key holding two confirmations: a 2-of-3 that is really a 1-of-2, and after
+construction there is nothing left to reject it with.
+
+**Operating it.** Any owner proposes; the proposal auto-confirms for the submitter; other
+owners confirm; any owner executes once the threshold is met.
+
+```
+submitTransaction(to, value, data) -> txId     confirmTransaction(txId)
+revokeConfirmation(txId)                       executeTransaction(txId)
+```
+
+Confirmation is withdrawable right up to execution. Reads: `owners()`, `required()`,
+`ownerCount()`, `transactionCount()`, `transaction(txId)`, `confirmationCount(txId)`,
+`isConfirmed(txId)`.
+
+**Changing the signers or the threshold** is not a separate mechanism. `addOwner`,
+`removeOwner`, `replaceOwner` and `changeRequirement` are `onlyWallet` — the wallet's own
+address is the only permitted caller — so they are ordinary proposals confirmed by the
+same threshold as a payment. There is no admin path around the multisig, because that
+path is what an attacker looks for first.
+
+### Four decisions worth knowing about
+
+- **Confirmations are counted over the current owner list, never cached.** A stored tally
+  goes stale in exactly one direction — a departed signer keeps a live vote on every
+  proposal they touched, which is what removing them was for. `confirmationCount` walks
+  `owners()`, which is O(n) against a set `MAX_OWNERS` caps at 20 and cannot be wrong.
+  `node/test/multisig.js` sets this trap deliberately: a signer confirms a proposal to
+  its threshold, is rotated out, and the proposal drops back below.
+
+- **`removeOwner` reverts rather than lowering `required` to fit**, which is what the
+  Gnosis original does. Reducing a 3-of-3 to a 2-of-2 as a side effect of removing
+  somebody is a change to the security property, and that belongs in a proposal the
+  owners confirm on its own terms. To rotate a signer without touching the threshold, use
+  `replaceOwner`.
+
+- **A failed execution reverts and bubbles the target's reason.** The alternative — the
+  original's `ExecutionFailure` event — asks the owners to read a log to find out why
+  nothing happened. `executed` is written before the call and rolled back with it, so a
+  proposal whose target refused it is still pending and can be retried once the cause is
+  fixed rather than being burned.
+
+- **Confirmations are on-chain, not aggregated signatures.** A Safe-style EIP-712 scheme
+  saves transactions, at the cost of a domain separator, a nonce discipline and a
+  malleability policy. On a chain the project mines itself, with a signer set in single
+  digits, that is three more things to get wrong for a saving that does not matter. There
+  is no `ecrecover` in this contract and nothing to replay.
+
+### Proof
+
+`node/test/multisig.js` runs it on Hearth's own EVM — real signed transactions through
+`chain/statetransition.js`, no chain and no RPC:
+
+```
+pnpm --dir contracts install && pnpm --dir contracts compile
+node node/test/multisig.js          # 143/143
+```
+
+It covers the phase A gate from `docs/ecosystem/39-forge-exchange.md` §7 (*signers rotate
+and a threshold change succeeds*) and, past it, the reason the gate exists: a real
+`HearthV2Factory` deployed with the wallet as `feeToSetter` refuses the EOA that deployed
+it, obeys the wallet, and can hand the role to a successor multisig — after which the old
+wallet is refused at full threshold.
 
 ---
 

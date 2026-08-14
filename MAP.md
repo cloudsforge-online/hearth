@@ -179,7 +179,9 @@ here first.
 
 **The strongest single fact about this project:** `node/test/dex.js` deploys the
 whole Uniswap V2 stack onto our own EVM and executes a real swap — 167/167
-checks, a swap at **112,456 gas**. §4.4.
+checks, a swap at **112,456 gas**. §4.4. The *m*-of-*n* that has to hold the
+factory's `feeToSetter` before any of that is deployed for real runs on the same
+harness — `node/test/multisig.js`, 143/143. §4.4.1.
 
 **The most important gap is no longer publication.** Blocks are produced,
 validated and reorged, the components above have been driven by one, and mainnet
@@ -747,7 +749,45 @@ Two things recorded rather than glossed, both from the suite's own header:
   `node/src/chain/transaction.js` enforces on transaction signatures.
 
 `node/test/dex.js` is **not in `npm test`**: that suite runs with zero installed
-dependencies and this one needs solc's output.
+dependencies and this one needs solc's output. CI runs it in the `contracts` job,
+which is the only one with solc.
+
+### 4.4.1 The multisig that has to exist before any of it is deployed
+
+`HearthV2Factory.feeToSetter` decides where the protocol fee goes, with no
+timelock and no two-step handover, and moving the role off a key requires that
+key. So it has to be a contract nobody can operate alone **on the day the factory
+is deployed** — there is no fixing it later. Nothing in this repository was one
+until `contracts/src/HearthMultisig.sol`, which is the first Solidity here that
+is not a port of somebody else's.
+
+`node/test/multisig.js` runs it on the same harness (`node/test/evmsim.js`, split
+out of `dex.js` when a second suite needed it):
+
+```
+PASS — 143/143 multisig checks
+```
+
+Beyond the obvious — m confirmations execute, m−1 do not — three properties are
+worth naming because they are where this design differs from the Gnosis original
+it is reduced from:
+
+- **A rotated-out signer's existing confirmations stop counting.**
+  `confirmationCount` walks the current owner list rather than keeping a tally,
+  so the suite can set the trap: a signer confirms a proposal to its threshold,
+  is replaced, and the proposal drops back below it.
+- **`removeOwner` reverts rather than lowering `required` to fit.** Silently
+  turning a 3-of-3 into a 2-of-2 as a side effect is a change to the security
+  property; it belongs in its own proposal.
+- **A failed execution bubbles the target's revert reason and leaves the proposal
+  pending**, rather than swallowing it into an event.
+
+The last group of the suite is the point of all of it: a real `HearthV2Factory`
+deployed with the wallet as `feeToSetter` refuses the EOA that deployed it,
+obeys the wallet at full threshold, and hands the role to a successor multisig —
+after which the old wallet is refused. That is phase A of Forge Exchange
+(`docs/ecosystem/39-forge-exchange.md` in the CloudsForge estate, a different
+repository), and it gates the testnet deployment in phase C.
 
 ### 4.5 The two opcodes that had to be decided
 
@@ -1455,6 +1495,7 @@ cd node && node bin/hearthd.js --evm --mine    # the account-model EVM chain
                                                #   REST on :8645
 npm test                                        # 27 suites, clean clone, exit 0
 node test/dex.js                                # needs contracts/out — §4.4
+node test/multisig.js                           # needs contracts/out — §4.4.1
 node test/fuzz/run.js                           # property fuzzing — §4.7
 docker compose up --build                       # seed + 2 miners + web on :8080
 ```

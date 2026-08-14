@@ -59,24 +59,14 @@
  * installed dependencies. It is a gate, run against `contracts/out`.
  */
 
-const fs = require('fs');
-const path = require('path');
-
-const { StateDB, MemoryDB } = require('../src/state/statedb');
-const { EVM } = require('../src/evm/interpreter');
+const {
+  Sim, reporter, artifact,
+  hex, hx, word, addrWord,
+  GWEI, ETHER, GAS_PRICE, GENESIS_TS,
+  abi, TX, ST, receipt, StateDB, secp,
+} = require('./evmsim');
 const { keccak256 } = require('../src/crypto/keccak');
-const secp = require('../src/crypto/secp256k1');
-const TX = require('../src/chain/transaction');
-const ST = require('../src/chain/statetransition');
-const receipt = require('../src/chain/receipt');
 const bloom = require('../src/chain/bloom');
-const abi = require('../src/cli/abi');
-const { OPCODES } = require('../src/evm/opcodes');
-
-const hex = (s) => Buffer.from(String(s).replace(/^0x/, ''), 'hex');
-const hx = (b) => '0x' + Buffer.from(b).toString('hex');
-const word = (n) => { let h = (BigInt(n) & ((1n << 256n) - 1n)).toString(16); if (h.length % 2) h = '0' + h; return Buffer.concat([Buffer.alloc(32 - h.length / 2), Buffer.from(h, 'hex')]); };
-const addrWord = (a) => Buffer.concat([Buffer.alloc(12), Buffer.from(a)]);
 
 const ARGV = process.argv.slice(2);
 const WANT_GAS = ARGV.includes('--gas') || ARGV.includes('-g');
@@ -85,21 +75,6 @@ const WANT_TRACE = ARGV.includes('--trace');
 // ===========================================================================
 // the artifacts
 // ===========================================================================
-
-const OUT = path.join(__dirname, '..', '..', 'contracts', 'out');
-
-function artifact(name) {
-  const f = path.join(OUT, name + '.json');
-  if (!fs.existsSync(f)) {
-    console.error(`\nFAIL — ${f} is missing.\n`);
-    console.error('  This suite runs the *compiled* contracts. Build them first:\n');
-    console.error('      pnpm --dir contracts install');
-    console.error('      pnpm --dir contracts compile\n');
-    process.exit(1);
-  }
-  const a = JSON.parse(fs.readFileSync(f, 'utf8'));
-  return { abi: a.abi, code: hex(a.bytecode), deployed: hex(a.deployedBytecode), name };
-}
 
 const ART = {
   WEMBER: artifact('WEMBER'),
@@ -121,209 +96,13 @@ const KEY = {
   lp: hex('22'.repeat(32)),
   trader: hex('33'.repeat(32)),
 };
-const ADDR = {};
-for (const [k, priv] of Object.entries(KEY)) ADDR[k] = TX.addressFromPublicKey(secp.publicKeyFromPrivate(priv, false));
 
-const COINBASE = hex('c0'.repeat(20));
 /* Not a deployer EOA — spec §7 and contracts/README.md are explicit that the one
- * privileged role in the system must not be a key the deployer holds. */
+ * privileged role in the system must not be a key the deployer holds. Phase A of
+ * docs/ecosystem/39-forge-exchange.md replaces this placeholder with a deployed
+ * HearthMultisig; multisig.js is the suite that proves one can hold the role. */
 const FEE_TO_SETTER = hex('5e'.repeat(20));
 const ZERO = Buffer.alloc(20);
-
-const GWEI = 1000000000n;
-const ETHER = 10n ** 18n;
-const GAS_PRICE = GWEI;
-
-// ===========================================================================
-// the simulator: signed transactions through applyBlock, no consensus
-// ===========================================================================
-
-/* 2030-01-01, in SECONDS. The header stores milliseconds today and spec §4 says
- * that is a bug precisely because Router02 compares `deadline` against
- * `block.timestamp`; a millisecond clock makes every deadline in the year 57,000
- * and every `pair._update` see a 1000x-inflated elapsed time. Seconds here. */
-const GENESIS_TS = 1893456000n;
-
-class Sim {
-  constructor() {
-    this.state = new StateDB(new MemoryDB());
-    this.number = 1n;
-    this.timestamp = GENESIS_TS;
-    this.gas = new Map();
-    this.mined = [];
-  }
-
-  env() {
-    return {
-      number: this.number,
-      timestamp: this.timestamp,
-      coinbase: COINBASE,
-      gasLimit: ST.BLOCK_GAS_LIMIT,
-      prevRandao: 0x1234n,
-      baseFee: 0n,
-      chainId: TX.CHAIN_ID,
-    };
-  }
-
-  fund(addr, wei) {
-    this.state.setAccount(addr, { nonce: 0n, balance: wei });
-    this.state.commit();
-  }
-
-  /** Build one signed legacy transaction. `who` is a key name in KEY. */
-  _sign(who, it, nonce) {
-    const signed = TX.sign({
-      nonce,
-      gasPrice: GAS_PRICE,
-      gasLimit: it.gas === undefined ? 1000000n : it.gas,
-      to: it.to === undefined ? null : it.to,
-      value: it.value === undefined ? 0n : it.value,
-      data: it.data === undefined ? Buffer.alloc(0) : it.data,
-    }, KEY[who]);
-    return TX.encode(signed);
-  }
-
-  /**
-   * Apply a "block": raw signed RLP through `applyBlock`, which decodes,
-   * recovers each sender and runs the whole transition. Nothing here is
-   * pre-validated, so a bad signature or a stale nonce fails the block, which is
-   * what we want — the point is to exercise the real path.
-   */
-  mine(items) {
-    const preRoot = this.state.root();
-    const nonces = new Map();
-    const raws = items.map((it) => {
-      const from = ADDR[it.from];
-      const k = from.toString('hex');
-      const n = nonces.has(k) ? nonces.get(k) : this.state.getNonce(from);
-      nonces.set(k, n + 1n);
-      return this._sign(it.from, it, n);
-    });
-
-    const r = ST.applyBlock({ state: this.state, transactions: raws, block: this.env() });
-    r.preRoot = preRoot;
-    r.raws = raws;
-    r.env = this.env();
-    this.mined.push(r);
-
-    if (r.ok) {
-      for (let i = 0; i < r.results.length; i++) {
-        if (items[i].label) this.gas.set(items[i].label, r.results[i].gasUsed);
-      }
-    }
-    this.number += 1n;
-    this.timestamp += 15n;
-    return r;
-  }
-
-  /** One transaction, one block. Returns the single result. */
-  send(item) {
-    const r = this.mine([item]);
-    if (!r.ok) {
-      fatal(`block rejected: ${r.code} — ${r.error} (${item.label || 'unlabelled'})`, r, 0);
-    }
-    const res = r.results[0];
-    res.block = r;
-    res.label = item.label;
-    return res;
-  }
-
-  /**
-   * An `eth_call`: run against live state and roll back. The warm sets are reset
-   * (a read charges no gas anybody keeps) and the journal marker puts everything
-   * back, so this is invisible to the next transaction.
-   */
-  rawCall(to, data, from = ADDR.deployer, value = 0n) {
-    const mark = this.state.snapshot();
-    this.state.prepareAccessList({ origin: from, to, coinbase: COINBASE, precompiles: ST.WARM_PRECOMPILES });
-    const evm = new EVM({ state: this.state, block: this.env(), tx: { origin: from, gasPrice: 0n } });
-    const r = evm.call({ caller: from, to, value, data, gas: 50000000n });
-    this.state.revertTo(mark);
-    return r;
-  }
-
-  /** `read(to, 'getReserves()', [], ['uint112','uint112','uint32'])`. */
-  read(to, sig, args = [], outs = [], from = ADDR.deployer) {
-    const fn = abi.resolveFunction(null, sig);
-    const r = this.rawCall(to, abi.encodeCall(fn, args), from);
-    if (r.exception) {
-      const why = abi.decodeRevert(r.returnData);
-      fatal(`eth_call ${sig} on ${hx(to)} failed: ${r.exception}${why ? ' — ' + why.text : ''}`);
-    }
-    if (outs.length === 0) return r.returnData;
-    const v = abi.decodeParameters(outs, r.returnData);
-    return outs.length === 1 ? v[0] : v;
-  }
-}
-
-// ===========================================================================
-// failure reporting — the tracer, used for what it was built for
-// ===========================================================================
-
-let pass = 0, fail = 0;
-function ok(cond, msg) { if (cond) { pass++; } else { fail++; console.log('  ✗ ' + msg); } }
-function group(name) { console.log('• ' + name); }
-
-/**
- * Replay a failed block's transaction `i` with an opcode-level tracer and print
- * the tail of it. The node store is append-only, so the pre-block root is still
- * resolvable and a fresh StateDB over the same store is an exact replay.
- */
-function replay(blockResult, index) {
-  const db = new StateDB(SIM.state.db, blockResult.preRoot);
-  const steps = [];
-  const v = TX.validate(blockResult.raws[index], { chainId: TX.CHAIN_ID });
-  if (!v.ok) return { steps, note: `transaction ${index} does not even decode: ${v.code}` };
-
-  // Replay the transactions before this one so the state matches.
-  for (let j = 0; j < index; j++) {
-    const p = TX.validate(blockResult.raws[j], { chainId: TX.CHAIN_ID });
-    if (p.ok) ST.applyTransaction({ state: db, tx: p.tx, sender: p.sender, block: blockResult.env });
-  }
-  const r = ST.applyTransaction({
-    state: db, tx: v.tx, sender: v.sender, block: blockResult.env,
-    onStep: (ev) => {
-      steps.push({
-        pc: ev.pc, op: OPCODES[ev.op].name, gasLeft: ev.gasLeft, gasCost: ev.gasCost,
-        depth: ev.depth, addr: hx(ev.address), err: ev.error || null,
-        stack: ev.stack.slice(-6).reverse().map((x) => '0x' + x.toString(16)),
-      });
-    },
-  });
-  return { steps, result: r };
-}
-
-function fatal(msg, blockResult = null, index = 0) {
-  fail++;
-  console.log('  ✗ ' + msg);
-  if (blockResult && blockResult.raws && WANT_TRACE) {
-    const { steps, result, note } = replay(blockResult, index);
-    if (note) console.log('    ' + note);
-    if (result) {
-      const why = abi.decodeRevert(result.returnData || Buffer.alloc(0));
-      console.log(`    exception=${result.exception} gasUsed=${result.gasUsed}${why ? ' revert=' + why.text : ''}`);
-    }
-    console.log(`    last ${Math.min(60, steps.length)} of ${steps.length} steps:`);
-    for (const s of steps.slice(-60)) {
-      console.log(`      d${s.depth} ${String(s.pc).padStart(5)} ${s.op.padEnd(12)} gas=${s.gasLeft} cost=${s.gasCost} ${s.addr.slice(0, 10)} [${s.stack.join(' ')}]${s.err ? '  ERR ' + s.err : ''}`);
-    }
-  } else if (blockResult && blockResult.raws) {
-    console.log('    (re-run with --trace for the opcode trace)');
-  }
-  console.log(`\nFAIL — ${pass}/${pass + fail} DEX checks (stopped early)`);
-  process.exit(1);
-}
-
-/** A transaction that must have been included AND succeeded. */
-function succeeded(res, what) {
-  if (res.exception) {
-    const why = abi.decodeRevert(res.returnData || Buffer.alloc(0));
-    fatal(`${what} reverted: ${res.exception}${why ? ' — ' + why.text : ''}${res.internalError ? '  INTERNAL ERROR: ' + res.internalError : ''}`,
-      res.block, res.index === undefined ? 0 : res.index);
-  }
-  ok(res.status === receipt.SUCCESS, `${what} succeeds`);
-  return res;
-}
 
 // ===========================================================================
 // event decoding
@@ -401,8 +180,9 @@ const sortTokens = (a, b) => (Buffer.compare(a, b) < 0 ? [a, b] : [b, a]);
 // the run
 // ===========================================================================
 
-const SIM = new Sim();
-const D = ADDR.deployer, LP = ADDR.lp, TRADER = ADDR.trader;
+const SIM = new Sim({ keys: KEY });
+const { counts, ok, group, fatal, succeeded } = reporter(SIM, { trace: WANT_TRACE });
+const { deployer: D, lp: LP, trader: TRADER } = SIM.ADDR;
 
 console.log('Uniswap V2 on the Hearth EVM — no chain, no RPC, straight through the state transition\n');
 
@@ -696,7 +476,7 @@ group('the swap, priced against the Shanghai schedule by hand');
  * anybody can check. This is where a schedule bug that the conformance vectors
  * did not reach would actually show, because it is the same opcodes in
  * combination rather than one at a time. */
-const SWAP_TRACE = replay(swapRes.block, 0).steps;
+const SWAP_TRACE = SIM.replay(swapRes.block, 0).steps;
 const CALL_OPS = new Set(['CALL', 'CALLCODE', 'DELEGATECALL', 'STATICCALL', 'CREATE', 'CREATE2']);
 
 {
@@ -1169,8 +949,8 @@ if (WANT_GAS) {
 
 // ===========================================================================
 
-console.log(`\n${fail === 0 ? 'PASS' : 'FAIL'} — ${pass}/${pass + fail} DEX checks`);
-if (fail === 0) {
+console.log(`\n${counts.fail === 0 ? 'PASS' : 'FAIL'} — ${counts.pass}/${counts.pass + counts.fail} DEX checks`);
+if (counts.fail === 0) {
   console.log('\nA swap succeeded end to end on our own EVM. Phase 7\'s gate (docs/evm-spec.md §8) is met.');
 }
-process.exit(fail === 0 ? 0 : 1);
+process.exit(counts.fail === 0 ? 0 : 1);

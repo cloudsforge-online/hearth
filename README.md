@@ -124,7 +124,7 @@ The original UTXO ledger is being retired.
 | | |
 | --- | --- |
 | **Built and vector-gated** | keccak/RLP/uint256/secp256k1 · Merkle Patricia Trie + StateDB · the interpreter (**609/609 VMTests**) · transactions, receipts, bloom (**188/188 TransactionTests**) · the state transition (**20,077/20,077 GeneralStateTests**) · all nine precompiles including bn128 and blake2f · the `eth_*` JSON-RPC surface · an EVM-aware explorer · the `hearth` CLI with an opcode tracer · a browser wallet on secp256k1 |
-| **Proved end to end** | **Uniswap V2 runs on our own EVM** — `node/test/dex.js`, 167/167, a real swap at **112,456 gas** |
+| **Proved end to end** | **Uniswap V2 runs on our own EVM** — `node/test/dex.js`, 167/167, a real swap at **112,456 gas**. And the *m*-of-*n* that has to hold `feeToSetter` before any of it is deployed — `node/test/multisig.js`, 143/143 |
 | **Built and running locally** | Consensus on the account model. `hearthd --evm --mine` produces and validates blocks and serves `eth_*` on 8545; two real nodes partition and reorg in `node/test/evm-p2p-fork.js`; `docker-compose.testnet.yml` runs three on chain id 7412 |
 | **Published, and mining** | **Mainnet, chain id 7411**, at `https://rpc.cloudsforge.online` — publicly trusted TLS, JSON-RPC over POST (a GET answers 405), plus an explorer at [`explorer.cloudsforge.online`](https://explorer.cloudsforge.online). Height `13,946` and climbing, measured 2026-08-11 14:04 UTC. The node ports still bind `127.0.0.1`; a Cloudflare Tunnel on one home server is the only thing routing them, so this is one machine with no failover. It is mined by **two** hosts since 2026-08-10 — the machine the node is on, and a second one that reaches it the same way a stranger's miner does |
 | **Published, and mining again** | **Testnet, chain id 7412**, at `https://rpc-testnet.cloudsforge.online` — same POST-only surface, same publicly trusted TLS, with an explorer at [`explorer-testnet.cloudsforge.online`](https://explorer-testnet.cloudsforge.online) and a faucet at [`network-testnet.cloudsforge.online/faucet`](https://network-testnet.cloudsforge.online/faucet). Height `7,970` and moving, measured 2026-08-11 14:04 UTC; it was stopped at 7,765 from 2026-08-08 to 2026-08-11 and resumed once `bitcoind` synced and the chain daemons moved to a host of their own. P2P is a WebSocket at `wss://p2p-testnet.cloudsforge.online/p2p` — **only the `/p2p` path is routed**, the host root answers 404, both re-checked 2026-08-11 |
@@ -199,6 +199,12 @@ Everything below **runs**, and every number was produced by running it:
 - ✅ **Uniswap V2 runs on it** — `node/test/dex.js` deploys the factory, router,
   pair and WEMBER, adds liquidity, swaps, swaps back, exercises `permit` and
   removes liquidity. 167/167, swap at 112,456 gas against mainnet's ~150,000
+- ✅ **`HearthMultisig`, the first contract here that is not a port** — an
+  *m*-of-*n* for `HearthV2Factory.feeToSetter`, which has no timelock and no
+  two-step handover and therefore cannot be an EOA even briefly.
+  `node/test/multisig.js` runs it on our own EVM: 143/143, signers rotate, a
+  rotated-out key's existing confirmation stops counting, and a real factory
+  refuses the EOA that deployed it while obeying the wallet
 - ✅ **the `eth_*` JSON-RPC surface** (`node/src/jsonrpc/`) — 41 methods, 422
   checks against a fake chain and 170 against a real one over HTTP; strict
   QUANTITY/DATA encoding, batches, notifications, revert payloads as code 3.
@@ -298,6 +304,7 @@ node test/conformance/runner.js --impl=test/statetransition.js \
 ```bash
 pnpm --dir contracts install && pnpm --dir contracts compile
 cd node && node test/dex.js                                    # 167/167
+node test/multisig.js                                          # 143/143
 ```
 
 **4 — Point your tooling at mainnet:**
