@@ -87,8 +87,11 @@ the same settings.
 
 ## Deployment order
 
-Nothing here is deployed automatically, and nothing has been deployed. Deploy through
-ForgeMint's existing EVM path, in this order:
+All five are **deployed on EMBER testnet, chain 7412** — addresses and the post-deploy
+readings in [`micro-deploy` `docs/hearth-exchange.md`](https://github.com/cloudsforge-online/micro-deploy/blob/main/docs/hearth-exchange.md).
+**Mainnet is untouched.** The deployer is `micro-deploy`'s `scripts/hearth-dex-deploy.js`,
+which follows this table, reads every check below back off the chain, and on mainnet
+refuses to invent a signer set. Deploy in this order:
 
 | # | Contract | Constructor arguments | Depends on |
 | --- | --- | --- | --- |
@@ -143,6 +146,24 @@ worth taxing.
    off-chain from the factory address and the init code hash.
 5. **Ship with liquidity** (spec §7). A DEX with empty pools attracts nobody. Seed
    EMBER/WEMBER and at least one pair against a stable asset before announcing anything.
+
+### What is deployed
+
+**EMBER testnet, chain 7412**, from block 14119. Steps 1–4 above pass, re-read from the
+node; step 5 has not been done, so nothing here has yet been exercised by a swap.
+
+| | |
+| --- | --- |
+| `HearthMultisig` | `0x51faced76d70981e863be2987ccc811b0712e4f8` — 2-of-3 |
+| `WEMBER` | `0xa26dfebc362a380e1ade6090c7c5887180d1b263` |
+| `HearthV2Factory` | `0x18bbd09d51f4e9e630dd0a86fc984b6326f10e41` — `feeTo` unset |
+| `HearthV2Router02` | `0xba2b9db822e1f2ec3039fe474644b8405268a9b4` |
+| `Multicall3` | `0x76db8cdcaf4a517a51ae474bd00cfe9a53635c03` |
+
+All three testnet wallet keys are on one host. That exercises the code path — a threshold
+above one, an owner set that can be rotated — and it is not a custody arrangement; do not
+cite it as evidence the fee switch is protected. **EMBER mainnet has nothing deployed**,
+and the deploy script will not generate a signer set there.
 
 ---
 
