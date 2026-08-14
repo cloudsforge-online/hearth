@@ -257,6 +257,17 @@ jobs:
       # resolves `contracts/out` off __dirname, so cwd does not matter to it.
       - name: Uniswap V2 on our own EVM (phase 7 gate)
         run: node ../node/test/dex.js
+      # Forge Exchange phase A (docs/ecosystem/39-forge-exchange.md §7). The
+      # factory's `feeToSetter` has no timelock and no two-step handover, and
+      # moving it off a compromised key needs that key — so it must already be a
+      # contract no one person can operate on the day the factory is deployed.
+      # This proves HearthMultisig is one: m-of-n holds, signers rotate, a
+      # rotated-out key's existing confirmation stops counting, a raised
+      # threshold binds proposals already confirmed under the old one, and a
+      # real HearthV2Factory obeys the wallet while refusing the EOA that
+      # deployed it.
+      - name: The multisig that holds feeToSetter (phase A gate)
+        run: node ../node/test/multisig.js
 
   tools:
     name: Developer kit (faucet, explorer API, verifier)
