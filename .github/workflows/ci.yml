@@ -266,6 +266,13 @@ jobs:
       # threshold binds proposals already confirmed under the old one, and a
       # real HearthV2Factory obeys the wallet while refusing the EOA that
       # deployed it.
+      #
+      # It also carries the two findings from the phase E read-through, both of
+      # which are regressions you cannot see in a compile: a rotated-out signer
+      # who is later re-added does NOT bring their old confirmations back with
+      # them (#26), and a fully confirmed proposal to send `feeToSetter` to the
+      # zero address is refused rather than permanently deleting the fee switch
+      # (#25). Each was written against the old bytecode first and failed there.
       - name: The multisig that holds feeToSetter (phase A gate)
         run: node ../node/test/multisig.js
 

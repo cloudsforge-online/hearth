@@ -244,6 +244,80 @@ reverted(SIM.send({ from: 'carol', to: M, data: call('confirmTransaction(uint256
 succeeded(SIM.send({ from: 'dave', to: M, data: call('confirmTransaction(uint256)', [trap]), gas: 300000n }), 'dave, her successor, can');
 ok(confirmed(trap) === true, 'and the proposal is live again on the new signer set');
 
+ok(SIM.read(M, 'confirmedBy(uint256,address)', [trap, ALICE], ['bool']) === true,
+  "alice never left, so carol's rotation did not touch alice's confirmation");
+
+// ---------------------------------------------------------------------------
+group('a rotated-out signer who comes back does not bring their old votes with them');
+// ---------------------------------------------------------------------------
+
+/* hearth#26. Counting over the live owner list makes a departed signer's confirmation
+ * stop counting; it does NOT make it stay stopped. The flag was only hidden, so putting
+ * that address back in the set would resurrect every confirmation it left behind — on
+ * proposals nobody has looked at since, without the returning signer sending anything
+ * or being told which proposals they are now confirming. That is the opposite of what
+ * rotating someone out under suspicion is for.
+ *
+ * A whole wallet of its own, because the scenario needs a proposal that survives the
+ * round trip and the narrative above is mid-flight. */
+const dRejoin = succeeded(SIM.send({
+  from: 'alice',
+  to: null,
+  data: Buffer.concat([ART.Multisig.code, abi.encodeParameters(['address[]', 'uint256'], [[ALICE, BOB, CAROL], 2n])]),
+  gas: 3000000n,
+}), 'a second 2-of-3 deploys for the round trip');
+const R = dRejoin.contractAddress;
+succeeded(SIM.send({ from: 'alice', to: R, value: 10n * ETHER, gas: 100000n }), 'and is funded');
+
+const rConfirmations = (id) => SIM.read(R, 'confirmationCount(uint256)', [id], ['uint256']);
+const rConfirmed = (id) => SIM.read(R, 'isConfirmed(uint256)', [id], ['bool']);
+const rPropose = (from, to, value, data) => {
+  const id = SIM.read(R, 'transactionCount()', [], ['uint256']);
+  succeeded(SIM.send({ from, to: R, data: call('submitTransaction(address,uint256,bytes)', [to, value, data]), gas: 500000n }), `${from} proposes`);
+  return id;
+};
+
+ok(SIM.read(R, 'ownerEpoch()', [], ['uint256']) === 1n, 'the founding owner set is epoch 1');
+for (const [who, addr] of [['alice', ALICE], ['bob', BOB], ['carol', CAROL]]) {
+  ok(SIM.read(R, 'ownerSince(address)', [addr], ['uint256']) === 1n, `${who}'s tenure starts at the founding epoch`);
+}
+
+const RETURNEE_PAYEE = hex('b2'.repeat(20)); // its own payee, so the main narrative's balance assertions stay readable
+const pending = rPropose('carol', RETURNEE_PAYEE, 2n * ETHER, Buffer.alloc(0));
+ok(rConfirmations(pending) === 1n, 'carol proposes a payout and it carries her confirmation');
+
+/* Out. */
+const evict = rPropose('alice', R, 0n, call('removeOwner(address)', [CAROL]));
+succeeded(SIM.send({ from: 'bob', to: R, data: call('confirmTransaction(uint256)', [evict]), gas: 300000n }), 'bob confirms the removal');
+succeeded(SIM.send({ from: 'alice', to: R, data: call('executeTransaction(uint256)', [evict]), gas: 400000n }), 'carol is removed');
+ok(SIM.read(R, 'isOwner(address)', [CAROL], ['bool']) === false, 'carol is out');
+ok(rConfirmations(pending) === 0n, 'and her confirmation stops counting immediately');
+ok(SIM.read(R, 'ownerEpoch()', [], ['uint256']) === 1n, 'a removal does not move the epoch — there is nothing yet to invalidate');
+
+/* And back. */
+const readmit = rPropose('alice', R, 0n, call('addOwner(address)', [CAROL]));
+succeeded(SIM.send({ from: 'bob', to: R, data: call('confirmTransaction(uint256)', [readmit]), gas: 300000n }), 'bob confirms the readmission');
+succeeded(SIM.send({ from: 'alice', to: R, data: call('executeTransaction(uint256)', [readmit]), gas: 400000n, label: 'readmit a removed owner' }), 'carol is an owner again');
+ok(SIM.read(R, 'isOwner(address)', [CAROL], ['bool']) === true, 'carol is back in the set');
+ok(SIM.read(R, 'ownerEpoch()', [], ['uint256']) === 2n, 'rejoining took the next epoch');
+ok(SIM.read(R, 'ownerSince(address)', [CAROL], ['uint256']) === 2n, 'and her tenure now starts there');
+ok(SIM.read(R, 'ownerSince(address)', [ALICE], ['uint256']) === 1n, "while alice's is untouched");
+
+ok(SIM.read(R, 'confirmedBy(uint256,address)', [pending, CAROL], ['bool']) === false,
+  'the confirmation carol gave in her previous tenure is not a confirmation');
+ok(rConfirmations(pending) === 0n, 'so the proposal did not gain a vote by her walking back in');
+ok(rConfirmed(pending) === false, 'and it is nowhere near the threshold');
+reverted(SIM.send({ from: 'alice', to: R, data: call('executeTransaction(uint256)', [pending]), gas: 400000n }),
+  'NOT_ENOUGH_CONFIRMATIONS', 'executing on a resurrected confirmation');
+ok(SIM.state.getBalance(R) === 10n * ETHER, 'nothing left the wallet');
+
+/* She can of course confirm it again — deliberately, now, knowing what it is. */
+succeeded(SIM.send({ from: 'carol', to: R, data: call('confirmTransaction(uint256)', [pending]), gas: 300000n }),
+  'carol is not "already confirmed", so she can confirm again');
+ok(rConfirmations(pending) === 1n, 'and that one counts');
+succeeded(SIM.send({ from: 'bob', to: R, data: call('confirmTransaction(uint256)', [pending]), gas: 300000n }), 'bob makes it two');
+succeeded(SIM.send({ from: 'bob', to: R, data: call('executeTransaction(uint256)', [pending]), gas: 400000n }), 'and it executes on two live confirmations');
+
 // ---------------------------------------------------------------------------
 group('the threshold changes, and binds proposals already confirmed under the old one');
 // ---------------------------------------------------------------------------
@@ -290,6 +364,16 @@ const FACTORY = dFactory.contractAddress;
 ok(SIM.read(FACTORY, 'feeToSetter()', [], ['address']) === hx(M), 'feeToSetter is the multisig, not the deploying EOA');
 ok(SIM.read(FACTORY, 'feeTo()', [], ['address']) === hx(ZERO), 'feeTo is unset, so the whole 0.3% accrues to LPs');
 
+/* hearth#25. A factory born with no setter has no fee switch from block one, and there
+ * is no key that can give it one — `feeTo()` reads zero either way, so nothing detects
+ * it either. Uniswap V2 allows it; this does not. */
+reverted(SIM.send({
+  from: 'alice',
+  to: null,
+  data: Buffer.concat([ART.Factory.code, abi.encodeParameters(['address'], [ZERO])]),
+  gas: 4000000n,
+}), 'HearthV2: ZERO_ADDRESS', 'deploying a factory with no feeToSetter at all');
+
 /* The deployer is the obvious attacker here: she has the key that created the factory
  * and she is one of three signers. Neither buys her the role. */
 reverted(SIM.send({ from: 'alice', to: FACTORY, data: call('setFeeTo(address)', [FEE_COLLECTOR]), gas: 200000n }),
@@ -334,6 +418,33 @@ const dSuccessor = succeeded(SIM.send({
   gas: 3000000n,
 }), 'a successor multisig deploys');
 const M2 = dSuccessor.contractAddress;
+
+/* Before the handover that works, the one that must not. `setFeeToSetter(0)` succeeds on
+ * Uniswap V2, and after it no key on earth can call `setFeeTo` or `setFeeToSetter`
+ * again: the role is not stolen, it stops existing, and recovering it costs a new
+ * factory, a new router and every pool migrated. It is a plausible mistake — a truncated
+ * or empty address pasted into a proposal lands on zero — with an unrecoverable result,
+ * so the contract refuses it, at full threshold, in front of everyone. */
+const suicide = propose('alice', FACTORY, 0n, call('setFeeToSetter(address)', [ZERO]), 'send the role to nobody');
+succeeded(SIM.send({ from: 'bob', to: M, data: call('confirmTransaction(uint256)', [suicide]), gas: 300000n }), 'bob confirms it');
+succeeded(SIM.send({ from: 'dave', to: M, data: call('confirmTransaction(uint256)', [suicide]), gas: 300000n }), 'dave confirms it');
+reverted(SIM.send({ from: 'alice', to: M, data: call('executeTransaction(uint256)', [suicide]), gas: 400000n }),
+  'HearthV2: ZERO_ADDRESS', 'a fully confirmed proposal to delete the fee switch');
+ok(SIM.read(FACTORY, 'feeToSetter()', [], ['address']) === hx(M), 'the role is still held by the multisig');
+ok(executedFlag(suicide) === false, 'and the refused proposal is still pending, not burned');
+
+/* `setFeeTo`, though, must keep accepting zero: there it is the meaningful state, and
+ * turning the protocol fee back off is a thing the owners are supposed to be able to do. */
+const feeOff = propose('alice', FACTORY, 0n, call('setFeeTo(address)', [ZERO]), 'turn the fee switch back off');
+succeeded(SIM.send({ from: 'bob', to: M, data: call('confirmTransaction(uint256)', [feeOff]), gas: 300000n }), 'bob confirms');
+succeeded(SIM.send({ from: 'dave', to: M, data: call('confirmTransaction(uint256)', [feeOff]), gas: 300000n }), 'dave confirms');
+succeeded(SIM.send({ from: 'alice', to: M, data: call('executeTransaction(uint256)', [feeOff]), gas: 400000n }), 'the fee goes back off');
+ok(SIM.read(FACTORY, 'feeTo()', [], ['address']) === hx(ZERO), 'zero is a destination for feeTo and not for feeToSetter');
+succeeded(SIM.send({ from: 'alice', to: M, data: call('submitTransaction(address,uint256,bytes)', [FACTORY, 0n, call('setFeeTo(address)', [FEE_COLLECTOR])]), gas: 500000n }), 'and back on again');
+const feeOn = SIM.read(M, 'transactionCount()', [], ['uint256']) - 1n;
+succeeded(SIM.send({ from: 'bob', to: M, data: call('confirmTransaction(uint256)', [feeOn]), gas: 300000n }), 'bob confirms');
+succeeded(SIM.send({ from: 'dave', to: M, data: call('confirmTransaction(uint256)', [feeOn]), gas: 300000n }), 'dave confirms');
+succeeded(SIM.send({ from: 'alice', to: M, data: call('executeTransaction(uint256)', [feeOn]), gas: 400000n }), 'the collector is restored');
 
 const handover = propose('alice', FACTORY, 0n, call('setFeeToSetter(address)', [M2]), 'hand the role to the successor');
 succeeded(SIM.send({ from: 'bob', to: M, data: call('confirmTransaction(uint256)', [handover]), gas: 300000n }), 'bob confirms');

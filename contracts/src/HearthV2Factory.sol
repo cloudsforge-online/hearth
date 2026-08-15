@@ -29,7 +29,11 @@ contract HearthV2Factory is IHearthV2Factory {
     mapping(address => mapping(address => address)) public getPair;
     address[] public allPairs;
 
+    /// @param _feeToSetter The address that may move the fee switch. Rejected if zero,
+    /// because a factory born with no setter has no fee switch at all and nothing
+    /// detects it — `feeTo()` reads zero either way, and there is no key that can fix it.
     constructor(address _feeToSetter) {
+        require(_feeToSetter != address(0), "HearthV2: ZERO_ADDRESS");
         feeToSetter = _feeToSetter;
     }
 
@@ -63,8 +67,19 @@ contract HearthV2Factory is IHearthV2Factory {
         feeTo = _feeTo;
     }
 
+    /// @notice Hand the role on. There is no acceptance step — V2 has none, and adding
+    /// one here would put this factory's ABI out of step with every V2 tool — so the
+    /// only protection against handing it somewhere unusable is refusing the one
+    /// destination that is definitely unusable.
+    /// @dev Uniswap V2 allows `setFeeToSetter(address(0))`, and after it no key on earth
+    /// can call `setFeeTo` or `setFeeToSetter` again: the role is not stolen, it stops
+    /// existing, and recovering it means a new factory, a new router and every pool
+    /// migrated. A truncated or empty address pasted into a proposal lands on zero, so
+    /// this is a plausible mistake with an unrecoverable result. Note the asymmetry with
+    /// `setFeeTo`, where zero is the meaningful "fee off" state and must stay allowed.
     function setFeeToSetter(address _feeToSetter) external {
         require(msg.sender == feeToSetter, "HearthV2: FORBIDDEN");
+        require(_feeToSetter != address(0), "HearthV2: ZERO_ADDRESS");
         feeToSetter = _feeToSetter;
     }
 }

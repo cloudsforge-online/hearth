@@ -413,11 +413,50 @@ test('confirmations are counted over the live owner set, never a stored tally', 
   const body = src.slice(src.indexOf('function confirmationCount('))
   const loop = body.slice(0, body.indexOf('function isConfirmed('))
   assert.ok(loop.includes('_owners.length'), 'confirmationCount does not walk the owner list')
-  assert.ok(loop.includes('confirmedBy[txId][_owners[i]]'), 'confirmationCount reads something other than the owner list')
+  assert.ok(loop.includes('confirmedBy(txId, _owners[i])'), 'confirmationCount reads something other than the owner list')
   assert.ok(
     !/uint256\s+public\s+\w*[Cc]onfirmations\b/.test(src),
     'there is a stored confirmation tally, which goes stale the moment an owner is removed',
   )
+})
+
+test("a confirmation counts only within its confirmer's current tenure", () => {
+  // hearth#26. Walking the owner list makes a departed signer's confirmation stop
+  // counting, and does NOT make it stay stopped: the flag is only hidden, so re-adding
+  // the address resurrects every confirmation it left on a pending proposal. Each
+  // assertion below is one way to lose that again; node/test/multisig.js proves the
+  // behaviour on the live EVM.
+  const src = readFileSync(new URL('../src/HearthMultisig.sol', import.meta.url), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\/\/.*$/gm, '')
+
+  const body = src.slice(src.indexOf('function confirmedBy('))
+  const fn = body.slice(0, body.indexOf('\n    }'))
+  assert.ok(
+    /at\s*>=\s*ownerSince\[owner\]/.test(fn),
+    'confirmedBy does not check the confirmation against the confirmer\'s tenure',
+  )
+  assert.ok(/at\s*!=\s*0/.test(fn), 'confirmedBy treats "never confirmed" as confirmed for a non-owner')
+
+  // Joining takes a strictly higher epoch than any confirmation that came before it.
+  for (const join of ['addOwner', 'replaceOwner']) {
+    const at = src.indexOf(`function ${join}(`)
+    assert.ok(
+      /ownerSince\[\w+\] = \+\+ownerEpoch/.test(src.slice(at, src.indexOf('\n    function ', at + 1))),
+      `${join} adds an owner without moving ownerSince forward, so their old confirmations come back`,
+    )
+  }
+
+  // And the two places a bump would be wrong. A threshold change must leave
+  // confirmations alone — a raise is meant to bind proposals already confirmed under the
+  // old threshold — and removal has nothing to invalidate, because rejoining does it.
+  for (const leave of ['changeRequirement', 'removeOwner']) {
+    const at = src.indexOf(`function ${leave}(`)
+    assert.ok(
+      !src.slice(at, src.indexOf('\n    function ', at + 1)).includes('ownerEpoch'),
+      `${leave} moves ownerEpoch, which discards confirmations it has no business discarding`,
+    )
+  }
 })
 
 test('adding the multisig did not move the pair init code hash', () => {
