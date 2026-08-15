@@ -33,7 +33,27 @@ pragma solidity 0.8.26;
 /// 1. Confirmations are counted over the CURRENT owner list, never cached. A stored
 ///    counter goes stale the moment an owner is removed, and the direction it goes
 ///    stale in is "a departed signer still counts toward the threshold". Counting
-///    live is O(n) on a set this contract caps at 20, and it cannot be wrong.
+///    live is O(n) on a set this contract caps at 20.
+///
+///    Walking the list is necessary and not sufficient, which is what the first version
+///    of this contract got wrong (hearth#26). A confirmation flag that is merely
+///    *ignored* while its owner is out of the set comes back the moment that address is
+///    added again — so a signer rotated out under suspicion and later rotated back in
+///    would silently re-confirm every proposal still pending from before, without
+///    sending a transaction or knowing which proposals they were now confirming.
+///
+///    So a confirmation records WHEN it was given, and counts only if it was given
+///    during the confirmer's current tenure: `_confirmedIn[txId][owner] >=
+///    ownerSince[owner]`. Joining the owner set takes the next `ownerEpoch`, which is
+///    strictly higher than any confirmation that came before it, so a rejoining owner
+///    starts from nothing and re-confirms what they still mean. Clearing the map on the
+///    way out would be the obvious alternative and is an unbounded loop over the whole
+///    proposal history; this is O(1) and does not go stale.
+///
+///    It is deliberately per-owner rather than one global cutoff. Rotating carol out
+///    must not discard alice's confirmations — alice did not go anywhere, and a
+///    signer-set change that silently un-confirms everything makes routine rotations
+///    expensive enough to avoid.
 ///
 /// 2. `removeOwner` REVERTS rather than lowering `required` to fit, which is what the
 ///    Gnosis original does. Silently reducing a 3-of-3 to a 2-of-2 as a side effect of
@@ -81,10 +101,23 @@ contract HearthMultisig {
     mapping(address => bool) public isOwner;
     /// @notice How many confirmations a transaction needs to execute.
     uint256 public required;
-    /// @notice Has `owner` confirmed transaction `txId`? A confirmation by an address
-    /// that is later removed from the owner set stops counting, because
-    /// `confirmationCount` walks the owner list rather than a stored tally.
-    mapping(uint256 => mapping(address => bool)) public confirmedBy;
+    /// @notice A counter that only ever goes up, incremented every time an address JOINS
+    /// the owner set. Not by `changeRequirement`, which changes how many confirmations
+    /// are needed rather than who may give them, and not by `removeOwner`, which has
+    /// nothing to invalidate until the address comes back.
+    uint256 public ownerEpoch = 1;
+
+    /// @notice The epoch at which this address most recently BECAME an owner. Zero for an
+    /// address that never has. Re-adding a removed owner moves it forward, which is what
+    /// makes their old confirmations stay dead.
+    mapping(address => uint256) public ownerSince;
+
+    /// @dev txId => owner => the epoch the confirmation was given in, or zero for none.
+    /// A confirmation counts only if it was given during the confirmer's current tenure:
+    /// `_confirmedIn >= ownerSince`. Confirmations from owners who never left are
+    /// untouched by someone else's rotation, which is why this is per-owner and not a
+    /// single global cutoff.
+    mapping(uint256 => mapping(address => uint256)) private _confirmedIn;
 
     modifier onlyOwner() {
         require(isOwner[msg.sender], "HearthMultisig: NOT_OWNER");
@@ -117,6 +150,7 @@ contract HearthMultisig {
             require(!isOwner[owner], "HearthMultisig: DUPLICATE_OWNER");
             isOwner[owner] = true;
             _owners.push(owner);
+            ownerSince[owner] = ownerEpoch; // 1 — the founding tenure
             emit OwnerAdded(owner);
         }
         required = required_;
@@ -144,21 +178,24 @@ contract HearthMultisig {
         txId = _transactions.length;
         _transactions.push(Transaction({to: to, value: value, data: data, executed: false}));
         emit Submission(txId, to, value, data);
-        confirmedBy[txId][msg.sender] = true;
+        _confirmedIn[txId][msg.sender] = ownerEpoch;
         emit Confirmation(msg.sender, txId);
     }
 
+    /// @dev A returning owner whose earlier confirmation predates their current tenure is
+    /// not "already confirmed" — `confirmedBy` reads false for them — so they can and
+    /// must confirm again, now, if they still mean it.
     function confirmTransaction(uint256 txId) external onlyOwner txExists(txId) {
         require(!_transactions[txId].executed, "HearthMultisig: ALREADY_EXECUTED");
-        require(!confirmedBy[txId][msg.sender], "HearthMultisig: ALREADY_CONFIRMED");
-        confirmedBy[txId][msg.sender] = true;
+        require(!confirmedBy(txId, msg.sender), "HearthMultisig: ALREADY_CONFIRMED");
+        _confirmedIn[txId][msg.sender] = ownerEpoch;
         emit Confirmation(msg.sender, txId);
     }
 
     function revokeConfirmation(uint256 txId) external onlyOwner txExists(txId) {
         require(!_transactions[txId].executed, "HearthMultisig: ALREADY_EXECUTED");
-        require(confirmedBy[txId][msg.sender], "HearthMultisig: NOT_CONFIRMED");
-        confirmedBy[txId][msg.sender] = false;
+        require(confirmedBy(txId, msg.sender), "HearthMultisig: NOT_CONFIRMED");
+        _confirmedIn[txId][msg.sender] = 0;
         emit Revocation(msg.sender, txId);
     }
 
@@ -198,6 +235,7 @@ contract HearthMultisig {
         require(_owners.length < MAX_OWNERS, "HearthMultisig: TOO_MANY_OWNERS");
         isOwner[owner] = true;
         _owners.push(owner);
+        ownerSince[owner] = ++ownerEpoch;
         emit OwnerAdded(owner);
     }
 
@@ -215,6 +253,10 @@ contract HearthMultisig {
                 break;
             }
         }
+        // No epoch bump here on purpose. A departed owner's confirmations stop counting
+        // immediately because `confirmationCount` walks the live owner list, and they
+        // stay dead if the address ever returns because rejoining takes a strictly
+        // higher epoch than any confirmation given before it.
         emit OwnerRemoved(owner);
     }
 
@@ -233,6 +275,7 @@ contract HearthMultisig {
         }
         isOwner[owner] = false;
         isOwner[newOwner] = true;
+        ownerSince[newOwner] = ++ownerEpoch;
         emit OwnerRemoved(owner);
         emit OwnerAdded(newOwner);
     }
@@ -267,10 +310,26 @@ contract HearthMultisig {
         return (t.to, t.value, t.data, t.executed);
     }
 
-    /// @notice Confirmations from addresses that are owners RIGHT NOW.
+    /// @notice Has `owner` confirmed transaction `txId`, in a way that still counts?
+    /// @dev Two conditions, and the second is the one that is easy to leave out. The
+    /// confirmation must exist, and it must have been given under the signer set that
+    /// exists now. Clearing the map when an owner leaves would be the obvious way to get
+    /// the second, and it is an unbounded loop over the whole proposal history; the epoch
+    /// is O(1) and strictly stronger, because it also invalidates confirmations when an
+    /// unrelated owner joins. Same selector and same return type as the `public mapping`
+    /// this replaced, so nothing off-chain has to change.
+    function confirmedBy(uint256 txId, address owner) public view returns (bool) {
+        uint256 at = _confirmedIn[txId][owner];
+        return at != 0 && at >= ownerSince[owner];
+    }
+
+    /// @notice Confirmations from addresses that are owners RIGHT NOW, given while they
+    /// were. A departed signer's confirmation stops counting when they leave — and stays
+    /// stopped if they come back, which is the part a stored tally and a cleared flag
+    /// both get wrong.
     function confirmationCount(uint256 txId) public view txExists(txId) returns (uint256 count) {
         for (uint256 i = 0; i < _owners.length; i++) {
-            if (confirmedBy[txId][_owners[i]]) count++;
+            if (confirmedBy(txId, _owners[i])) count++;
         }
     }
 
