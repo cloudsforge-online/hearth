@@ -176,6 +176,19 @@ so the source is <i>equivalent</i>, not proven identical.</p>
 <p><b>Constructor arguments are recorded but not verified</b> unless you supply
 <code>creationTxHash</code>. Immutable values are read out of the deployed code
 and reported, but masked for comparison rather than proven.</p>
+
+<h2>One submission, every identical deployment</h2>
+<p>Verification proves a source against <i>runtime</i> bytecode, which carries no
+constructor arguments. So a contract deployed a thousand times with different
+names, supplies and owners is a thousand addresses holding one bytecode, and
+verifying any one of them answers for all of them.</p>
+<p><code>twin-exact</code> — this address holds the same bytes as a verified
+contract.<br>
+<code>twin-immutables</code> — the same bytes apart from its
+<code>immutable</code> values, which are read from its own code.</p>
+<p>A derived answer names its source in <code>twinOf</code> and carries <b>no</b>
+constructor arguments — those are the part that differs. Verify an address
+directly, with its creation transaction, to have them checked.</p>
 <p><a href="/health">/health</a> · <a href="/contracts">/contracts</a> · <a href="/compilers">/compilers</a></p>`;
 
 function createServer({ env, verifier, store, registry }) {
@@ -225,12 +238,20 @@ function createServer({ env, verifier, store, registry }) {
 
       const contractMatch = /^\/contract\/(0x[0-9a-fA-F]{40})(\/abi)?$/.exec(url.pathname);
       if (contractMatch && req.method === 'GET') {
-        const record = store.get(contractMatch[1].toLowerCase());
+        /* `verifier.resolve`, not `store.get`: an address that carries the same
+         * runtime bytecode as a verified contract has the same source, and this
+         * is the route the explorer reads. See `derivedRecord` in verifier.js
+         * for what such an answer does and does not claim. */
+        const record = await verifier.resolve(contractMatch[1]);
         if (!record) return send(res, 404, { error: 'not verified' }, cors);
         return send(res, 200, contractMatch[2] ? record.abi : record, cors);
       }
 
       if (url.pathname === '/contracts' && req.method === 'GET') {
+        /* Deliberately `store` and not the resolver: this lists what somebody
+         * SUBMITTED. Derived records have no list — they are discovered by
+         * asking about an address, and enumerating them would mean walking every
+         * account on the chain. */
         return send(res, 200, { count: store.count, contracts: store.list() }, cors);
       }
 
@@ -318,14 +339,14 @@ function createServer({ env, verifier, store, registry }) {
 
         if (action === 'getabi') {
           const address = String(q.get('address') || '').toLowerCase();
-          const record = /^0x[0-9a-f]{40}$/.test(address) ? store.get(address) : null;
+          const record = /^0x[0-9a-f]{40}$/.test(address) ? await verifier.resolve(address) : null;
           if (!record) return send(res, 200, NOTOK('Contract source code not verified'), cors);
           return send(res, 200, OK(JSON.stringify(record.abi)), cors);
         }
 
         if (action === 'getsourcecode') {
           const address = String(q.get('address') || '').toLowerCase();
-          const record = /^0x[0-9a-f]{40}$/.test(address) ? store.get(address) : null;
+          const record = /^0x[0-9a-f]{40}$/.test(address) ? await verifier.resolve(address) : null;
           if (!record) {
             return send(res, 200, OK([{
               SourceCode: '', ABI: 'Contract source code not verified', ContractName: '',
@@ -352,6 +373,11 @@ function createServer({ env, verifier, store, registry }) {
             SwarmSource: '',
             HearthMatchType: record.matchType,
             HearthVerifiedAt: record.verifiedAt,
+            /* Empty for a directly verified contract. Where it is set, the
+             * source above was proven against THAT address's code, and this
+             * address carries the same bytes — so `ConstructorArguments` is
+             * empty on purpose rather than missing. */
+            HearthTwinOf: record.twinOf || '',
           }]), cors);
         }
 

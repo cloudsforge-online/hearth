@@ -18,6 +18,14 @@ const https = require('https');
 const { URL } = require('url');
 
 const NEGATIVE_TTL_MS = 30_000;
+/* A DERIVED answer — the source of an address with identical runtime bytecode,
+ * `twinOf` set — is the one positive that can be superseded. Verifying that
+ * address directly adds its constructor arguments and its own creation
+ * transaction, and caching the derived answer forever would hide that until a
+ * restart. Long enough to still absorb a page's worth of requests. */
+const DERIVED_TTL_MS = 5 * 60_000;
+
+const ttlOk = hit => !hit.record.twinOf || Date.now() - hit.at < DERIVED_TTL_MS;
 
 class VerifyClient {
   constructor(baseUrl, { timeoutMs = 5000 } = {}) {
@@ -32,11 +40,12 @@ class VerifyClient {
     if (!this.base) return null;
     const key = address.toLowerCase();
     const hit = this.cache.get(key);
-    /* A verified record never changes — a contract's runtime bytecode is
-     * immutable, so a positive answer is cached forever. A negative one is
-     * cached briefly, because "verify it, then look again" is the normal
-     * sequence and a long negative TTL makes the verifier look broken. */
-    if (hit && (hit.record || Date.now() - hit.at < NEGATIVE_TTL_MS)) return hit.record;
+    /* A directly verified record never changes — a contract's runtime bytecode
+     * is immutable — so that answer is cached forever. A negative one is cached
+     * briefly, because "verify it, then look again" is the normal sequence and a
+     * long negative TTL makes the verifier look broken. A derived one expires
+     * too, for the reason above it. */
+    if (hit && (hit.record ? ttlOk(hit) : Date.now() - hit.at < NEGATIVE_TTL_MS)) return hit.record;
 
     const record = await this._get(`/contract/${key}`);
     this.cache.set(key, { at: Date.now(), record });

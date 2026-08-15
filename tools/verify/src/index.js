@@ -50,6 +50,17 @@ async function main() {
     });
   }
 
+  /* Records verified before the runtime index existed have no index entry, so
+   * nothing resolves against them until one is written. Best-effort and never
+   * fatal: a node that is briefly unreachable costs us the twin lookups, not the
+   * service, and the next start tries again. */
+  try {
+    const back = await verifier.backfillIndex();
+    if (back.pending) logger.info('runtime index backfilled', back);
+  } catch (e) {
+    logger.warn('runtime index backfill failed; twin lookups may miss older records', { err: e });
+  }
+
   try {
     await registry.loadList();
     logger.info('compiler list ready', { path: registry.listPath });

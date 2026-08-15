@@ -393,6 +393,9 @@ async function main() {
 
   // ==========================================================================
   group('immutables and constructor arguments, on the real Router');
+  /* Hoisted for the twin group below, which needs a contract that HAS
+   * immutables — WEMBER has none, so it can only exercise the exact key. */
+  let routerFixture = null;
   {
     const sources = readSources(CONTRACTS);
     const out = await compile({
@@ -475,6 +478,115 @@ async function main() {
     eq(imm.json.ok, true, 'a different deployment of the same source also matches');
     ok(imm.json.immutableValues.every(v => /^0x1+$/.test(v)),
       'with ITS immutable values reported — masked for comparison, never claimed as verified');
+
+    routerFixture = { sources, router, refs, astIds, verifiedAt: ROUTER_AT, asDeployed };
+  }
+
+  // ==========================================================================
+  group('one submission covers every identical deployment');
+  /* The factory case, which is the whole reason Forge Create can sell a token
+   * without asking every customer to verify one. If this group regresses, a
+   * hundred addresses holding one bytecode read as a hundred anonymous blobs. */
+  {
+    const TWIN_AT = A(0x6001);
+    node.state.setCode(TWIN_AT, wember.evm.deployedBytecode.object);
+    ok(!store.has(TWIN_AT), 'the twin address was never submitted');
+
+    const r = await request(port, 'GET', `/contract/${TWIN_AT}`);
+    eq(r.status, 200, 'and yet GET /contract/:address answers');
+    eq(r.json.matchType, 'twin-exact', 'as a twin of an address that WAS verified');
+    eq(r.json.twinOf, WEMBER_AT, 'naming which one');
+    eq(r.json.address, TWIN_AT, 'while the record is about the address that was asked for');
+    eq(r.json.contractName, 'WEMBER', 'with the source, the name');
+    eq(r.json.compilerVersion, COMPILER, 'and the compiler carried over');
+    eq(r.json.constructorArguments, null,
+      'but NOT the constructor arguments — those are the part that differs per deployment');
+    eq(r.json.constructorArgumentsVerified, false, 'and they are not claimed as verified');
+    eq(r.json.creationTxHash, null, 'nor is the twin\'s creation transaction passed off as this one\'s');
+
+    const direct = await request(port, 'GET', `/contract/${WEMBER_AT}`);
+    eq(direct.json.matchType, 'exact', 'the directly verified address still reports its own, stronger match');
+    ok(!direct.json.twinOf, 'and is not described as a twin of itself');
+
+    const abi = await request(port, 'GET', `/contract/${TWIN_AT}/abi`);
+    ok(Array.isArray(abi.json) && abi.json.some(x => x.name === 'deposit'), 'the ABI resolves too');
+
+    const src = await request(port, 'GET', `/api?module=contract&action=getsourcecode&address=${TWIN_AT}`);
+    eq(src.json.status, '1', 'getsourcecode — what the explorer calls — answers for it');
+    ok(src.json.result[0].SourceCode.length > 100, 'with the source');
+    eq(src.json.result[0].ConstructorArguments, '', 'and an empty ConstructorArguments, not the twin\'s');
+    eq(src.json.result[0].HearthTwinOf, WEMBER_AT, 'saying where the source came from');
+    const getabi = await request(port, 'GET', `/api?module=contract&action=getabi&address=${TWIN_AT}`);
+    eq(getabi.json.status, '1', 'getabi answers for it');
+
+    // A twin is a claim about bytecode, so it must not survive a change to it.
+    const STRANGER = A(0x6002);
+    node.state.setCode(STRANGER, '60806040523415600e57600080fd5b00');
+    eq((await request(port, 'GET', `/contract/${STRANGER}`)).status, 404,
+      'unrelated code is still not verified');
+    const NOTHING = A(0x6003);
+    eq((await request(port, 'GET', `/contract/${NOTHING}`)).status, 404,
+      'and an address with no code at all is not either');
+    const strangerSrc = await request(port, 'GET', `/api?module=contract&action=getsourcecode&address=${STRANGER}`);
+    eq(strangerSrc.json.result[0].ABI, 'Contract source code not verified',
+      'the Etherscan shape still says so in the words every client checks for');
+
+    // The same source, deployed with different immutables: the one case where
+    // two deployments of one contract are NOT byte-identical.
+    const { router, refs, astIds } = routerFixture;
+    const IMM_TWIN = A(0x6004);
+    const buf = Buffer.from(router.evm.deployedBytecode.object, 'hex');
+    astIds.forEach(id => {
+      for (const rr of refs[id]) Buffer.from('77'.repeat(32), 'hex').copy(buf, rr.start);
+    });
+    node.state.setCode(IMM_TWIN, buf.toString('hex'));
+    const it = await request(port, 'GET', `/contract/${IMM_TWIN}`);
+    eq(it.status, 200, 'a deployment differing only in its immutables resolves');
+    eq(it.json.matchType, 'twin-immutables', 'and is labelled as such, not as an exact twin');
+    eq(it.json.contractName, 'HearthV2Router02', 'with the right contract');
+    ok(it.json.immutableValues.length > 0 && it.json.immutableValues.every(v => /^0x7+$/.test(v)),
+      'and ITS OWN immutable values, read from its own code rather than copied');
+
+    // One byte off the masked region is a different contract, immutables or not.
+    const NEAR_MISS = A(0x6005);
+    const near = Buffer.from(buf);
+    const untouched = [...Array(near.length).keys()].find(
+      i => !astIds.some(id => refs[id].some(rr => i >= rr.start && i < rr.start + rr.length)),
+    );
+    near[untouched] = near[untouched] ^ 0xff;
+    node.state.setCode(NEAR_MISS, near.toString('hex'));
+    eq((await request(port, 'GET', `/contract/${NEAR_MISS}`)).status, 404,
+      'one byte changed outside the immutable slots is not a twin');
+  }
+
+  // ==========================================================================
+  group('records verified before the index existed are backfilled');
+  {
+    /* The upgrade case. Without this, the index only covers what was verified
+     * after it shipped, and the gap is invisible: every affected address just
+     * keeps reading as unverified. */
+    const oldDir = path.join(TMP, 'pre-index');
+    const OLD_AT = A(0x7001);
+    const oldStore = new Store(oldDir);
+    oldStore.put({
+      address: OLD_AT, contractName: 'WEMBER', matchType: 'exact', verifiedAt: '2026-01-01T00:00:00.000Z',
+      abi: [{ type: 'function', name: 'deposit' }], immutableReferences: null,
+    });
+    node.state.setCode(OLD_AT, wember.evm.deployedBytecode.object);
+    eq(oldStore.unindexed(), [OLD_AT], 'a record written without an index entry is found');
+
+    const oldVerifier = new Verifier({ env: { ...env, dataDir: oldDir }, rpc, registry, store: oldStore });
+    const LATER_AT = A(0x7002);
+    node.state.setCode(LATER_AT, wember.evm.deployedBytecode.object);
+    eq(await oldVerifier.resolve(LATER_AT), null, 'and resolves nothing until it is indexed');
+
+    const back = await oldVerifier.backfillIndex();
+    eq(back, { indexed: 1, skipped: 0, pending: 1 }, 'the backfill indexes it');
+    eq(oldStore.unindexed(), [], 'leaving nothing pending');
+
+    const now = await oldVerifier.resolve(LATER_AT);
+    eq(now && now.twinOf, OLD_AT, 'and now an identical deployment resolves against it');
+    eq((await oldVerifier.backfillIndex()).pending, 0, 'a second backfill has nothing to do');
   }
 
   // ==========================================================================

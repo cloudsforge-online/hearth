@@ -218,6 +218,11 @@ class Verifier {
       metadataMatched: result.metadataMatched,
       immutableRanges: result.immutableRanges,
       immutableValues: result.immutableValues,
+      /* solc's offsets for the immutable slots, kept so the runtime index can
+       * mask a stranger's code exactly the way this comparison masked ours.
+       * Nothing on a contract page reads it; recovering it later would mean a
+       * full recompile, and it is a few dozen bytes. */
+      immutableReferences: (evm.deployedBytecode || {}).immutableReferences || null,
       constructorArguments: args.arguments,
       constructorArgumentsVerified: args.verified,
       constructorArgumentsNote: args.reason,
@@ -235,11 +240,108 @@ class Verifier {
         .slice(0, 50),
     };
     this.store.put(record);
+    /* Index by the code itself, so the next address carrying these exact bytes
+     * inherits this source without anybody re-submitting it. See the long note
+     * in `store.js`. The write is best-effort on purpose: the record above is
+     * already on disk, and failing the submission now would tell the submitter
+     * their verification did not happen when it did. */
+    try {
+      this.store.indexRuntime({
+        address: lower,
+        runtimeCode: onchain,
+        immutableReferences: (evm.deployedBytecode || {}).immutableReferences,
+      });
+    } catch (e) {
+      logger.warn('runtime index not written', { address: lower, error: String(e.message || e) });
+    }
     logger.info('verified', {
       address: lower, contract: `${picked.file}:${picked.name}`, matchType: record.matchType,
       compiler: record.compilerVersion, ms: compiled.ms,
     });
     return record;
+  }
+
+  /**
+   * The source for an address: verified there, or inherited from a twin.
+   *
+   * This is what every read path should call instead of `store.get`. A direct
+   * record always wins — it is the stronger claim, since it was checked against
+   * that address's own code and may carry constructor arguments a derived record
+   * cannot have. Only when there is none does the deployed code get looked up in
+   * the runtime index.
+   *
+   * Returns null the same way `store.get` does, so a caller that treats a miss
+   * as "not verified" needs no other change.
+   */
+  async resolve(address) {
+    const lower = String(address || '').toLowerCase();
+    if (!ADDR_RE.test(lower)) return null;
+
+    const direct = this.store.get(lower);
+    if (direct) return direct;
+
+    let onchain;
+    try {
+      onchain = await this.rpc.getCode(lower, 'latest');
+    } catch (e) {
+      /* The node is the thing that failed, not the lookup. Saying "not verified"
+       * here would be a claim about the contract that we did not check. */
+      logger.warn('could not read code while resolving', { address: lower, error: String(e.message || e) });
+      return null;
+    }
+    if (!onchain || norm(onchain).length === 0) return null;
+
+    const twin = this.store.findByRuntime(onchain);
+    if (!twin) return null;
+    return derivedRecord({ address: lower, twin });
+  }
+
+  /**
+   * Index the records that were verified before the index existed.
+   *
+   * Without this, the runtime index only covers contracts verified after the
+   * upgrade, and the first customer whose token would have resolved against an
+   * older submission still reads as an anonymous blob — a silent gap that looks
+   * exactly like the bug this index fixes.
+   *
+   * Best-effort, and it re-reads the chain rather than trusting the record: the
+   * index has to key on the bytes that are deployed NOW, which is what a lookup
+   * will present. Records verified against a since-self-destructed address are
+   * skipped rather than indexed against nothing.
+   */
+  async backfillIndex() {
+    const pending = this.store.unindexed();
+    if (!pending.length) return { indexed: 0, skipped: 0, pending: 0 };
+    let indexed = 0, skipped = 0;
+    for (const address of pending) {
+      const record = this.store.get(address);
+      if (!record) { skipped++; continue; }
+      let onchain;
+      try {
+        onchain = await this.rpc.getCode(address, 'latest');
+      } catch (e) {
+        logger.warn('backfill could not read code', { address, error: String(e.message || e) });
+        skipped++;
+        continue;
+      }
+      if (!onchain || norm(onchain).length === 0) { skipped++; continue; }
+      try {
+        this.store.indexRuntime({
+          address,
+          runtimeCode: onchain,
+          /* Null for records written by a build that did not keep them. Such a
+           * record still gets its exact key, which is the case that matters for
+           * a factory; only the immutables-differ case is lost, and only until
+           * somebody re-verifies. */
+          immutableReferences: record.immutableReferences,
+        });
+        indexed++;
+      } catch (e) {
+        logger.warn('backfill could not write the index', { address, error: String(e.message || e) });
+        skipped++;
+      }
+    }
+    return { indexed, skipped, pending: pending.length };
   }
 
   /**
@@ -305,4 +407,42 @@ function safeJson(text) {
   try { return JSON.parse(text); } catch { return null; }
 }
 
-module.exports = { Verifier, VerifyError, VERIFIER_VERSION, licenseFrom, allContracts };
+/**
+ * A verified twin's record, restated as a claim about a different address.
+ *
+ * The source, the compiler, the settings and the ABI transfer intact: they are
+ * properties of the CODE, and the code is the same code. Everything that is a
+ * property of the DEPLOYMENT does not transfer, and is cleared rather than
+ * copied — a derived record that carried the twin's constructor arguments would
+ * be stating this token's supply and name as the other token's, which is the one
+ * thing about a factory-built contract that is guaranteed to be different.
+ *
+ * `verifiedAt` stays the twin's. It is when the source was proven against these
+ * bytes, and no proof happened at this address.
+ */
+function derivedRecord({ address, twin }) {
+  const r = twin.record;
+  return {
+    ...r,
+    address,
+    matchType: twin.match === 'exact' ? 'twin-exact' : 'twin-immutables',
+    // These are read off THIS address's code, not copied. With an exact match
+    // they are identical to the twin's by definition; with an immutables match
+    // they are exactly what differs.
+    immutableRanges: twin.immutableRanges,
+    immutableValues: twin.immutableValues,
+    constructorArguments: null,
+    constructorArgumentsVerified: false,
+    constructorArgumentsNote:
+      'not checked: this source was verified at another address with the same runtime bytecode, and '
+      + 'runtime bytecode does not carry constructor arguments. Verify this address directly, with its '
+      + 'creation transaction, to check them.',
+    creationTxHash: null,
+    twinOf: r.address,
+    twinSourceMatchType: r.matchType,
+  };
+}
+
+module.exports = {
+  Verifier, VerifyError, VERIFIER_VERSION, licenseFrom, allContracts, derivedRecord,
+};
