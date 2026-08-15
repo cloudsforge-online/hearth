@@ -428,6 +428,11 @@ class Api {
         HearthMatchType: record.matchType,
         HearthVerifiedAt: record.verifiedAt,
         HearthConstructorArgumentsVerified: record.constructorArgumentsVerified ? '1' : '0',
+        /* Empty for a contract verified at this address. Where it is set, the
+         * source was proven against THAT address's code and this one holds the
+         * same runtime bytecode — which is why `ConstructorArguments` above is
+         * empty on purpose rather than missing. */
+        HearthTwinOf: record.twinOf || '',
       }]);
     }
 

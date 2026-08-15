@@ -102,11 +102,47 @@ across files is a refusal rather than a coin toss.
 | --- | --- |
 | `exact` | byte-identical, **including** the CBOR metadata trailer |
 | `partial` | identical once the trailer is removed |
+| `twin-exact` | not submitted; holds the same bytes as an address that was |
+| `twin-immutables` | not submitted; the same bytes apart from its own `immutable` values |
 
 A partial match means "this source compiles to the deployed code", not "this is
 byte-for-byte the source that was compiled". The distinction is in the record
 (`matchType`, `metadataMatched`) and is surfaced by the explorer as
 `HearthMatchType`. It is never hidden.
+
+### One submission, every identical deployment
+
+Verification proves a source against **runtime** bytecode, and runtime bytecode
+carries no constructor arguments — they are consumed by the constructor and
+never appear in the deployed code. So a contract sold a thousand times with
+different names, supplies and owners is a thousand addresses holding **one**
+bytecode, and verifying any one of them answers for all of them.
+
+That is not a convenience: it is the difference between a token factory being
+usable and every customer being told to run `forge verify-contract` themselves.
+Forge Create is exactly this shape, and without it ninety-nine tokens read as
+anonymous blobs while an identical contract sits verified next door.
+
+Every verified record is therefore indexed by the code deployed at it, under two
+keys — the code's hash, and the hash of the code with its immutable slots zeroed.
+A lookup for an unverified address reads its code and tries both. What comes back
+is the twin's source, compiler and ABI, with `twinOf` naming where it came from
+and **no constructor arguments**, because those are precisely the part that
+differs. Verify an address directly, with its creation transaction, to have its
+own arguments checked.
+
+Two properties worth stating:
+
+- **A direct record always wins.** It was checked against that address's own
+  code and may carry verified constructor arguments; a derived one cannot.
+- **First writer keeps the key.** Verifying a clone of an already-verified
+  contract does not re-point `twinOf` at the clone. The source is identical
+  either way, and an answer that changes identity under whoever cited it buys
+  nothing.
+
+`/contracts` lists only what was submitted. Derived records are discovered by
+asking about an address; enumerating them would mean walking every account on the
+chain.
 
 ### The metadata hash
 
@@ -265,6 +301,13 @@ shape for that: greppable, diffable, trivially backed up, and an operator can
 hand one to someone without exporting anything. Writes go to a temporary file
 and are renamed, so a reader never sees a half-written record.
 
+Beside the records, `by-runtime/` holds the twin index: one small file per key,
+named for the hash it answers to, plus an `addr-0x….json` marker per record so
+that "is this indexed?" is a question about the record and not about who owns its
+keys. Deleting the whole directory loses nothing that cannot be rebuilt — the
+service backfills it from the records at startup, reading each address's code
+from the node.
+
 ---
 
 ## What is proven, and what is not
@@ -288,6 +331,16 @@ declared arguments and the deployment; unlinked-library refusal; the compiler
 checksum, the pre-0.6.0 refusal, the nightly refusal, and that a corrupted
 cached compiler is deleted rather than loaded; and the full asynchronous
 Etherscan flow including a **failed** verification travelling through it.
+
+The twin index is proven in both directions too: an address that was never
+submitted resolves against one that was — through `/contract/:address`, its
+`/abi`, and the `getsourcecode` and `getabi` the explorer calls — while an
+address holding unrelated code, an address holding no code, and an address whose
+code differs by **one byte outside the immutable slots** all stay unverified. A
+derived answer is checked for carrying the twin's source but not its constructor
+arguments or creation transaction, for reporting its own immutable values, and
+for never overriding a directly verified record. The startup backfill is proven
+against a record written with no index entry.
 
 **Not proven, because nothing has pointed this at a node:**
 
