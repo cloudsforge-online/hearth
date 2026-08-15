@@ -29,6 +29,18 @@ jobs:
           - image: hearth-node
             dockerfile: node/Dockerfile
             context: node
+          # The two developer-kit services below take the REPOSITORY ROOT as
+          # their context, not their own directory. Both require
+          # `node/src/crypto/keccak` — the tree's vector-tested implementation
+          # rather than a second copy that could drift — and a context scoped to
+          # `tools/<name>` cannot see it. Their Dockerfiles copy only the paths
+          # they import, so the wider context costs nothing in the image.
+          - image: hearth-explorer-api
+            dockerfile: tools/explorer-api/Dockerfile
+            context: .
+          - image: hearth-verify
+            dockerfile: tools/verify/Dockerfile
+            context: .
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
