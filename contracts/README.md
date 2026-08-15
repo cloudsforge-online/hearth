@@ -87,8 +87,11 @@ the same settings.
 
 ## Deployment order
 
-Nothing here is deployed automatically, and nothing has been deployed. Deploy through
-ForgeMint's existing EVM path, in this order:
+All five are **deployed on EMBER testnet, chain 7412** — addresses and the post-deploy
+readings in [`micro-deploy` `docs/hearth-exchange.md`](https://github.com/cloudsforge-online/micro-deploy/blob/main/docs/hearth-exchange.md).
+**Mainnet is untouched.** The deployer is `micro-deploy`'s `scripts/hearth-dex-deploy.js`,
+which follows this table, reads every check below back off the chain, and on mainnet
+refuses to invent a signer set. Deploy in this order:
 
 | # | Contract | Constructor arguments | Depends on |
 | --- | --- | --- | --- |
@@ -141,8 +144,35 @@ worth taxing.
 3. `HearthV2Router02.factory()` and `.WETH()` return the addresses from steps 3 and 2.
 4. Create the first pair and check that the address matches what `pairFor` derives
    off-chain from the factory address and the init code hash.
-5. **Ship with liquidity** (spec §7). A DEX with empty pools attracts nobody. Seed
-   EMBER/WEMBER and at least one pair against a stable asset before announcing anything.
+5. **Ship with liquidity** (spec §7). A DEX with empty pools attracts nobody. Seed at
+   least one pair, then swap through it *and back*, and withdraw part of the position —
+   a pool that takes deposits and cannot return them is not a market, and "we never tried
+   to withdraw" is how that gets discovered late. `deploy/scripts/hearth-dex-seed.js`
+   does all of it and records what it did.
+
+### What is deployed
+
+**EMBER testnet, chain 7412**, from block 14119. All five steps above pass, re-read from
+the node.
+
+| | |
+| --- | --- |
+| `HearthMultisig` | `0x51faced76d70981e863be2987ccc811b0712e4f8` — 2-of-3 |
+| `WEMBER` | `0xa26dfebc362a380e1ade6090c7c5887180d1b263` |
+| `HearthV2Factory` | `0x18bbd09d51f4e9e630dd0a86fc984b6326f10e41` — `feeTo` unset, `allPairsLength() == 1` |
+| `HearthV2Router02` | `0xba2b9db822e1f2ec3039fe474644b8405268a9b4` |
+| `Multicall3` | `0x76db8cdcaf4a517a51ae474bd00cfe9a53635c03` |
+| EMBER/FTEST pair | `0xd439a085d812b21de4b179fafe00281de50733a0` — opened 2026-08-15 at block 16753 |
+
+The pair has been traded through in both directions and partially withdrawn from: a swap
+filled at exactly the quoted amount, `k` rose across both legs, and `removeLiquidityETH`
+returned the position's share. The full record, including the two measurement bugs that
+run cost, is [`deploy/docs/hearth-exchange.md`](../../deploy/docs/hearth-exchange.md) §6.
+
+All three testnet wallet keys are on one host. That exercises the code path — a threshold
+above one, an owner set that can be rotated — and it is not a custody arrangement; do not
+cite it as evidence the fee switch is protected. **EMBER mainnet has nothing deployed**,
+and the deploy script will not generate a signer set there.
 
 ---
 
