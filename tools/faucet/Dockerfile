@@ -18,6 +18,14 @@ COPY node/src/params.js ./node/src/params.js
 COPY tools/faucet/package.json ./tools/faucet/package.json
 COPY tools/faucet/src ./tools/faucet/src
 
+# /state MUST be created and chowned while this is still root. `VOLUME` alone
+# makes a directory owned by root:root, and this image then cannot write
+# `faucet-state.json` into it — proven while building the sibling explorer-api
+# and verify images, which had the identical defect and died with EACCES on
+# their first write. A bind mount from the host still needs the host directory
+# to be writable by uid 1000.
+RUN mkdir -p /state && chown node:node /state
+
 # Never root, and never with a writable application directory.
 USER node
 
