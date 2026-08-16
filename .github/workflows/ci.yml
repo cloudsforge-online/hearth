@@ -275,6 +275,22 @@ jobs:
       # (#25). Each was written against the old bytecode first and failed there.
       - name: The multisig that holds feeToSetter (phase A gate)
         run: node ../node/test/multisig.js
+      # Forge Exchange phase G (docs/ecosystem/39-forge-exchange.md §6, §4). A wrapped
+      # asset is the one thing in the exchange plan that can take a user's real Litecoin
+      # and hand back a number, so the gate is not "it compiles" but "a stranger can
+      # compare issued supply to reserves on-chain, and a redemption completes".
+      #
+      # What this run defends, none of which a compile can see: a receipt with no
+      # attestation mints nothing (which is the estate's actual state — no
+      # platform-controlled LTC, BTC or DOGE address has ever received anything), issuing
+      # one unit past the attested reserve reverts while issuing exactly up to it does
+      # not, an attestation goes stale on a clock, a shortfall can be RECORDED rather
+      # than hidden, an old reserve reading cannot be replayed at a lower height, and a
+      # holder can still redeem and transfer while issuance is frozen. It also runs a
+      # real HearthMultisig as the issuer, so the figure that bounds every mint cannot be
+      # moved by one key.
+      - name: The receipt that cannot out-issue its reserve (phase G gate)
+        run: node ../node/test/forge-receipt.js
 
   tools:
     name: Developer kit (faucet, explorer API, verifier)
