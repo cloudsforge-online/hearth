@@ -171,8 +171,37 @@ run cost, is [`deploy/docs/hearth-exchange.md`](../../deploy/docs/hearth-exchang
 
 All three testnet wallet keys are on one host. That exercises the code path — a threshold
 above one, an owner set that can be rotated — and it is not a custody arrangement; do not
-cite it as evidence the fee switch is protected. **EMBER mainnet has nothing deployed**,
-and the deploy script will not generate a signer set there.
+cite it as evidence the fee switch is protected.
+
+**EMBER mainnet, chain 7411**, from block 38840. Same five steps, same order, re-read from
+the node afterwards — and deployed from `main` rather than from a copy of the image testnet
+runs, which was checked by diffing the signing code between the two before broadcasting.
+
+| | |
+| --- | --- |
+| `HearthMultisig` | `0x39b1743338c9d356030480e484cb1078456c290c` — 2-of-3 |
+| `WEMBER` | `0xdae7f901bc0ea6cb8a77c160e355007981e351e1` |
+| `HearthV2Factory` | `0x8e41e083cd664a5d65d047198338e5f110ee883f` — `feeTo` unset, `allPairsLength() == 1` |
+| `HearthV2Router02` | `0x74a991fedb2e09aa23faffa9bdf4ca5dbbeb0527` |
+| `Multicall3` | `0xe1636b08ff1edde24b2642a3cb388d4e97dfe0bc` |
+| EMBER/FXR pair | `0x43236f1a5fd6baa20a3df9b946188bca3800fae0` — seeded 2026-08-15 at block 38853 |
+
+`pairCodeHash()` equals the router's compiled-in constant on both chains, which is the one
+check step 4 exists for and the one that cannot be repaired after the fact. The mainnet
+pair was seeded with 25,000 EMBER against the entire supply of a Forge Create token, then
+traded in both directions and partially withdrawn from, exactly as step 5 requires; both
+legs filled at the quoted amount and the mid price returned to within a rounding error of
+where it opened. The record is [`docs/ecosystem/39-forge-exchange.md`](../../docs/ecosystem/39-forge-exchange.md)
+phase F.
+
+**The mainnet custody is worse than the contract makes it look, and this is where that is
+written down.** Two of the wallet's three keys are files on the chain host, at mode 0600,
+beside the third; whoever has root there has quorum. What that quorum can reach is bounded
+— `feeToSetter` sets `feeTo` and nothing else, it cannot touch reserves, and the LP tokens
+are held by the deploying account rather than by the wallet — so the exposure is the
+protocol fee switch, not the liquidity. Read the claim above as being about the code.
+Fixing it is `replaceOwner` from the current threshold, once there is a decision about who
+signs and on what devices.
 
 ---
 
