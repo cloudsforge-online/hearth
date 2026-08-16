@@ -27,6 +27,7 @@ pnpm test         # 27 build-level assertions
 | `Multicall3` | canonical Multicall3 | Batched reads in one `eth_call`. |
 | `HearthV2ERC20` | `UniswapV2ERC20` | Base of `HearthV2Pair`; the LP token. Not deployed on its own. |
 | `HearthMultisig` | Gnosis `MultiSigWallet`, reduced | An *m*-of-*n* wallet. It exists because `feeToSetter` must not be an EOA and the estate had nothing else that could hold it. Confirmations are recorded on-chain by each signer rather than aggregated off-chain — no `ecrecover`, no domain separator, no nonce discipline. Owner and threshold changes are proposals the wallet makes to itself. |
+| `ForgeReceipt` | nothing — written for this | A receipt for a coin held off this chain, and it says so in its own `statement()`. `issue()` cannot exceed the reserve most recently attested on chain, the attestation names the height on the underlying chain it was read at, and `reserveAddresses()` publishes the addresses holding the backing — so a stranger re-reads the same addresses at the same block and checks the claim without asking us. A stale attestation stops issuance on its own; redemption never stops. `redeem()` **burns before it records**, so a queued redemption can never be a supply that is also still spendable. No pause, no freeze, no blacklist, no upgrade path, and no owner that can mint. |
 
 Libraries (`src/libraries/`) are all `internal` and inline into their callers, so nothing
 needs library linking at deploy time:
@@ -163,6 +164,8 @@ the node.
 | `HearthV2Router02` | `0xba2b9db822e1f2ec3039fe474644b8405268a9b4` |
 | `Multicall3` | `0x76db8cdcaf4a517a51ae474bd00cfe9a53635c03` |
 | EMBER/FTEST pair | `0xd439a085d812b21de4b179fafe00281de50733a0` — opened 2026-08-15 at block 16753 |
+| `ForgeReceipt` `fLTC` | `0x5ff590f4f6f29711706f485d9350666d2f8e2f02` — block 19411, issuer is the multisig above |
+| `ForgeReceipt` `dEMBER` | `0x197f3dcb648abda5b7c678af5ac4d8042fcc8e6d` — block 19386, the redemption drill |
 
 The pair has been traded through in both directions and partially withdrawn from: a swap
 filled at exactly the quoted amount, `k` rose across both legs, and `removeLiquidityETH`
@@ -185,6 +188,14 @@ runs, which was checked by diffing the signing code between the two before broad
 | `HearthV2Router02` | `0x74a991fedb2e09aa23faffa9bdf4ca5dbbeb0527` |
 | `Multicall3` | `0xe1636b08ff1edde24b2642a3cb388d4e97dfe0bc` |
 | EMBER/FXR pair | `0x43236f1a5fd6baa20a3df9b946188bca3800fae0` — seeded 2026-08-15 at block 38853 |
+
+**No `ForgeReceipt` is deployed on mainnet, and that is a result rather than an omission.**
+`deploy/scripts/hearth-receipt-deploy.js` measures the reserve before it deploys anything,
+and on 2026-08-16 it measured 0.00000000 LTC across all three platform-controlled Litecoin
+addresses, at Litecoin height 3161029. It then refused, quoting
+[`docs/ecosystem/39-forge-exchange.md`](../../docs/ecosystem/39-forge-exchange.md) §4 —
+*a wrapped asset that cannot satisfy 35 must not be issued*. There is no flag that overrides
+it: the refusal lifts when coin arrives at a published address and the script is re-run.
 
 `pairCodeHash()` equals the router's compiled-in constant on both chains, which is the one
 check step 4 exists for and the one that cannot be repaired after the fact. The mainnet
@@ -281,6 +292,47 @@ it, obeys the wallet, and can hand the role to a successor multisig — after wh
 wallet is refused at full threshold.
 
 ---
+
+## `ForgeReceipt`
+
+The only contract here with no upstream to port from, because the thing it models is not a
+technical problem. A receipt is a promise, and the whole design question is what a stranger
+can check about a promise without being given anything by the person who made it.
+
+**The three reads that make it checkable.** `reserveAddresses()` returns the addresses on the
+underlying chain that hold the backing, as strings, in the clear. `attestation()` returns four
+things: the reserve, **the height on the underlying chain it was read at**, when it was read,
+and that block's hash. `totalSupply()` returns what has been issued. Those three are the whole
+audit: re-read the published addresses at the published block, compare to the supply. The block
+reference is what makes the claim falsifiable rather than merely stated — without it, "we hold
+X" is a number with no time attached and no way to reproduce it.
+
+The Litecoin block hash is exactly 32 bytes, so it lands in `attest`'s `bytes32 ref` unpadded.
+That is not a convenience; it is what binds an attestation to a specific block a stranger can
+re-scan at.
+
+**Four things it deliberately cannot do.**
+
+1. **Issue past the reserve.** `issue()` reverts with `EXCEEDS_RESERVE` if it would take supply
+   above the last attested figure. With a reserve of zero, every issuance reverts — which is
+   the state `fLTC` is in on testnet today, and it is asserted against the live chain rather
+   than asserted here.
+2. **Issue on a stale attestation.** Past `maxAttestationAge` the token stops minting on its
+   own with `STALE_ATTESTATION`. Nobody has to notice and intervene. **Redemption is not
+   gated on freshness** — an issuer who stops attesting must not thereby trap holders.
+3. **Pause, freeze, blacklist or upgrade.** None of these exist. There is no admin function
+   that moves somebody else's balance and no proxy to point somewhere new.
+4. **Record a redemption it has not burned.** `redeem()` burns first, then queues. A queued
+   redemption is therefore never also a spendable balance, and `unsettledRedemptions()` is the
+   honest outstanding liability — walked live rather than cached, because a cached counter is
+   one more number the issuer would be trusted to keep truthful.
+
+**What it does not fix.** It does not make the promise good; it makes the promise *checkable*.
+If the issuer attests a reserve it does not hold, this contract will faithfully permit issuance
+against a lie — the defence is that the lie is published, permanent, timestamped to a block on
+somebody else's chain, and refutable by one command a stranger runs against their own node.
+That is the whole of it, and any surface offering one of these tokens has to say so in the
+sentence that offers it.
 
 ## Multicall3 and the canonical address
 

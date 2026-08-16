@@ -110,7 +110,7 @@ test('pairFor derivation is reproducible off-chain', () => {
 
 // -------------------------------------------------------------------------- code size
 
-const SIZED = ['WEMBER', 'HearthV2Factory', 'HearthV2Pair', 'HearthV2Router02', 'Multicall3', 'HearthMultisig']
+const SIZED = ['WEMBER', 'HearthV2Factory', 'HearthV2Pair', 'HearthV2Router02', 'Multicall3', 'HearthMultisig', 'ForgeReceipt']
 
 test('every deployable contract is under the EIP-170 limit (24576 B)', () => {
   for (const [file, contracts] of Object.entries(output.contracts)) {
@@ -459,7 +459,136 @@ test("a confirmation counts only within its confirmer's current tenure", () => {
   }
 })
 
-test('adding the multisig did not move the pair init code hash', () => {
+// ------------------------------------------------------------------------ ForgeReceipt
+
+/** ForgeReceipt.sol with comments stripped — its docblocks discuss the words being
+ *  searched for, at length, and would otherwise satisfy every check below. */
+const receiptSrc = () =>
+  readFileSync(new URL('../src/ForgeReceipt.sol', import.meta.url), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\/\/.*$/gm, '')
+
+/** The body of one function, from its signature to the next one. */
+const bodyOf = (src, fn) => {
+  const at = src.indexOf(`function ${fn}(`)
+  assert.ok(at !== -1, `${fn} is gone`)
+  const next = src.indexOf('\n    function ', at + 1)
+  return src.slice(at, next === -1 ? undefined : next)
+}
+
+test('ForgeReceipt exposes the surface a holder and an auditor need', () => {
+  const have = sigsOf('ForgeReceipt', 'ForgeReceipt.sol')
+  for (const sig of [
+    // the ERC-20 a wallet and the router need
+    'name()', 'symbol()', 'decimals()', 'totalSupply()', 'balanceOf(address)',
+    'transfer(address,uint256)', 'transferFrom(address,address,uint256)',
+    'approve(address,uint256)', 'allowance(address,address)',
+    'permit(address,address,uint256,uint256,uint8,bytes32,bytes32)', 'nonces(address)', 'DOMAIN_SEPARATOR()',
+    // what a stranger reads to check us, without asking us
+    'coverage()', 'attestation()', 'attestationIsFresh()', 'maxAttestationAge()',
+    'reserveAddresses()', 'reserveAddressCount()', 'reserveAddressAt(uint256)',
+    'redemptionCount()', 'redemption(uint256)', 'unsettledRedemptions()',
+    'underlying()', 'issuerStatement()', 'issuer()',
+    // the exit, and the two privileged calls that bound issuance
+    'redeem(uint256,string)', 'issue(address,uint256,bytes32)',
+    'attest(uint256,uint64,bytes32)', 'settleRedemption(uint256,bytes32)',
+  ]) {
+    assert.ok(have.has(sig), `ForgeReceipt is missing ${sig}`)
+  }
+  const abi = output.contracts['ForgeReceipt.sol'].ForgeReceipt.abi
+  const ctor = abi.find((e) => e.type === 'constructor')
+  assert.deepEqual(
+    ctor.inputs.map((i) => i.type),
+    ['string', 'string', 'uint8', 'string', 'string', 'address', 'uint64'],
+    'the constructor must take (name, symbol, decimals, underlying, issuerStatement, issuer, maxAttestationAge)',
+  )
+})
+
+test('issue() is bounded by a fresh attestation, in the contract', () => {
+  // The two requires are the product: without them this is an unbacked token with a
+  // dashboard. docs/ecosystem/39-forge-exchange.md §4 — "a wrapped asset that cannot
+  // satisfy 35 must not be issued". node/test/forge-receipt.js proves the behaviour on
+  // the live EVM; this catches the edit that removes it.
+  const issue = bodyOf(receiptSrc(), 'issue')
+  assert.ok(/require\(\s*attestationIsFresh\(\)/.test(issue), 'issue does not require a fresh attestation')
+  assert.ok(
+    /require\(\s*totalSupply \+ amount <= attestation\.reserve/.test(issue),
+    'issue does not bound the new supply by the attested reserve',
+  )
+  assert.ok(/onlyIssuer/.test(issue), 'issue is not onlyIssuer')
+})
+
+test('an old reserve reading cannot be replayed as a current one', () => {
+  // Without a strictly increasing height the issuer could keep re-publishing the last
+  // good figure after the coins moved, and every freshness check would pass on a number
+  // about the past.
+  const attest = bodyOf(receiptSrc(), 'attest')
+  assert.ok(/require\(\s*height > attestation\.height/.test(attest), 'attest accepts a height it has already seen')
+  assert.ok(
+    /attestation = Attestation\(\{[\s\S]*?at: uint64\(block\.timestamp\)/.test(attest),
+    'attest does not stamp the reading with this chain\'s time, so nothing can go stale',
+  )
+  // And it must NOT refuse bad news: a reserve below supply has to be recordable, or the
+  // last honest number goes on standing as the current one.
+  assert.ok(
+    !/require\([^)]*reserve >= totalSupply/.test(attest),
+    'attest refuses to record a shortfall, which leaves the last good number standing as current',
+  )
+  assert.ok(/emit Undercollateralised/.test(attest), 'a shortfall is recorded silently')
+})
+
+test('nothing lets the issuer stop a holder leaving', () => {
+  // The only lever this contract gives us is issuance. A pause, a freeze or a blacklist
+  // could only ever stop the exit, and an upgrade could add one later — so the absence is
+  // checked against the ABI and the source, not against a policy page.
+  const abi = output.contracts['ForgeReceipt.sol'].ForgeReceipt.abi
+  const named = abi.filter((e) => e.type === 'function').map((e) => e.name)
+  const censorship = named.filter((n) =>
+    /pause|freeze|frozen|blacklist|blocklist|seize|confiscate|rescue|upgrade|implementation|forceTransfer|burnFrom/i.test(n))
+  assert.deepEqual(censorship, [], `ForgeReceipt has a censorship surface: ${censorship.join(', ')}`)
+  assert.ok(!named.includes('mint'), 'there is a mint() outside the reserve gate')
+
+  const src = receiptSrc()
+  for (const fn of ['redeem', 'transfer', 'transferFrom', 'approve', 'permit']) {
+    assert.ok(!/onlyIssuer/.test(bodyOf(src, fn)), `${fn} is gated on the issuer, so we can hold a holder in`)
+  }
+  assert.ok(!/delegatecall|selfdestruct/.test(src), 'the code can be swapped out or removed from under a holder')
+
+  // A transfer to address(0) must be refused rather than treated as a burn: that would
+  // move supply with no redemption record, which is the accounting hole `redeem` closes.
+  assert.ok(
+    /require\(to != address\(0\), "ForgeReceipt: ZERO_RECIPIENT"\)/.test(bodyOf(src, '_transfer')),
+    '_transfer allows a burn to the zero address, bypassing the redemption record',
+  )
+})
+
+test('a redemption burns before it is recorded, never after', () => {
+  // Supply must fall the moment the claim is made, so a redemption in flight can only
+  // leave the book over-covered. Recording first and burning later would make the window
+  // between them a period of double-counted coin.
+  const redeem = bodyOf(receiptSrc(), 'redeem')
+  const burn = redeem.indexOf('totalSupply -= amount')
+  const record = redeem.indexOf('_redemptions.push')
+  assert.ok(burn !== -1, 'redeem does not reduce the supply')
+  assert.ok(record !== -1, 'redeem does not record the redemption')
+  assert.ok(burn < record, 'redeem records the claim before burning, so supply and reserve disagree in between')
+  assert.ok(/emit RedemptionRequested/.test(redeem), 'a redemption is not announced, so an unpaid one is invisible')
+})
+
+test('the issuer role moves in two steps, never one', () => {
+  // §2's trap 2, applied: `feeToSetter` is set in one call and can only be moved by the
+  // key that holds it, so one wrong address is unrecoverable. Here the successor must act.
+  const src = receiptSrc()
+  assert.ok(/function beginIssuerHandover\(address next\) external onlyIssuer/.test(src), 'the handover is not proposed by the issuer')
+  const accept = bodyOf(src, 'acceptIssuer')
+  assert.ok(/require\(msg\.sender == pendingIssuer/.test(accept), 'anyone can accept the issuer role')
+  assert.ok(
+    !/function setIssuer\(|issuer = next/.test(src),
+    'there is a one-call path to a new issuer, so a fat-fingered address is unrecoverable',
+  )
+})
+
+test('adding the multisig and the receipt did not move the pair init code hash', () => {
   // `metadata.bytecodeHash: 'none'` is what makes this true — with a metadata hash
   // appended, adding a source file to the compilation unit changes other contracts'
   // bytecode, and a deployed router would silently stop finding its own pairs.
